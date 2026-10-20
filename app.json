@@ -7,9 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "pdftoolkit",
     "userInterfaceStyle": "automatic",
-    "platforms": [
-      "android"
-    ],
+    "platforms": ["android"],
     "android": {
       "package": "com.pdfkagaz.pdftoolkit",
       "adaptiveIcon": {
@@ -18,13 +16,16 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "blockedPermissions": [
-        "android.permission.CAMERA"
-      ],
+      "blockedPermissions": ["android.permission.CAMERA"],
       "predictiveBackGestureEnabled": false
     },
     "plugins": [
-      "expo-router",
+      [
+        "expo-router",
+        {
+          "root": "app"
+        }
+      ],
       [
         "expo-splash-screen",
         {

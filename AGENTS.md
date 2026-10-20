@@ -25,7 +25,7 @@ Run lint and typecheck before declaring any task done.
 
 ## Navigation & Routing
 
-- Use **Expo Router** for all navigation. Routes live in `src/app/` — every file there is a screen, `_layout.tsx` files define navigators. Keep non-route code (components, hooks, utils) outside `src/app/`.
+- Use **Expo Router** for all navigation. Routes live in root `app/` (pinned in app.json via the expo-router plugin `root` option) — every file there is a screen, `_layout.tsx` files define navigators. Never create `src/app/` (Expo prefers it whenever it exists). Keep non-route code (components, hooks, utils) outside `app/`.
 - Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
 - Docs: https://docs.expo.dev/router/introduction.md
 
