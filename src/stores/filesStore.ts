@@ -17,6 +17,7 @@ import {
   updateThumb,
   upsertFile,
   type IndexDb,
+  type ScanDiff,
 } from '@/services/index/fileIndexRepo';
 import {
   isPdfNativeError,
@@ -60,6 +61,11 @@ export type FilesStoreDeps = {
   native: Pick<PdfNativeApi, 'generateThumbnail' | 'getPageCount'>;
   thumbWidth: number;
   now: () => number;
+  /**
+   * When set, thumbnail results are collected and applied together (one DB transaction, one
+   * store update) at most this often, instead of one list re-render per thumbnail.
+   */
+  thumbFlushMs?: number;
 };
 
 function toActionError(e: unknown): FileActionError {
@@ -86,36 +92,72 @@ export function createFilesStore(deps: FilesStoreDeps) {
       return run;
     }
 
-    const reload = () => set({ files: listFiles(deps.getDb()) });
+    // True once `files` mirrors the DB; until then a no-change scan must still list it.
+    let listed = false;
+
+    const reload = () => {
+      set({ files: listFiles(deps.getDb()) });
+      listed = true;
+    };
 
     const patchRow = (id: string, patch: Partial<FileRow>) =>
       set({ files: get().files.map((f) => (f.id === id ? { ...f, ...patch } : f)) });
 
     const dropRow = (id: string) => set({ files: get().files.filter((f) => f.id !== id) });
 
-    const onThumb = (r: ThumbResult) => {
+    /** Writes a batch of thumbnail results in one transaction and publishes them in one update. */
+    const applyThumbs = (results: ThumbResult[]) => {
+      const patches = new Map<string, Partial<FileRow>>();
+      const removed = new Set<string>();
       try {
-        const db = deps.getDb();
-        const row = getFile(db, r.id);
-        // Generated from content that a rescan has since replaced: drop the stale result.
-        if (!row || row.modifiedAt !== r.modifiedAt || row.sizeBytes !== r.sizeBytes) return;
-        if (r.missing) {
-          removeFile(db, r.id);
-          dropRow(r.id);
-          set({ notice: 'notFound' });
-          return;
-        }
-        const patch = {
-          thumbPath: r.thumbPath,
-          pageCount: r.pageCount,
-          isEncrypted: r.isEncrypted,
-          isCorrupt: r.invalid,
-        };
-        updateThumb(db, r.id, patch);
-        patchRow(r.id, patch);
+        deps.getDb().transaction((tx) => {
+          for (const r of results) {
+            const row = getFile(tx, r.id);
+            // Generated from content that a rescan has since replaced: drop the stale result.
+            if (!row || row.modifiedAt !== r.modifiedAt || row.sizeBytes !== r.sizeBytes) continue;
+            if (r.missing) {
+              removeFile(tx, r.id);
+              removed.add(r.id);
+              continue;
+            }
+            const patch = {
+              thumbPath: r.thumbPath,
+              pageCount: r.pageCount,
+              isEncrypted: r.isEncrypted,
+              isCorrupt: r.invalid,
+            };
+            updateThumb(tx, r.id, patch);
+            patches.set(r.id, patch);
+          }
+        });
       } catch {
-        // DB unavailable: the thumbnail is regenerated on a later launch.
+        // DB unavailable: the thumbnails are regenerated on a later launch.
+        return;
       }
+      if (patches.size === 0 && removed.size === 0) return;
+      const files = get()
+        .files.filter((f) => !removed.has(f.id))
+        .map((f) => {
+          const patch = patches.get(f.id);
+          return patch ? { ...f, ...patch } : f;
+        });
+      set(removed.size > 0 ? { files, notice: 'notFound' } : { files });
+    };
+
+    let pendingThumbs: ThumbResult[] = [];
+    let thumbTimer: ReturnType<typeof setTimeout> | null = null;
+    const onThumb = (r: ThumbResult) => {
+      if (!deps.thumbFlushMs) {
+        applyThumbs([r]);
+        return;
+      }
+      pendingThumbs.push(r);
+      thumbTimer ??= setTimeout(() => {
+        thumbTimer = null;
+        const batch = pendingThumbs;
+        pendingThumbs = [];
+        applyThumbs(batch);
+      }, deps.thumbFlushMs);
     };
 
     const thumbs = createThumbnailQueue({
@@ -128,20 +170,32 @@ export function createFilesStore(deps: FilesStoreDeps) {
       const started = deps.now();
       try {
         const db = deps.getDb();
+        let diff: ScanDiff;
         if (kind === 'full') {
           const result = await provider.fullScan((progress) => set({ progress }));
           // Mode switch: rows of the other access mode are dropped; output/intent rows stay.
-          deleteBySource(db, provider.source === 'scan' ? 'saf' : 'scan');
-          applyScan(db, { result, source: provider.source });
+          const dropped = deleteBySource(db, provider.source === 'scan' ? 'saf' : 'scan');
+          diff = applyScan(db, { result, source: provider.source });
+          diff = { ...diff, removed: diff.removed + dropped };
         } else {
           const outcome = await provider.quickScan(getFolderStamps(db));
-          if (outcome.kind === 'folders') applyFolderChanges(db, outcome.changes);
-          else applyScan(db, { result: outcome.result, source: provider.source });
+          diff =
+            outcome.kind === 'folders'
+              ? applyFolderChanges(db, outcome.changes)
+              : applyScan(db, { result: outcome.result, source: provider.source });
         }
-        const files = listFiles(db);
-        set({ files, lastScanAt: deps.now(), error: null });
+        // Nothing changed: keep the current array so lists do not re-render (and skip listing ~1,000 rows).
+        const changed = diff.added + diff.updated + diff.removed > 0;
+        const files = changed || !listed ? listFiles(db) : null;
+        set(
+          files
+            ? { files, lastScanAt: deps.now(), error: null }
+            : { lastScanAt: deps.now(), error: null },
+        );
+        if (files) listed = true;
         if (__DEV__) {
-          console.log(`[scan] ${kind} ${deps.now() - started}ms ${files.length} files`);
+          const n = get().files.length;
+          console.log(`[scan] ${kind} ${deps.now() - started}ms ${n} files`);
         }
       } catch {
         // Keep the previous list; the next foreground or pull-to-refresh retries.
@@ -207,6 +261,7 @@ export function createFilesStore(deps: FilesStoreDeps) {
         const status = get().status === 'scanning' ? 'scanning' : 'idle';
         try {
           set({ files: listFiles(deps.getDb()), status });
+          listed = true;
         } catch {
           set({ status, error: 'cache' });
         }
@@ -283,4 +338,5 @@ export const useFiles = createFilesStore({
   native: pdfNative,
   thumbWidth: Math.min(200, Math.round(48 * PixelRatio.get())),
   now: Date.now,
+  thumbFlushMs: 250,
 });

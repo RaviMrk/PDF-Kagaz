@@ -74,7 +74,9 @@ function fakeProvider(
   } as jest.Mocked<StorageProvider> & StorageProvider;
 }
 
-function setup(opts: { provider?: StorageProvider | null; seed?: PdfFileInfo[] } = {}) {
+function setup(
+  opts: { provider?: StorageProvider | null; seed?: PdfFileInfo[]; thumbFlushMs?: number } = {},
+) {
   const db = makeDb();
   if (opts.seed) applyScan(db, { result: result(opts.seed), source: 'scan' });
   const provider = opts.provider === undefined ? fakeProvider() : opts.provider;
@@ -86,6 +88,7 @@ function setup(opts: { provider?: StorageProvider | null; seed?: PdfFileInfo[] }
     native,
     thumbWidth: 144,
     now: () => clock,
+    thumbFlushMs: opts.thumbFlushMs,
   });
   return {
     db,
@@ -530,6 +533,66 @@ describe('filesStore: content-keyed thumbnails', () => {
     await flush();
     expect(store.getState().files[0]).toMatchObject({ thumbPath: null, pageCount: null });
     expect(db.select().from(files).get()).toMatchObject({ thumbPath: null, pageCount: null });
+  });
+});
+
+describe('filesStore: render-friendly updates', () => {
+  it('a full rescan that changes nothing keeps the same files array (no list re-render)', async () => {
+    const provider = fakeProvider({
+      fullScan: jest.fn().mockResolvedValue(result([info('A/a.pdf'), info('A/b.pdf')])),
+    });
+    const { store } = setup({ provider, seed: [info('A/a.pdf'), info('A/b.pdf')] });
+    store.getState().loadFromCache();
+    const before = store.getState().files;
+    await store.getState().refresh('full');
+    expect(store.getState().files).toBe(before);
+    expect(store.getState().lastScanAt).not.toBeNull();
+  });
+
+  it('a quick rescan with no folder changes keeps the same files array', async () => {
+    const { store } = setup({ seed: [info('A/a.pdf')] });
+    store.getState().loadFromCache();
+    const before = store.getState().files;
+    await store.getState().refresh('quick');
+    expect(store.getState().files).toBe(before);
+  });
+
+  it('a no-change scan still lists the DB when the cache was never loaded', async () => {
+    const provider = fakeProvider({
+      fullScan: jest.fn().mockResolvedValue(result([info('A/a.pdf')])),
+    });
+    const { store } = setup({ provider, seed: [info('A/a.pdf')] });
+    await store.getState().refresh('full');
+    expect(names(store.getState().files)).toEqual(['a.pdf']);
+  });
+
+  it('batches thumbnail results into one store update and one DB write per flush', async () => {
+    const seed = [info('A/a.pdf'), info('A/b.pdf'), info('A/c.pdf'), info('A/d.pdf')];
+    const { store, db, native } = setup({ seed, thumbFlushMs: 30 });
+    native.generateThumbnail.mockImplementation((uri: string) =>
+      Promise.resolve(`file:///thumbs/${uri.slice(uri.lastIndexOf('/') + 1)}.jpg`),
+    );
+    native.getPageCount.mockRejectedValueOnce(nativeError('ERR_FILE_NOT_FOUND'));
+    store.getState().loadFromCache();
+    const updates: number[] = [];
+    const unsub = store.subscribe((s, prev) => {
+      if (s.files !== prev.files) updates.push(s.files.length);
+    });
+    for (const f of store.getState().files) store.getState().requestThumb(f);
+    await flush();
+    expect(updates).toEqual([]);
+    await new Promise((r) => setTimeout(r, 60));
+    unsub();
+    expect(updates).toEqual([3]);
+    expect(store.getState().notice).toBe('notFound');
+    const thumbs = store
+      .getState()
+      .files.map((f) => f.thumbPath)
+      .sort();
+    expect(thumbs).toHaveLength(3);
+    expect(thumbs.every((t) => t?.startsWith('file:///thumbs/'))).toBe(true);
+    expect(listFiles(db).filter((r) => r.thumbPath)).toHaveLength(3);
+    expect(listFiles(db)).toHaveLength(3);
   });
 });
 

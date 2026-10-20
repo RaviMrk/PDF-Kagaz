@@ -54,6 +54,20 @@ function toRow(info: PdfFileInfo, source: FileRow['source']): NewFileRow {
   };
 }
 
+const COMPARED = {
+  id: files.id,
+  name: files.name,
+  folder: files.folder,
+  parentUri: files.parentUri,
+  sizeBytes: files.sizeBytes,
+  modifiedAt: files.modifiedAt,
+  source: files.source,
+};
+type ComparedColumns = Pick<
+  FileRow,
+  'id' | 'name' | 'folder' | 'parentUri' | 'sizeBytes' | 'modifiedAt' | 'source'
+>;
+
 /**
  * Upserts rows; only writes rows that are new or differ. Returns added/updated counts.
  * Conflict update touches only name/folder/parentUri/size/modifiedAt and resets
@@ -62,13 +76,17 @@ function toRow(info: PdfFileInfo, source: FileRow['source']): NewFileRow {
  */
 function upsertMany(db: IndexDb, infos: PdfFileInfo[], source: FileRow['source'], promote = false) {
   const byId = new Map<string, NewFileRow>();
-  for (const info of infos) byId.set(fileIdForUri(info.uri), toRow(info, source));
+  for (const info of infos) {
+    const row = toRow(info, source);
+    byId.set(row.id as string, row);
+  }
   const incoming = [...byId.values()];
 
-  const existing = new Map<string, FileRow>();
+  // Only the compared columns: materialising full rows for a 1,000-file scan costs seconds on-device.
+  const existing = new Map<string, ComparedColumns>();
   for (const part of chunks(incoming, LOOKUP_CHUNK)) {
     const ids = part.map((r) => r.id as string);
-    for (const row of db.select().from(files).where(inArray(files.id, ids)).all()) {
+    for (const row of db.select(COMPARED).from(files).where(inArray(files.id, ids)).all()) {
       existing.set(row.id, row);
     }
   }
