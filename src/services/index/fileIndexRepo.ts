@@ -41,9 +41,9 @@ export function listFiles(db: IndexDb): FileRow[] {
   return db.select().from(files).all();
 }
 
-function toRow(info: PdfFileInfo, source: FileRow['source']): NewFileRow {
+function toRow(info: PdfFileInfo, source: FileRow['source'], id?: string): NewFileRow {
   return {
-    id: fileIdForUri(info.uri),
+    id: id ?? fileIdForUri(info.uri),
     uri: info.uri,
     name: info.name,
     folder: info.folder,
@@ -68,29 +68,117 @@ type ComparedColumns = Pick<
   'id' | 'name' | 'folder' | 'parentUri' | 'sizeBytes' | 'modifiedAt' | 'source'
 >;
 
+/** From this many scanned files on, applyScan reads one table snapshot instead of rows by id. */
+const BULK_LOOKUP_MIN = 100;
+
+/** Marks a bulk-lookup row whose compared columns equal the incoming ones. */
+const UNCHANGED = Symbol('unchanged');
+
+/** Code points, like SQLite length() on text (JS .length counts UTF-16 units). */
+function codePoints(s: string): number {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0xd800 || c > 0xdbff || i + 1 >= s.length) n++;
+    else {
+      const d = s.charCodeAt(i + 1);
+      n++;
+      if (d >= 0xdc00 && d <= 0xdfff) i++;
+    }
+  }
+  return n;
+}
+
+/**
+ * Length-prefixed (so collision-free) signature of the compared columns except source; must
+ * match ROW_SIGNATURE. A NULL stored column makes the SQL side NULL, i.e. "changed".
+ */
+function signature(
+  r: Pick<NewFileRow, 'name' | 'folder' | 'parentUri' | 'sizeBytes' | 'modifiedAt'>,
+) {
+  const parentUri = r.parentUri ?? '';
+  return `${codePoints(r.name)}:${r.name}|${codePoints(r.folder)}:${r.folder}|${codePoints(parentUri)}:${parentUri}|${r.sizeBytes}|${r.modifiedAt}`;
+}
+
+const ROW_SIGNATURE = sql<
+  string | null
+>`length(${files.name}) || ':' || ${files.name} || '|' || length(${files.folder}) || ':' || ${files.folder} || '|' || length(${files.parentUri}) || ':' || ${files.parentUri} || '|' || ${files.sizeBytes} || '|' || ${files.modifiedAt}`;
+
+/** One stored row as read by [readSnapshot]; sig is NULL when a compared column is NULL. */
+type SnapshotRow = { id: string; uri: string; source: FileRow['source']; sig: string | null };
+
+/**
+ * (id, uri, source, signature) of every row, keyed by uri, in one query. Large scans use it
+ * instead of hashing every URI, fetching full rows by id and re-reading rows for staleness:
+ * on-device each materialised column costs tens of µs and each FNV hash ~0.2 ms.
+ */
+function readSnapshot(db: IndexDb): Map<string, SnapshotRow> {
+  const rows = db
+    .select({ id: files.id, uri: files.uri, source: files.source, sig: ROW_SIGNATURE })
+    .from(files)
+    .all();
+  const byUri = new Map<string, SnapshotRow>();
+  for (const row of rows) byUri.set(row.uri, row);
+  return byUri;
+}
+
+/**
+ * Existing rows for [incoming], keyed by id. With a [snapshot], an unchanged row is UNCHANGED
+ * without reading its columns; rows that need column values (empty native folder/parentUri,
+ * signature mismatch) are fetched by id.
+ */
+function lookupExisting(
+  db: IndexDb,
+  incoming: NewFileRow[],
+  snapshot: Map<string, SnapshotRow> | null,
+): Map<string, ComparedColumns | typeof UNCHANGED> {
+  const existing = new Map<string, ComparedColumns | typeof UNCHANGED>();
+  let byId = incoming;
+  if (snapshot) {
+    byId = [];
+    for (const row of incoming) {
+      const stored = snapshot.get(row.uri);
+      if (!stored) continue; // new
+      if (row.folder !== '' && row.parentUri !== '' && stored.sig === signature(row)) {
+        existing.set(stored.id, UNCHANGED);
+      } else {
+        byId.push(row);
+      }
+    }
+  }
+  for (const part of chunks(byId, LOOKUP_CHUNK)) {
+    const ids = part.map((r) => r.id as string);
+    for (const row of db.select(COMPARED).from(files).where(inArray(files.id, ids)).all()) {
+      existing.set(row.id, row);
+    }
+  }
+  return existing;
+}
+
 /**
  * Upserts rows; only writes rows that are new or differ. Returns added/updated counts.
  * Conflict update touches only name/folder/parentUri/size/modifiedAt and resets
  * thumb data (incl. encrypted/corrupt flags) when the file content (size or mtime) changed.
  * An empty native parentUri/folder (SAF rename on API 24-25) keeps the old value.
  */
-function upsertMany(db: IndexDb, infos: PdfFileInfo[], source: FileRow['source'], promote = false) {
+function upsertMany(
+  db: IndexDb,
+  infos: PdfFileInfo[],
+  source: FileRow['source'],
+  promote = false,
+  snapshot: Map<string, SnapshotRow> | null = null,
+) {
+  // The snapshot skips source comparison, so promotions always compare full rows.
+  const known = promote ? null : snapshot;
   const byId = new Map<string, NewFileRow>();
   for (const info of infos) {
-    const row = toRow(info, source);
+    // id is a pure function of the uri: reuse the stored one instead of re-hashing.
+    const row = toRow(info, source, known?.get(info.uri)?.id);
     byId.set(row.id as string, row);
   }
   const incoming = [...byId.values()];
 
-  // Only the compared columns: materialising full rows for a 1,000-file scan costs seconds on-device.
-  const existing = new Map<string, ComparedColumns>();
-  for (const part of chunks(incoming, LOOKUP_CHUNK)) {
-    const ids = part.map((r) => r.id as string);
-    for (const row of db.select(COMPARED).from(files).where(inArray(files.id, ids)).all()) {
-      existing.set(row.id, row);
-    }
-  }
-
+  const existing = lookupExisting(db, incoming, known);
   const toWrite: NewFileRow[] = [];
   let added = 0;
   let updated = 0;
@@ -101,6 +189,7 @@ function upsertMany(db: IndexDb, infos: PdfFileInfo[], source: FileRow['source']
       toWrite.push(row);
       continue;
     }
+    if (old === UNCHANGED) continue;
     const parentUri = row.parentUri === '' ? old.parentUri : row.parentUri;
     const folder = row.folder === '' ? old.folder : row.folder;
     if (
@@ -152,16 +241,21 @@ export function applyScan(
 ): ScanDiff {
   const { result, source } = input;
   return db.transaction((tx) => {
-    const { added, updated, keepIds } = upsertMany(tx, result.files, source);
+    const snapshot = result.files.length >= BULK_LOOKUP_MIN ? readSnapshot(tx) : null;
+    const { added, updated, keepIds } = upsertMany(tx, result.files, source, false, snapshot);
     const keep = new Set(keepIds);
     const roots = result.scannedRoots.filter(
       (r) => !result.failedRoots.some((f) => f === r || isUnderRoot(r, f)),
     );
-    const stale = tx
-      .select({ id: files.id, uri: files.uri })
-      .from(files)
-      .where(eq(files.source, source))
-      .all()
+    // A scan never changes a row's source, so the pre-upsert snapshot still holds for this.
+    const ofSource = snapshot
+      ? [...snapshot.values()].filter((row) => row.source === source)
+      : tx
+          .select({ id: files.id, uri: files.uri })
+          .from(files)
+          .where(eq(files.source, source))
+          .all();
+    const stale = ofSource
       .filter(
         (row) =>
           !keep.has(row.id) &&

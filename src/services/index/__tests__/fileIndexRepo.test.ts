@@ -226,6 +226,76 @@ describe('applyScan', () => {
   });
 });
 
+describe('applyScan: bulk change detection', () => {
+  const bulk = () =>
+    Array.from({ length: 150 }, (_, i) =>
+      info(`D${i % 5}/f${i}${i % 7 === 0 ? '-\u{1F4C4}-\u0905\u0939' : ''}.pdf`),
+    );
+
+  it('reports exactly the changed rows of a large rescan (emoji and Devanagari names stable)', () => {
+    const db = makeDb();
+    const first = bulk();
+    applyScan(db, scan(first));
+    setFavorite(db, fileIdForUri(first[3]!.uri), true);
+    const next = first.map((f, i) =>
+      i === 3 ? { ...f, sizeBytes: 999 } : i === 4 ? { ...f, folder: 'Renamed' } : f,
+    );
+    expect(applyScan(db, scan(next))).toEqual({ added: 0, updated: 2, removed: 0 });
+    expect(getFile(db, fileIdForUri(first[3]!.uri))).toMatchObject({
+      sizeBytes: 999,
+      isFavorite: true,
+    });
+    expect(getFile(db, fileIdForUri(first[4]!.uri))?.folder).toBe('Renamed');
+    expect(applyScan(db, scan(next))).toEqual({ added: 0, updated: 0, removed: 0 });
+  });
+
+  it('treats an empty native folder/parentUri as "keep the old value" in a large rescan', () => {
+    const db = makeDb();
+    const first = bulk();
+    applyScan(db, scan(first));
+    const next = first.map((f, i) => (i === 10 ? { ...f, folder: '', parentUri: '' } : f));
+    expect(applyScan(db, scan(next))).toEqual({ added: 0, updated: 0, removed: 0 });
+    expect(getFile(db, fileIdForUri(first[10]!.uri))).toMatchObject({
+      folder: first[10]!.folder,
+      parentUri: first[10]!.parentUri,
+    });
+  });
+
+  it('counts a row whose stored parentUri is null as updated', () => {
+    const db = makeDb();
+    const first = bulk();
+    applyScan(db, scan(first));
+    db.update(files)
+      .set({ parentUri: null })
+      .where(eq(files.id, fileIdForUri(first[0]!.uri)))
+      .run();
+    expect(applyScan(db, scan(first))).toEqual({ added: 0, updated: 1, removed: 0 });
+  });
+
+  it('removes missing rows of a large rescan but keeps failed subfolders and other sources', () => {
+    const db = makeDb();
+    const first = bulk();
+    applyScan(db, scan(first));
+    upsertFile(db, info('Out/o.pdf'), 'output');
+    // D1 could not be listed this time; f0 (in D0) and f2 (in D2) are gone.
+    const next = first.filter((_, i) => i % 5 !== 1 && i !== 0 && i !== 2);
+    const diff = applyScan(db, scan(next, [ROOT], [`${ROOT}/D1`]));
+    expect(diff).toEqual({ added: 0, updated: 0, removed: 2 });
+    expect(listFiles(db)).toHaveLength(149);
+    expect(getFile(db, fileIdForUri(first[1]!.uri))).toBeDefined();
+    expect(getFile(db, idOf('Out/o.pdf'))?.source).toBe('output');
+  });
+
+  it('does not count a scan hit on an output row as an update', () => {
+    const db = makeDb();
+    const first = bulk();
+    applyScan(db, scan(first));
+    upsertFile(db, first[0]!, 'output');
+    expect(applyScan(db, scan(first))).toEqual({ added: 0, updated: 0, removed: 0 });
+    expect(getFile(db, fileIdForUri(first[0]!.uri))?.source).toBe('output');
+  });
+});
+
 describe('source promotion', () => {
   it('upsertFile with output promotes a scan row; scans never demote it', () => {
     const db = makeDb();
