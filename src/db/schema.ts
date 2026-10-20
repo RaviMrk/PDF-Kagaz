@@ -13,6 +13,7 @@ export const files = sqliteTable(
     pageCount: integer('page_count'),
     thumbPath: text('thumb_path'),
     isEncrypted: integer('is_encrypted', { mode: 'boolean' }).notNull().default(false),
+    isCorrupt: integer('is_corrupt', { mode: 'boolean' }).notNull().default(false),
     isFavorite: integer('is_favorite', { mode: 'boolean' }).notNull().default(false),
     lastPage: integer('last_page'),
     lastOpenedAt: integer('last_opened_at'),

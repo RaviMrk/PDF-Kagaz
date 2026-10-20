@@ -11,6 +11,7 @@ function row(over: Partial<FileRow> & { id: string; name: string }): FileRow {
     pageCount: null,
     thumbPath: null,
     isEncrypted: false,
+    isCorrupt: false,
     isFavorite: false,
     lastPage: null,
     lastOpenedAt: null,

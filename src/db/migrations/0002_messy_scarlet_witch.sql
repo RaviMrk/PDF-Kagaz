@@ -1,0 +1,1 @@
+ALTER TABLE `files` ADD `is_corrupt` integer DEFAULT false NOT NULL;

@@ -57,7 +57,7 @@ function toRow(info: PdfFileInfo, source: FileRow['source']): NewFileRow {
 /**
  * Upserts rows; only writes rows that are new or differ. Returns added/updated counts.
  * Conflict update touches only name/folder/parentUri/size/modifiedAt and resets
- * thumb data when the file content (size or mtime) changed.
+ * thumb data (incl. encrypted/corrupt flags) when the file content (size or mtime) changed.
  * An empty native parentUri/folder (SAF rename on API 24-25) keeps the old value.
  */
 function upsertMany(db: IndexDb, infos: PdfFileInfo[], source: FileRow['source'], promote = false) {
@@ -113,6 +113,7 @@ function upsertMany(db: IndexDb, infos: PdfFileInfo[], source: FileRow['source']
           thumbPath: sql`CASE WHEN ${changed} THEN NULL ELSE ${files.thumbPath} END`,
           pageCount: sql`CASE WHEN ${changed} THEN NULL ELSE ${files.pageCount} END`,
           isEncrypted: sql`CASE WHEN ${changed} THEN 0 ELSE ${files.isEncrypted} END`,
+          isCorrupt: sql`CASE WHEN ${changed} THEN 0 ELSE ${files.isCorrupt} END`,
           ...(promote ? { source: sql`excluded.source` } : {}),
         },
       })
@@ -228,6 +229,7 @@ export function replaceFile(
       thumbPath: old.thumbPath,
       pageCount: old.pageCount,
       isEncrypted: old.isEncrypted,
+      isCorrupt: old.isCorrupt,
     };
     const newId = next.id as string;
     if (newId === oldId) {
@@ -265,7 +267,12 @@ export function markOpened(db: IndexDb, id: string, at: number): void {
 export function updateThumb(
   db: IndexDb,
   id: string,
-  patch: { thumbPath?: string | null; pageCount?: number | null; isEncrypted?: boolean },
+  patch: {
+    thumbPath?: string | null;
+    pageCount?: number | null;
+    isEncrypted?: boolean;
+    isCorrupt?: boolean;
+  },
 ): void {
   if (Object.keys(patch).length === 0) return;
   db.update(files).set(patch).where(eq(files.id, id)).run();

@@ -36,6 +36,7 @@ describe('db schema', () => {
     const row = db.select().from(files).where(eq(files.id, 'f1')).get();
     expect(row?.isFavorite).toBe(false);
     expect(row?.isEncrypted).toBe(false);
+    expect(row?.isCorrupt).toBe(false);
     expect(row?.lastPage).toBeNull();
   });
 

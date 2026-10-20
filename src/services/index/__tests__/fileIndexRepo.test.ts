@@ -107,6 +107,29 @@ describe('applyScan', () => {
     });
   });
 
+  it('persists isCorrupt and resets it when the file content changes', () => {
+    const db = makeDb();
+    applyScan(db, scan([info('A/a.pdf')]));
+    const id = idOf('A/a.pdf');
+    updateThumb(db, id, { isCorrupt: true });
+    applyScan(db, scan([info('A/a.pdf')]));
+    expect(db.select().from(files).where(eq(files.id, id)).get()?.isCorrupt).toBe(true);
+
+    applyScan(db, scan([info('A/a.pdf', { sizeBytes: 200 })]));
+    expect(db.select().from(files).where(eq(files.id, id)).get()?.isCorrupt).toBe(false);
+
+    updateThumb(db, id, { isCorrupt: true });
+    applyFolderChanges(db, [
+      {
+        uri: `${ROOT}/A`,
+        modifiedAt: 2,
+        exists: true,
+        files: [info('A/a.pdf', { modifiedAt: 1 })],
+      },
+    ]);
+    expect(db.select().from(files).where(eq(files.id, id)).get()?.isCorrupt).toBe(false);
+  });
+
   it('removes files missing from the rescan', () => {
     const db = makeDb();
     applyScan(db, scan([info('A/a.pdf'), info('A/b.pdf')]));
@@ -296,6 +319,13 @@ describe('single-file operations', () => {
     expect(db.select().from(bookmarks).where(eq(bookmarks.fileId, next.id)).all()).toHaveLength(2);
     expect(db.select().from(bookmarks).where(eq(bookmarks.fileId, old.id)).all()).toHaveLength(0);
     expect(listFiles(db)).toHaveLength(1);
+  });
+
+  it('replaceFile keeps isCorrupt', () => {
+    const db = makeDb();
+    const old = upsertFile(db, info('A/a.pdf'), 'scan');
+    updateThumb(db, old.id, { isCorrupt: true });
+    expect(replaceFile(db, old.id, info('A/b.pdf'), 'scan').isCorrupt).toBe(true);
   });
 
   it('removeFile and deleteBySource', () => {
