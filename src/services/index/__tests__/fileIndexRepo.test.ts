@@ -15,6 +15,7 @@ import {
   applyFolderChanges,
   applyScan,
   deleteBySource,
+  getFile,
   getFolderStamps,
   isUnderRoot,
   listFiles,
@@ -319,6 +320,13 @@ describe('single-file operations', () => {
     expect(db.select().from(bookmarks).where(eq(bookmarks.fileId, next.id)).all()).toHaveLength(2);
     expect(db.select().from(bookmarks).where(eq(bookmarks.fileId, old.id)).all()).toHaveLength(0);
     expect(listFiles(db)).toHaveLength(1);
+  });
+
+  it('getFile returns the row or undefined', () => {
+    const db = makeDb();
+    const a = upsertFile(db, info('A/a.pdf'), 'scan');
+    expect(getFile(db, a.id)).toEqual(a);
+    expect(getFile(db, 'nope')).toBeUndefined();
   });
 
   it('replaceFile keeps isCorrupt', () => {

@@ -197,6 +197,10 @@ export function applyFolderChanges(db: IndexDb, changes: FolderChange[]): ScanDi
   });
 }
 
+export function getFile(db: IndexDb, id: string): FileRow | undefined {
+  return db.select().from(files).where(eq(files.id, id)).get();
+}
+
 function getRow(db: IndexDb, id: string): FileRow {
   const row = db.select().from(files).where(eq(files.id, id)).get();
   if (!row) throw new Error(`File not found: ${id}`);

@@ -13,6 +13,7 @@ const mockStorage: {
   mode: 'none',
   next: 'full',
   refreshMode: jest.fn(async (): Promise<Mode> => {
+    calls.push('refreshMode');
     mockStorage.mode = mockStorage.next;
     return mockStorage.next;
   }),
@@ -25,6 +26,9 @@ const mockFiles = {
   }),
   refresh: jest.fn(async (kind: 'full' | 'quick') => {
     calls.push(`refresh:${kind}`);
+  }),
+  reportError: jest.fn((code: string) => {
+    calls.push(`error:${code}`);
   }),
 };
 
@@ -46,6 +50,7 @@ beforeEach(() => {
   mockStorage.refreshMode.mockClear();
   mockFiles.loadFromCache.mockClear();
   mockFiles.refresh.mockClear();
+  mockFiles.reportError.mockClear();
   mockFiles.lastScanAt = null;
   removeListener.mockClear();
   appStateHandler = null;
@@ -80,12 +85,26 @@ describe('useFileIndexLifecycle', () => {
   it('on mount with full access loads the cache, then runs a full refresh', async () => {
     await mount('full');
     expect(mockStorage.refreshMode).toHaveBeenCalledTimes(1);
-    expect(calls).toEqual(['loadFromCache', 'refresh:full']);
+    expect(calls).toEqual(['loadFromCache', 'refreshMode', 'refresh:full']);
   });
 
   it('on mount without access loads the cache but does not scan', async () => {
     await mount('none');
-    expect(calls).toEqual(['loadFromCache']);
+    expect(calls).toEqual(['loadFromCache', 'refreshMode']);
+  });
+
+  it('a failing refreshMode on mount reports a scan error instead of staying loading', async () => {
+    mockStorage.refreshMode.mockRejectedValueOnce(new Error('boom'));
+    await mount('full');
+    expect(calls).toEqual(['loadFromCache', 'error:scan']);
+  });
+
+  it('a failing refreshMode on foreground reports a scan error', async () => {
+    await mount('full');
+    calls.length = 0;
+    mockStorage.refreshMode.mockRejectedValueOnce(new Error('boom'));
+    await foreground();
+    expect(calls).toEqual(['error:scan']);
   });
 
   it('foreground 11 s after the last scan runs a quick refresh', async () => {
@@ -95,7 +114,7 @@ describe('useFileIndexLifecycle', () => {
     calls.length = 0;
     await foreground();
     expect(mockStorage.refreshMode).toHaveBeenCalledTimes(2);
-    expect(calls).toEqual(['refresh:quick']);
+    expect(calls).toEqual(['refreshMode', 'refresh:quick']);
   });
 
   it('foreground 3 s after the last scan does nothing', async () => {
@@ -104,7 +123,7 @@ describe('useFileIndexLifecycle', () => {
     now += 3_000;
     calls.length = 0;
     await foreground();
-    expect(calls).toEqual([]);
+    expect(calls).toEqual(['refreshMode']);
   });
 
   it('ignores background/inactive transitions', async () => {
@@ -122,7 +141,7 @@ describe('useFileIndexLifecycle', () => {
     mockStorage.next = 'saf';
     calls.length = 0;
     await foreground();
-    expect(calls).toEqual(['refresh:full']);
+    expect(calls).toEqual(['refreshMode', 'refresh:full']);
   });
 
   it('losing access on foreground does not scan', async () => {
@@ -132,7 +151,7 @@ describe('useFileIndexLifecycle', () => {
     mockStorage.next = 'none';
     calls.length = 0;
     await foreground();
-    expect(calls).toEqual([]);
+    expect(calls).toEqual(['refreshMode']);
   });
 
   it('removes the AppState listener on unmount', async () => {

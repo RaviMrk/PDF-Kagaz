@@ -17,10 +17,16 @@ export function useFileIndexLifecycle(): void {
     // Mode of the last scan this hook started; compared on foreground to detect mode switches.
     let scannedMode: string | null = null;
 
+    // refreshMode/getDb failures must not leave the list stuck on 'loading' (code only, no names).
+    const fail = () => {
+      if (mounted) useFiles.getState().reportError('scan');
+    };
+
     const start = async () => {
+      // F-03: the cached list first, before any access check (loadFromCache reports its own errors).
+      useFiles.getState().loadFromCache();
       const mode = await useStorage.getState().refreshMode();
       if (!mounted) return;
-      useFiles.getState().loadFromCache();
       scannedMode = mode;
       if (mode !== 'none') void useFiles.getState().refresh('full');
     };
@@ -43,9 +49,9 @@ export function useFileIndexLifecycle(): void {
       }
     };
 
-    void start().catch(() => {});
+    void start().catch(fail);
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void onActive().catch(() => {});
+      if (state === 'active') void onActive().catch(fail);
     });
     return () => {
       mounted = false;

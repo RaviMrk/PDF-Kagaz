@@ -7,6 +7,7 @@ import {
   applyFolderChanges,
   applyScan,
   deleteBySource,
+  getFile,
   getFolderStamps,
   listFiles,
   markOpened as markOpenedInDb,
@@ -30,6 +31,8 @@ import { useStorage } from '@/stores/storageStore';
 export type FilesStatus = 'idle' | 'loading' | 'scanning';
 /** Codes only (mapped to i18n keys by the UI): never file names or paths. */
 export type FileActionError = 'notFound' | 'exists' | 'invalidName' | 'permission' | 'unknown';
+/** Index-level failure the UI can show: the cached list could not be read, or a scan failed. */
+export type FilesError = 'cache' | 'scan';
 
 export type FilesState = {
   files: FileRow[];
@@ -37,6 +40,7 @@ export type FilesState = {
   progress: ScanProgressEvent | null;
   lastScanAt: number | null;
   notice: FileActionError | null;
+  error: FilesError | null;
   loadFromCache: () => void;
   refresh: (kind: 'full' | 'quick') => Promise<void>;
   toggleFavorite: (id: string) => void;
@@ -47,6 +51,7 @@ export type FilesState = {
   moveToAppFolder: (id: string) => Promise<FileActionError | null>;
   requestThumb: (file: FileRow) => void;
   clearNotice: () => void;
+  reportError: (error: FilesError) => void;
 };
 
 export type FilesStoreDeps = {
@@ -69,7 +74,17 @@ type FileOp = (provider: StorageProvider, ref: FileRef, row: FileRow, db: IndexD
 
 export function createFilesStore(deps: FilesStoreDeps) {
   return create<FilesState>()((set, get) => {
-    let inflight: Promise<void> | null = null;
+    let running: { kind: 'full' | 'quick'; promise: Promise<void> } | null = null;
+    let queuedFull: Promise<void> | null = null;
+
+    // Index writers (scans and file actions) run one at a time: a scan result listed before a
+    // rename must not be applied after it, or it would resurrect the old row and drop the new one.
+    let writerTail: Promise<unknown> = Promise.resolve();
+    function exclusive<T>(fn: () => Promise<T>): Promise<T> {
+      const run = writerTail.then(fn);
+      writerTail = run.catch(() => {});
+      return run;
+    }
 
     const reload = () => set({ files: listFiles(deps.getDb()) });
 
@@ -81,6 +96,9 @@ export function createFilesStore(deps: FilesStoreDeps) {
     const onThumb = (r: ThumbResult) => {
       try {
         const db = deps.getDb();
+        const row = getFile(db, r.id);
+        // Generated from content that a rescan has since replaced: drop the stale result.
+        if (!row || row.modifiedAt !== r.modifiedAt || row.sizeBytes !== r.sizeBytes) return;
         if (r.missing) {
           removeFile(db, r.id);
           dropRow(r.id);
@@ -121,24 +139,44 @@ export function createFilesStore(deps: FilesStoreDeps) {
           else applyScan(db, { result: outcome.result, source: provider.source });
         }
         const files = listFiles(db);
-        set({ files, lastScanAt: deps.now() });
+        set({ files, lastScanAt: deps.now(), error: null });
         if (__DEV__) {
           console.log(`[scan] ${kind} ${deps.now() - started}ms ${files.length} files`);
         }
       } catch {
         // Keep the previous list; the next foreground or pull-to-refresh retries.
+        set({ error: 'scan' });
       } finally {
         set({ status: 'idle', progress: null });
       }
     }
 
-    async function runFileOp(id: string, op: FileOp): Promise<FileActionError | null> {
+    function startScan(kind: 'full' | 'quick'): Promise<void> {
+      const provider = deps.getProvider();
+      if (!provider) return Promise.resolve();
+      set({ status: 'scanning', progress: null });
+      const promise: Promise<void> = exclusive(() => scan(provider, kind)).finally(() => {
+        if (running?.promise === promise) running = null;
+      });
+      running = { kind, promise };
+      return promise;
+    }
+
+    function runFileOp(id: string, op: FileOp): Promise<FileActionError | null> {
+      return exclusive(() => fileOp(id, op));
+    }
+
+    async function fileOp(id: string, op: FileOp): Promise<FileActionError | null> {
       const provider = deps.getProvider();
       if (!provider) return 'permission';
-      const row = get().files.find((f) => f.id === id);
-      if (!row) return 'notFound';
       try {
         const db = deps.getDb();
+        // Read inside the lock: a scan that just finished may have changed the row.
+        const row = getFile(db, id);
+        if (!row) {
+          dropRow(id);
+          return 'notFound';
+        }
         await op(provider, { uri: row.uri, parentUri: row.parentUri }, row, db);
         reload();
         return null;
@@ -163,21 +201,28 @@ export function createFilesStore(deps: FilesStoreDeps) {
       progress: null,
       lastScanAt: null,
       notice: null,
+      error: null,
 
       loadFromCache() {
-        const files = listFiles(deps.getDb());
-        set({ files, status: get().status === 'scanning' ? 'scanning' : 'idle' });
+        const status = get().status === 'scanning' ? 'scanning' : 'idle';
+        try {
+          set({ files: listFiles(deps.getDb()), status });
+        } catch {
+          set({ status, error: 'cache' });
+        }
       },
 
       refresh(kind) {
-        if (inflight) return inflight;
-        const provider = deps.getProvider();
-        if (!provider) return Promise.resolve();
-        set({ status: 'scanning', progress: null });
-        inflight = scan(provider, kind).finally(() => {
-          inflight = null;
+        if (queuedFull) return queuedFull;
+        if (!running) return startScan(kind);
+        if (kind === 'quick' || running.kind === 'full') return running.promise;
+        // A full (e.g. after a mode switch) must not be lost to a running quick: run it next.
+        const next = running.promise.then(() => {
+          queuedFull = null;
+          return startScan('full');
         });
-        return inflight;
+        queuedFull = next;
+        return next;
       },
 
       toggleFavorite(id) {
@@ -223,6 +268,10 @@ export function createFilesStore(deps: FilesStoreDeps) {
 
       clearNotice() {
         set({ notice: null });
+      },
+
+      reportError(error) {
+        set({ error, status: get().status === 'scanning' ? 'scanning' : 'idle' });
       },
     };
   });

@@ -23,7 +23,7 @@ function setup(opts: { concurrency?: number; thumb?: (uri: string) => Promise<st
 describe('thumbnailQueue', () => {
   it('generates a thumbnail and reports page count', async () => {
     const { queue, results, generateThumbnail } = setup();
-    queue.request({ id: '1', uri: 'u1' });
+    queue.request({ id: '1', uri: 'u1', modifiedAt: 1, sizeBytes: 10 });
     await flush();
     expect(generateThumbnail).toHaveBeenCalledWith('u1', 1, 200);
     expect(results).toEqual([
@@ -34,6 +34,8 @@ describe('thumbnailQueue', () => {
         isEncrypted: false,
         missing: false,
         invalid: false,
+        modifiedAt: 1,
+        sizeBytes: 10,
       },
     ]);
   });
@@ -41,7 +43,7 @@ describe('thumbnailQueue', () => {
   it('reports encrypted files without generating', async () => {
     const { queue, results, generateThumbnail, getPageCount } = setup();
     getPageCount.mockRejectedValueOnce(err('ERR_PDF_ENCRYPTED'));
-    queue.request({ id: '1', uri: 'u1' });
+    queue.request({ id: '1', uri: 'u1', modifiedAt: 1, sizeBytes: 10 });
     await flush();
     expect(generateThumbnail).not.toHaveBeenCalled();
     expect(results).toEqual([
@@ -52,6 +54,8 @@ describe('thumbnailQueue', () => {
         isEncrypted: true,
         missing: false,
         invalid: false,
+        modifiedAt: 1,
+        sizeBytes: 10,
       },
     ]);
   });
@@ -62,9 +66,9 @@ describe('thumbnailQueue', () => {
         throw err('ERR_PDF_INVALID');
       },
     });
-    queue.request({ id: '1', uri: 'u1' });
+    queue.request({ id: '1', uri: 'u1', modifiedAt: 1, sizeBytes: 10 });
     await flush();
-    queue.request({ id: '1', uri: 'u1' });
+    queue.request({ id: '1', uri: 'u1', modifiedAt: 1, sizeBytes: 10 });
     await flush();
     expect(generateThumbnail).toHaveBeenCalledTimes(1);
     expect(results).toHaveLength(1);
@@ -80,7 +84,7 @@ describe('thumbnailQueue', () => {
   it('flags missing files', async () => {
     const { queue, results, getPageCount } = setup();
     getPageCount.mockRejectedValueOnce(err('ERR_FILE_NOT_FOUND'));
-    queue.request({ id: '1', uri: 'u1' });
+    queue.request({ id: '1', uri: 'u1', modifiedAt: 1, sizeBytes: 10 });
     await flush();
     expect(results[0]).toMatchObject({ id: '1', missing: true, invalid: false, thumbPath: null });
   });
@@ -88,9 +92,9 @@ describe('thumbnailQueue', () => {
   it('gives no result and no retry on other errors', async () => {
     const { queue, results, getPageCount } = setup();
     getPageCount.mockRejectedValueOnce(err('ERR_IO'));
-    queue.request({ id: '1', uri: 'u1' });
+    queue.request({ id: '1', uri: 'u1', modifiedAt: 1, sizeBytes: 10 });
     await flush();
-    queue.request({ id: '1', uri: 'u1' });
+    queue.request({ id: '1', uri: 'u1', modifiedAt: 1, sizeBytes: 10 });
     await flush();
     expect(results).toHaveLength(0);
     expect(getPageCount).toHaveBeenCalledTimes(1);
@@ -98,9 +102,9 @@ describe('thumbnailQueue', () => {
 
   it('runs a duplicate request of a queued id once', async () => {
     const { queue, generateThumbnail } = setup({ concurrency: 1 });
-    queue.request({ id: '1', uri: 'u1' });
-    queue.request({ id: '2', uri: 'u2' });
-    queue.request({ id: '2', uri: 'u2' });
+    queue.request({ id: '1', uri: 'u1', modifiedAt: 1, sizeBytes: 10 });
+    queue.request({ id: '2', uri: 'u2', modifiedAt: 1, sizeBytes: 10 });
+    queue.request({ id: '2', uri: 'u2', modifiedAt: 1, sizeBytes: 10 });
     await flush();
     expect(generateThumbnail).toHaveBeenCalledTimes(2);
   });
@@ -124,7 +128,8 @@ describe('thumbnailQueue', () => {
         });
       },
     });
-    for (const n of [1, 2, 3, 4, 5]) queue.request({ id: `${n}`, uri: `u${n}` });
+    for (const n of [1, 2, 3, 4, 5])
+      queue.request({ id: `${n}`, uri: `u${n}`, modifiedAt: 1, sizeBytes: 10 });
     await flush();
     expect(started).toEqual(['u1', 'u2']);
     gates.shift()?.();
@@ -145,12 +150,23 @@ describe('thumbnailQueue', () => {
       concurrency: 1,
       thumb: (uri) => new Promise<string>((resolve) => gates.push(() => resolve(uri))),
     });
-    queue.request({ id: '1', uri: 'u1' });
-    queue.request({ id: '2', uri: 'u2' });
+    queue.request({ id: '1', uri: 'u1', modifiedAt: 1, sizeBytes: 10 });
+    queue.request({ id: '2', uri: 'u2', modifiedAt: 1, sizeBytes: 10 });
     await flush();
     queue.clear();
     gates[0]?.();
     await flush();
     expect(generateThumbnail).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-requests the same id once its content version changes', async () => {
+    const { queue, results, generateThumbnail } = setup();
+    queue.request({ id: '1', uri: 'u1', modifiedAt: 1, sizeBytes: 10 });
+    await flush();
+    queue.request({ id: '1', uri: 'u1', modifiedAt: 1, sizeBytes: 10 });
+    queue.request({ id: '1', uri: 'u1', modifiedAt: 2, sizeBytes: 10 });
+    await flush();
+    expect(generateThumbnail).toHaveBeenCalledTimes(2);
+    expect(results.map((r) => r.modifiedAt)).toEqual([1, 2]);
   });
 });
