@@ -108,7 +108,7 @@ class FileOps(private val context: Context, private val hasAllFilesAccess: () ->
   private fun copyThenRename(source: Uri, part: File, target: File) {
     try {
       copy(source) { FileOutputStream(part) }
-      if (!part.renameTo(target)) throw IOException("Could not rename ${part.name}")
+      if (!part.renameTo(target)) throw IoCodedException()
     } catch (e: Throwable) {
       part.delete()
       throw e
@@ -198,12 +198,28 @@ class FileOps(private val context: Context, private val hasAllFilesAccess: () ->
       ?: throw PermissionDeniedException("Could not create file")
     try {
       copy(source) { resolver.openOutputStream(created, "w") ?: throw IOException("No output stream") }
-      resolver.update(created, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+      publish(created)
     } catch (e: Throwable) {
       runCatching { resolver.delete(created, null, null) }
       throw e
     }
     return mediaStoreInfo(created)
+  }
+
+  /**
+   * Clears IS_PENDING. A pending item is hidden and auto-deleted by the system, so if it does not
+   * take effect this throws — callers then roll back instead of deleting the source.
+   */
+  private fun publish(created: Uri) {
+    val updated = resolver.update(created, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+    if (updated == 0 || isPending(created)) throw IoCodedException("Could not finish writing the file")
+  }
+
+  private fun isPending(uri: Uri): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+    return resolver.query(uri, arrayOf(MediaStore.MediaColumns.IS_PENDING), null, null, null)?.use { c ->
+      !c.moveToFirst() || c.getInt(0) != 0
+    } ?: true
   }
 
   private fun relativePathOf(uri: Uri): String? {
@@ -226,7 +242,7 @@ class FileOps(private val context: Context, private val hasAllFilesAccess: () ->
 
   private fun moveWithFileAccess(source: Uri, stat: UriStat): Map<String, Any?> {
     val dir = appFolder()
-    if (!dir.isDirectory && !dir.mkdirs()) throw PermissionDeniedException("Could not create ${dir.path}")
+    if (!dir.isDirectory && !dir.mkdirs()) throw PermissionDeniedException("Could not create the app folder")
     val sourceFile = if (source.scheme == "file") fileOf(source) else null
     if (sourceFile?.parentFile?.absolutePath == dir.absolutePath) return PdfFileInfos.ofFile(sourceFile, volumes())
     val name = FileNames.uniqueName(stat.name) { File(dir, it).exists() }
@@ -277,6 +293,10 @@ class FileOps(private val context: Context, private val hasAllFilesAccess: () ->
       throw FileNotFoundCodedException(cause = e)
     } catch (e: SecurityException) {
       throw PermissionDeniedException(cause = e)
+    } catch (e: Exception) {
+      // IOException (disk full, provider failure) and provider runtime errors, whose messages
+      // often contain paths: surface a fixed message instead.
+      throw IoCodedException(cause = e)
     }
 
   private companion object {

@@ -49,4 +49,19 @@ class FileNamesTest {
     assertFalse(FileNames.isValidName("  "))
     assertFalse(FileNames.isValidName(".."))
   }
+
+  @Test
+  fun isValidNameRejectsHiddenNames() {
+    assertFalse(FileNames.isValidName(".x.pdf"))
+    assertFalse(FileNames.isValidName(".pdf"))
+  }
+
+  @Test
+  fun isValidNameRejectsNamesOver255Utf8Bytes() {
+    assertTrue(FileNames.isValidName("a".repeat(251) + ".pdf"))
+    assertFalse(FileNames.isValidName("a".repeat(252) + ".pdf"))
+    // Devanagari letters are 3 bytes each in UTF-8: 84 × 3 = 252 + 4 = 256 bytes.
+    assertTrue(FileNames.isValidName("अ".repeat(83) + ".pdf"))
+    assertFalse(FileNames.isValidName("अ".repeat(84) + ".pdf"))
+  }
 }

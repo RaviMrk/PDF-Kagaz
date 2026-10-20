@@ -86,7 +86,12 @@ class PdfNativeModule : Module() {
     }
 
     AsyncFunction("pickFolder") Coroutine { ->
-      val treeUri = folderPicker.launch(FolderPickerInput()) ?: return@Coroutine null
+      val treeUri = try {
+        folderPicker.launch(FolderPickerInput())
+      } catch (e: SecurityException) {
+        // takePersistableUriPermission refused; its message contains the URI.
+        throw PermissionDeniedException(cause = e)
+      } ?: return@Coroutine null
       withContext(Dispatchers.IO) { pickedFolder(treeUri) }
     }
 

@@ -27,9 +27,19 @@ object FileNames {
     }
   }
 
-  /** A valid single-segment display name: non-blank, no '/', no NUL, not "." or "..". */
+  /**
+   * A valid visible single-segment display name: non-blank, no '/', no NUL, no leading '.' (hidden
+   * files are skipped by every scan) and at most [MAX_NAME_BYTES] bytes of UTF-8.
+   */
   fun isValidName(name: String): Boolean =
-    name.isNotBlank() && '/' !in name && '\u0000' !in name && name != "." && name != ".."
+    name.isNotBlank() &&
+      '/' !in name &&
+      '\u0000' !in name &&
+      !name.startsWith(".") &&
+      name.toByteArray(Charsets.UTF_8).size <= MAX_NAME_BYTES
+
+  /** File-system name limit (ext4, f2fs, FAT long names via FUSE). */
+  const val MAX_NAME_BYTES = 255
 
   private fun split(name: String): Pair<String, String> {
     val dot = name.lastIndexOf('.')

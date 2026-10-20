@@ -43,6 +43,7 @@ export const PDF_NATIVE_ERROR_CODES = [
   'ERR_INVALID_NAME',
   'ERR_PASSWORD_UNSUPPORTED',
   'ERR_NO_ACTIVITY',
+  'ERR_IO',
 ] as const;
 
 export type PdfNativeErrorCode = (typeof PDF_NATIVE_ERROR_CODES)[number];

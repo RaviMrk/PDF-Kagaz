@@ -8,7 +8,9 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import java.io.File
 import java.io.FileOutputStream
+import expo.modules.kotlin.exception.CodedException
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -21,11 +23,13 @@ import kotlinx.coroutines.withContext
 class Thumbnails(private val context: Context) {
   suspend fun pageCount(uri: String, password: String?): Int {
     if (password != null) throw PasswordUnsupportedException()
-    return withRenderer(Uri.parse(uri)) { it.pageCount }
+    return mapErrors { withRenderer(Uri.parse(uri)) { it.pageCount } }
   }
 
   /** [page] is 1-based. Returns a file:// URI of a cached JPEG. */
-  suspend fun generate(uri: String, page: Int, width: Int): String = withContext(Dispatchers.IO) {
+  suspend fun generate(uri: String, page: Int, width: Int): String = mapErrors { render(uri, page, width) }
+
+  private suspend fun render(uri: String, page: Int, width: Int): String = withContext(Dispatchers.IO) {
     val parsed = Uri.parse(uri)
     val stat = statOrThrow(parsed)
     val targetWidth = width.coerceIn(1, MAX_WIDTH)
@@ -43,12 +47,7 @@ class Thumbnails(private val context: Context) {
         try {
           bitmap.eraseColor(Color.WHITE)
           pdfPage.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-          val part = File(dir, "${target.name}.part")
-          FileOutputStream(part).use { out -> bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out) }
-          if (!part.renameTo(target)) {
-            part.delete()
-            throw IOException("Could not write thumbnail")
-          }
+          writeJpeg(bitmap, File(dir, "${target.name}.part"), target)
         } finally {
           bitmap.recycle()
         }
@@ -56,6 +55,30 @@ class Thumbnails(private val context: Context) {
     }
     Uri.fromFile(target).toString()
   }
+
+  /** JPEG via a .part file; any failure (disk full, compress refused) deletes it and throws ERR_IO. */
+  private fun writeJpeg(bitmap: Bitmap, part: File, target: File) {
+    try {
+      val written = FileOutputStream(part).use { out -> bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out) }
+      if (!written || !part.renameTo(target)) throw IoCodedException("Could not write thumbnail")
+    } catch (e: IOException) {
+      throw IoCodedException("Could not write thumbnail", e)
+    } finally {
+      if (part.exists()) part.delete()
+    }
+  }
+
+  /** Coded errors and cancellation pass through; anything else gets a fixed message (no paths) as ERR_IO. */
+  private suspend fun <T> mapErrors(block: suspend () -> T): T =
+    try {
+      block()
+    } catch (e: CodedException) {
+      throw e
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      throw IoCodedException(cause = e)
+    }
 
   private fun statOrThrow(uri: Uri): UriStat =
     try {

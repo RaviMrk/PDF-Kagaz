@@ -39,5 +39,6 @@ describe('pdfNative', () => {
     expect(isPdfNativeError(nativeError('ERR_PDF_ENCRYPTED'), 'ERR_PDF_INVALID')).toBe(false);
     expect(isPdfNativeError(nativeError('ERR_PDF_ENCRYPTED'))).toBe(true);
     expect(isPdfNativeError(new Error('x'))).toBe(false);
+    expect(isPdfNativeError(nativeError('ERR_IO'), 'ERR_IO')).toBe(true);
   });
 });

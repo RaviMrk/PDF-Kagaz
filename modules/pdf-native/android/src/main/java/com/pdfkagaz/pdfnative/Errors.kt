@@ -25,3 +25,7 @@ class PasswordUnsupportedException(message: String = "Opening password-protected
 
 class NoActivityException(message: String = "No current activity", cause: Throwable? = null) :
   CodedException("ERR_NO_ACTIVITY", message, cause)
+
+/** Disk full, provider failure or any other I/O error; never carries a file name or path. */
+class IoCodedException(message: String = "File operation failed", cause: Throwable? = null) :
+  CodedException("ERR_IO", message, cause)
