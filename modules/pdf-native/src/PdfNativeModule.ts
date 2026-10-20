@@ -2,7 +2,6 @@ import { NativeModule, requireNativeModule } from 'expo';
 
 import type {
   FolderChange,
-  FolderStamp,
   PdfFileInfo,
   PdfNativeModuleEvents,
   PickedFolder,
@@ -11,7 +10,8 @@ import type {
 
 declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
   scanPdfs(roots?: string[] | null): Promise<ScanResult>;
-  scanChangedFolders(known: FolderStamp[]): Promise<FolderChange[]>;
+  /** Known folder stamps as parallel arrays (uris[i] was stamped with modifiedAts[i]). */
+  scanChangedFolders(uris: string[], modifiedAts: number[]): Promise<FolderChange[]>;
   hasAllFilesAccess(): Promise<boolean>;
   openAllFilesAccessSettings(): Promise<void>;
   generateThumbnail(uri: string, page: number, width: number): Promise<string>;

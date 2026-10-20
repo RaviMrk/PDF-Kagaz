@@ -76,4 +76,18 @@ class ChangedFoldersTest {
     val changes = ChangedFolders().check(mapOf(notADir.path to 1L), emptyList(), toFile, mounted)
     assertEquals(emptyList<DirChange>(), changes)
   }
+
+  @Test
+  fun knownStampsPairsParallelArraysKeepingFileUrisOnly() {
+    val known = ChangedFolders.knownStamps(
+      uris = listOf("file:///s/Download/", "content://tree/x", "file:///s/Documents"),
+      modifiedAts = listOf(1000.0, 2000.0, 3000.0),
+    )
+    assertEquals(mapOf("file:///s/Download" to 1000L, "file:///s/Documents" to 3000L), known)
+  }
+
+  @Test(expected = IllegalArgumentException::class)
+  fun knownStampsRejectsMismatchedArrays() {
+    ChangedFolders.knownStamps(listOf("file:///a", "file:///b"), listOf(1.0))
+  }
 }

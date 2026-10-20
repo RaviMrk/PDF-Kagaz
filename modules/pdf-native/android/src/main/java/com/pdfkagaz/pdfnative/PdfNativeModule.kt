@@ -17,18 +17,10 @@ import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.functions.Queues
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
-import expo.modules.kotlin.records.Field
-import expo.modules.kotlin.records.Record
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-
-class FolderStamp : Record {
-  @Field val uri: String = ""
-
-  @Field val modifiedAt: Double = 0.0
-}
 
 class PdfNativeModule : Module() {
   private val context: Context
@@ -43,8 +35,10 @@ class PdfNativeModule : Module() {
       withContext(Dispatchers.IO) { scanPdfs(roots) }
     }
 
-    AsyncFunction("scanChangedFolders") Coroutine { known: List<FolderStamp> ->
-      withContext(Dispatchers.IO) { scanChangedFolders(known) }
+    // Parallel primitive arrays, not Records: expo converts Records with kotlin-reflect, which
+    // blocks the shared AsyncFunctionQueue for seconds on the first call of each process.
+    AsyncFunction("scanChangedFolders") Coroutine { uris: List<String>, modifiedAts: List<Double> ->
+      withContext(Dispatchers.IO) { scanChangedFolders(ChangedFolders.knownStamps(uris, modifiedAts)) }
     }
 
     AsyncFunction("hasAllFilesAccess") {
@@ -147,7 +141,7 @@ class PdfNativeModule : Module() {
   private fun scanFileRoot(root: String, volumes: List<Volume>, progress: ProgressThrottle): RootScan? {
     val dir = File(Uri.parse(root).path ?: return null)
     if (!dir.isDirectory || dir.listFiles() == null) return null
-    val walker = PdfWalker(onProgress = progress::update)
+    val walker = PdfWalker(onProgress = progress::update, parallelism = WALK_PARALLELISM)
     val found = walker.walk(dir).map { PdfFileInfos.ofFile(it.file, volumes) }
     return RootScan(found, walker.failedDirs.map { Volumes.uriOf(it) })
   }
@@ -155,12 +149,8 @@ class PdfNativeModule : Module() {
   private fun scanTree(root: String, progress: ProgressThrottle): RootScan =
     RootScan(SafWalker(context.contentResolver, progress::update).walk(Uri.parse(root)))
 
-  private fun scanChangedFolders(known: List<FolderStamp>): List<Map<String, Any?>> {
+  private fun scanChangedFolders(knownStamps: Map<String, Long>): List<Map<String, Any?>> {
     val volumes = Volumes.mounted(context)
-    val knownStamps = LinkedHashMap<String, Long>()
-    for (stamp in known) {
-      if (stamp.uri.startsWith("file://")) knownStamps[stamp.uri.trimEnd('/')] = stamp.modifiedAt.toLong()
-    }
     val hot = volumes.firstOrNull { it.label == null }?.let { primary ->
       ScanRules.HOT_FOLDERS.map { Volumes.uriOf(File(primary.root, it)) }
     } ?: emptyList()
@@ -260,5 +250,8 @@ class PdfNativeModule : Module() {
   private companion object {
     const val SCAN_PROGRESS_EVENT = "onScanProgress"
     const val PROGRESS_INTERVAL_MS = 200L
+
+    /** Folders listed concurrently by a full scan (readdir on shared storage is latency-bound). */
+    const val WALK_PARALLELISM = 6
   }
 }

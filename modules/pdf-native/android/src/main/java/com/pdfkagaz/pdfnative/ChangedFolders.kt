@@ -39,4 +39,19 @@ class ChangedFolders(private val walker: PdfWalker = PdfWalker()) {
     }
     return changes
   }
+
+  companion object {
+    /**
+     * Pairs the parallel arrays sent from JS (uris[i] was stamped with modifiedAts[i]) into the
+     * [check] map, keeping file:// folders only (without a trailing slash).
+     */
+    fun knownStamps(uris: List<String>, modifiedAts: List<Double>): Map<String, Long> {
+      require(uris.size == modifiedAts.size) { "uris and modifiedAts differ in length" }
+      val known = LinkedHashMap<String, Long>()
+      for (i in uris.indices) {
+        if (uris[i].startsWith("file://")) known[uris[i].trimEnd('/')] = modifiedAts[i].toLong()
+      }
+      return known
+    }
+  }
 }

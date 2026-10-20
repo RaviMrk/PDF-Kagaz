@@ -27,6 +27,22 @@ describe('pdfNative', () => {
     expect(mockedModule.scanPdfs).toHaveBeenCalledWith(['file:///x']);
   });
 
+  it('sends scanChangedFolders stamps as two primitive arrays (no per-record reflection)', async () => {
+    const changes = [{ uri: 'file:///x', exists: true, modifiedAt: 5, files: [] }];
+    mockedModule.scanChangedFolders.mockResolvedValueOnce(changes);
+
+    await expect(
+      pdfNative.scanChangedFolders([
+        { uri: 'file:///x', modifiedAt: 5 },
+        { uri: 'file:///y', modifiedAt: 7 },
+      ]),
+    ).resolves.toEqual(changes);
+    expect(mockedModule.scanChangedFolders).toHaveBeenCalledWith(
+      ['file:///x', 'file:///y'],
+      [5, 7],
+    );
+  });
+
   it('subscribes to scan progress through the module event emitter', () => {
     const cb = jest.fn();
     const sub = pdfNative.addScanProgressListener(cb);

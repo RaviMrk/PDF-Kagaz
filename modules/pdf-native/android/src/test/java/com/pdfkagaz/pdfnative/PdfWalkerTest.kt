@@ -2,6 +2,8 @@ package com.pdfkagaz.pdfnative
 
 import java.io.File
 import java.nio.file.Files
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -52,10 +54,12 @@ class PdfWalkerTest {
     val root = buildTree()
     var lastFound = -1
     var lastFolders = -1
-    PdfWalker { folders, found ->
-      lastFolders = folders
-      lastFound = found
-    }.walk(root)
+    PdfWalker(
+      onProgress = { folders, found ->
+        lastFolders = folders
+        lastFound = found
+      },
+    ).walk(root)
     assertEquals(5, lastFound)
     assertTrue(lastFolders > 0)
   }
@@ -122,5 +126,65 @@ class PdfWalkerTest {
     val walker = PdfWalker()
     walker.walk(root)
     assertEquals(emptyList<File>(), walker.failedDirs)
+  }
+
+  @Test
+  fun parallelWalkListsSiblingFoldersConcurrently() {
+    val root = tmp.newFolder("par")
+    touch(root, "A/a.pdf")
+    touch(root, "B/b.pdf")
+    // Both siblings must be inside lister() at the same time, or await() times out.
+    val barrier = CyclicBarrier(2)
+    val walker = PdfWalker(
+      lister = { dir ->
+        if (dir.name == "A" || dir.name == "B") barrier.await(5, TimeUnit.SECONDS)
+        dir.listFiles()
+      },
+      parallelism = 4,
+    )
+    assertEquals(setOf("a.pdf", "b.pdf"), walker.walk(root).map { it.file.name }.toSet())
+  }
+
+  @Test
+  fun parallelWalkMatchesSequentialWalk() {
+    val root = buildTree()
+    for (folder in 0 until 30) {
+      for (i in 0 until 5) touch(root, "bulk/f$folder/sub/file$i.pdf")
+    }
+    val sequential = PdfWalker().walk(root)
+    var lastFound = -1
+    var lastFolders = -1
+    val parallelWalker = PdfWalker(
+      onProgress = { folders, found ->
+        lastFolders = folders
+        lastFound = found
+      },
+      parallelism = 4,
+    )
+    val parallel = parallelWalker.walk(root)
+    assertEquals(sequential.map { it.file.path to it.relDir }.toSet(), parallel.map { it.file.path to it.relDir }.toSet())
+    assertEquals(sequential.size, parallel.size)
+    assertEquals(parallel.size, lastFound)
+    assertTrue(lastFolders > 60)
+    assertEquals(emptyList<File>(), parallelWalker.failedDirs)
+  }
+
+  @Test
+  fun parallelWalkReportsUnlistableSubdirs() {
+    val root = tmp.newFolder("par2")
+    touch(root, "Good/ok.pdf")
+    touch(root, "Bad/lost.pdf")
+    val bad = File(root, "Bad").canonicalFile
+    val walker = PdfWalker(lister = { dir -> if (dir.canonicalFile == bad) null else dir.listFiles() }, parallelism = 3)
+    assertEquals(listOf("ok.pdf"), walker.walk(root).map { it.file.name })
+    assertEquals(listOf(bad), walker.failedDirs.map { it.canonicalFile })
+  }
+
+  @Test(expected = IllegalStateException::class)
+  fun parallelWalkPropagatesListerFailures() {
+    val root = tmp.newFolder("par3")
+    touch(root, "X/x.pdf")
+    PdfWalker(lister = { dir -> if (dir.name == "X") throw IllegalStateException("boom") else dir.listFiles() }, parallelism = 2)
+      .walk(root)
   }
 }

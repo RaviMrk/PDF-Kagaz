@@ -61,7 +61,13 @@ export function isPdfNativeError(
 /** The only JS entry point to the pdf-native module (screens go through services, never here). */
 export const pdfNative: PdfNativeApi = {
   scanPdfs: (roots) => PdfNative.scanPdfs(roots),
-  scanChangedFolders: (known) => PdfNative.scanChangedFolders(known),
+  // Two primitive arrays instead of Record objects: expo converts Records with kotlin-reflect,
+  // which costs seconds on the first call of a process.
+  scanChangedFolders: (known) =>
+    PdfNative.scanChangedFolders(
+      known.map((k) => k.uri),
+      known.map((k) => k.modifiedAt),
+    ),
   hasAllFilesAccess: () => PdfNative.hasAllFilesAccess(),
   openAllFilesAccessSettings: () => PdfNative.openAllFilesAccessSettings(),
   generateThumbnail: (uri, page, width) => PdfNative.generateThumbnail(uri, page, width),
