@@ -13,6 +13,10 @@
     "production": {
       "autoIncrement": true,
       "android": { "buildType": "app-bundle" }
+    },
+    "production-saf": {
+      "extends": "production",
+      "env": { "APP_VARIANT": "play-saf" }
     }
   },
   "submit": { "production": {} }
