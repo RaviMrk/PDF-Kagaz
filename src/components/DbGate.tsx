@@ -1,15 +1,11 @@
-import { useMigrations } from 'drizzle-orm/expo-sqlite/migrator';
 import { useState, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
-import { db } from '@/db/client';
-import migrations from '@/db/migrations/migrations';
+import { useDatabaseReady } from '@/db/useDatabaseReady';
 import { useTheme } from '@/theme/useTheme';
 
 type MigrationState = { success: boolean; error?: Error };
-
-const useDefaultMigrations = (): MigrationState => useMigrations(db, migrations);
 
 type Props = {
   children: ReactNode;
@@ -52,7 +48,7 @@ function Gate({
   );
 }
 
-export function DbGate({ children, useMigrationsHook = useDefaultMigrations }: Props) {
+export function DbGate({ children, useMigrationsHook = useDatabaseReady }: Props) {
   const [attempt, setAttempt] = useState(0);
   return (
     <Gate

@@ -6,8 +6,7 @@ import { I18nextProvider } from 'react-i18next';
 import { DbGate } from '@/components/DbGate';
 import { initI18n } from '@/i18n';
 
-jest.mock('@/db/client', () => ({ db: {} }));
-jest.mock('@/db/migrations/migrations', () => ({}));
+jest.mock('@/db/useDatabaseReady', () => ({ useDatabaseReady: () => ({ success: false }) }));
 
 function renderGate(hook: () => { success: boolean; error?: Error }) {
   return render(

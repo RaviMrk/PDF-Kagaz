@@ -10,9 +10,11 @@ import { bookmarks, files, toolJobs, type NewFileRow } from '../schema';
 
 function makeDb() {
   const sqlite = new Database(':memory:');
-  sqlite.pragma('foreign_keys = ON');
+  // Same order as the app (src/db/bootstrap.ts): migrate with FKs off, then enable them.
+  sqlite.pragma('foreign_keys = OFF');
   const db = drizzle(sqlite);
   migrate(db, { migrationsFolder: 'src/db/migrations' });
+  sqlite.pragma('foreign_keys = ON');
   return db;
 }
 
@@ -57,6 +59,7 @@ describe('db schema', () => {
         { fileId: 'f1', page: 2, label: 'x', createdAt: 2 },
       ])
       .run();
+    expect(db.select({ n: count() }).from(bookmarks).get()?.n).toBe(2);
     db.delete(files).where(eq(files.id, 'f1')).run();
     const res = db.select({ n: count() }).from(bookmarks).get();
     expect(res?.n).toBe(0);

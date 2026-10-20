@@ -4,10 +4,8 @@ import path from 'path';
 
 import { useSettings } from '@/stores/settingsStore';
 
-jest.mock('@/db/client', () => ({ db: {} }));
-jest.mock('@/db/migrations/migrations', () => ({}));
-jest.mock('drizzle-orm/expo-sqlite/migrator', () => ({
-  useMigrations: () => ({ success: true, error: undefined }),
+jest.mock('@/db/useDatabaseReady', () => ({
+  useDatabaseReady: () => ({ success: true, error: undefined }),
 }));
 
 // Resolve the real app/ directory.
