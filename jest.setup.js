@@ -10,3 +10,13 @@ jest.mock('./modules/pdf-native', () => ({
   __esModule: true,
   default: require('./src/test-utils/fakePdfNative').createFakeNativeModule(),
 }));
+
+// @shopify/flash-list/jestSetup (2.0.2) swaps FlashList for `RecyclerView`, which the package no
+// longer exports (undefined component). FlashList v2 is the recycler itself, so only the layout
+// measurement mocks from that file are kept.
+jest.mock('@shopify/flash-list/dist/recyclerview/utils/measureLayout', () => ({
+  ...jest.requireActual('@shopify/flash-list/dist/recyclerview/utils/measureLayout'),
+  measureParentSize: jest.fn(() => ({ x: 0, y: 0, width: 400, height: 900 })),
+  measureFirstChildLayout: jest.fn(() => ({ x: 0, y: 0, width: 400, height: 900 })),
+  measureItemLayout: jest.fn(() => ({ x: 0, y: 0, width: 100, height: 100 })),
+}));

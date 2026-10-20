@@ -5,6 +5,7 @@
   "dependencies": {
     "@cantoo/pdf-lib": "^2.11.1",
     "@expo/vector-icons": "^15.0.2",
+    "@shopify/flash-list": "2.0.2",
     "babel-preset-expo": "~57.0.0",
     "drizzle-orm": "^0.45.4",
     "expo": "~57.0.30",

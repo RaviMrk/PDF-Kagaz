@@ -1,0 +1,92 @@
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { Alert } from 'react-native';
+import { I18nextProvider } from 'react-i18next';
+
+import { FileActionsSheet } from '@/components/FileActionsSheet';
+import { initI18n } from '@/i18n';
+import { useFiles } from '@/stores/filesStore';
+import { makeRow } from '@/test-utils/fileRows';
+
+const file = makeRow({ name: 'Report.pdf' });
+const remove = jest.fn(() => Promise.resolve(null));
+const rename = jest.fn((): Promise<string | null> => Promise.resolve(null));
+const onClose = jest.fn();
+
+function renderSheet(f = file) {
+  return render(
+    <I18nextProvider i18n={initI18n('en')}>
+      <FileActionsSheet file={f} onClose={onClose} />
+    </I18nextProvider>,
+  );
+}
+
+describe('FileActionsSheet', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    useFiles.setState({
+      remove: remove as never,
+      rename: rename as never,
+      toggleFavorite: jest.fn(),
+      duplicate: jest.fn(() => Promise.resolve(null)),
+      moveToAppFolder: jest.fn(() => Promise.resolve(null)),
+    });
+  });
+
+  it('asks for confirmation and only the destructive button deletes', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    await renderSheet();
+    await fireEvent.press(screen.getByLabelText('Delete'));
+    expect(alert).toHaveBeenCalledWith(
+      'Delete this PDF?',
+      '"Report.pdf" will be permanently deleted from your phone.',
+      expect.any(Array),
+    );
+    const buttons = alert.mock.calls[0]![2]!;
+    const cancel = buttons.find((b) => b.text === 'Cancel')!;
+    const del = buttons.find((b) => b.text === 'Delete')!;
+    expect(del.style).toBe('destructive');
+    await act(async () => {
+      cancel.onPress?.();
+    });
+    expect(remove).not.toHaveBeenCalled();
+    await act(async () => {
+      del.onPress?.();
+    });
+    await waitFor(() => expect(remove).toHaveBeenCalledWith(file.id));
+  });
+
+  it('rejects an invalid name without calling rename', async () => {
+    await renderSheet();
+    await fireEvent.press(screen.getByLabelText('Rename'));
+    await fireEvent.changeText(screen.getByLabelText('Rename PDF'), 'a/b');
+    await fireEvent.press(screen.getByLabelText('Save'));
+    expect(screen.getByText(/Names can't contain/)).toBeTruthy();
+    expect(rename).not.toHaveBeenCalled();
+  });
+
+  it('renames with a .pdf extension', async () => {
+    await renderSheet();
+    await fireEvent.press(screen.getByLabelText('Rename'));
+    await fireEvent.changeText(screen.getByLabelText('Rename PDF'), 'New');
+    await fireEvent.press(screen.getByLabelText('Save'));
+    await waitFor(() => expect(rename).toHaveBeenCalledWith(file.id, 'New.pdf'));
+  });
+
+  it('shows the store error when the name exists', async () => {
+    rename.mockResolvedValueOnce('exists');
+    await renderSheet();
+    await fireEvent.press(screen.getByLabelText('Rename'));
+    await fireEvent.changeText(screen.getByLabelText('Rename PDF'), 'New');
+    await fireEvent.press(screen.getByLabelText('Save'));
+    expect(await screen.findByText('A file with that name already exists')).toBeTruthy();
+  });
+
+  it('hides Move to PDFToolkit for files already there', async () => {
+    const inApp = makeRow({
+      name: 'A.pdf',
+      uri: 'file:///storage/emulated/0/Documents/PDFToolkit/A.pdf',
+    });
+    await renderSheet(inApp);
+    expect(screen.queryByLabelText('Move to PDFToolkit folder')).toBeNull();
+  });
+});

@@ -22,6 +22,12 @@ async function toLastSlide() {
   await fireEvent.press(screen.getByLabelText('Next'));
 }
 
+// Home's content depends on storage access, so assert the tab shell instead of Home's body.
+function expectOnHomeTab() {
+  expect(screen.getAllByLabelText('Files').length).toBeGreaterThan(0);
+  expect(screen.queryByLabelText('Not now')).toBeNull();
+}
+
 describe('onboarding', () => {
   beforeEach(() => {
     requestFullAccess.mockReset().mockResolvedValue(true);
@@ -60,7 +66,7 @@ describe('onboarding', () => {
     await toLastSlide();
     await fireEvent.press(screen.getByLabelText('Not now'));
     expect(useSettings.getState().onboardingDone).toBe(true);
-    expect(screen.getByRole('header', { name: 'Home' })).toBeTruthy();
+    expectOnHomeTab();
   });
 
   it('hides the grant button when full access cannot be requested', async () => {
@@ -78,7 +84,7 @@ describe('onboarding', () => {
     await fireEvent.press(screen.getByLabelText('Allow access to all files'));
     expect(requestFullAccess).toHaveBeenCalled();
     expect(useSettings.getState().onboardingDone).toBe(true);
-    expect(screen.getByRole('header', { name: 'Home' })).toBeTruthy();
+    expectOnHomeTab();
   });
 
   it('a failing folder pick shows a friendly message and stays usable', async () => {
@@ -89,6 +95,6 @@ describe('onboarding', () => {
     expect(screen.getByText("Couldn't get access. You can try again from Settings.")).toBeTruthy();
     expect(screen.queryByText(/secret/)).toBeNull();
     await fireEvent.press(screen.getByLabelText('Not now'));
-    expect(screen.getByRole('header', { name: 'Home' })).toBeTruthy();
+    expectOnHomeTab();
   });
 });

@@ -24,8 +24,7 @@ describe('app shell', () => {
     await renderApp();
     // renderRouter's getPathname helper is attached to the render promise under RNTL v14,
     // so assert the redirect landed on Home via its content instead.
-    expect(screen.getByRole('header', { name: 'Home' })).toBeTruthy();
-    expect(screen.getByText('Coming soon')).toBeTruthy();
+    expect(screen.getByRole('header', { name: 'Quick tools' })).toBeTruthy();
     expect(screen.queryByText('Theme')).toBeNull();
     for (const label of ['Home', 'Files', 'Tools', 'Settings']) {
       expect(screen.getAllByLabelText(label).length).toBeGreaterThan(0);

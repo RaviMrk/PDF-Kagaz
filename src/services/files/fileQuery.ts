@@ -22,7 +22,7 @@ export function recentFiles(files: readonly FileRow[], limit: number): FileRow[]
 }
 
 /** Group key of a file's folder; rows indexed before the parent_uri migration get a stable legacy key. */
-function folderKey(f: FileRow): string {
+export function folderKey(f: FileRow): string {
   return f.parentUri ?? `legacy:${f.folder}`;
 }
 
