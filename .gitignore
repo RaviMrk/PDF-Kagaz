@@ -44,3 +44,6 @@ example
 
 # superpowers scratch
 .superpowers/
+
+# pdf-native gradle output
+modules/pdf-native/android/build/
