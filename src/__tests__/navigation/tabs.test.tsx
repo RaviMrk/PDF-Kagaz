@@ -1,5 +1,6 @@
 import { fireEvent } from '@testing-library/react-native';
 import { renderRouter, screen } from 'expo-router/testing-library';
+import path from 'path';
 
 import { useSettings } from '@/stores/settingsStore';
 
@@ -10,7 +11,8 @@ jest.mock('drizzle-orm/expo-sqlite/migrator', () => ({
 }));
 
 // Resolve the real app/ directory.
-const renderApp = (path = '/') => renderRouter('./app', { initialUrl: path });
+const APP_DIR = path.join(__dirname, '../../../app');
+const renderApp = (url = '/') => renderRouter(APP_DIR, { initialUrl: url });
 
 describe('app shell', () => {
   beforeEach(() => {

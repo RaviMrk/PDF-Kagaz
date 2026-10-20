@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
+import { useState } from 'react';
 import { Text } from 'react-native';
 import { I18nextProvider } from 'react-i18next';
 
@@ -32,11 +33,16 @@ describe('DbGate', () => {
     expect(screen.queryByText('child content')).toBeNull();
   });
 
-  it('re-runs the migration hook when Retry is pressed', async () => {
-    const hook = jest.fn(() => ({ success: false, error: new Error('boom') }));
-    await renderGate(hook);
-    const before = hook.mock.calls.length;
+  it('remounts the gate on Retry so the migration hook runs again', async () => {
+    // Per-mount state: fails on the first mount, succeeds on any later mount.
+    let mounts = 0;
+    const useFlakyMigrations = () => {
+      const [mount] = useState(() => ++mounts);
+      return mount === 1 ? { success: false, error: new Error('boom') } : { success: true };
+    };
+    await renderGate(useFlakyMigrations);
+    expect(screen.queryByText('child content')).toBeNull();
     await fireEvent.press(screen.getByLabelText('Retry'));
-    expect(hook.mock.calls.length).toBeGreaterThan(before);
+    expect(screen.getByText('child content')).toBeTruthy();
   });
 });
