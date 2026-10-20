@@ -1,4 +1,5 @@
 import { fireEvent } from '@testing-library/react-native';
+import { TextInput } from 'react-native';
 import { renderRouter, screen } from 'expo-router/testing-library';
 import path from 'path';
 
@@ -53,5 +54,24 @@ describe('Home tab', () => {
     await renderRouter(APP_DIR, { initialUrl: '/home' });
     await fireEvent.press(screen.getByLabelText('Merge'));
     expect(screen.getByText('Coming soon')).toBeTruthy();
+  });
+});
+
+describe('Home search refocus', () => {
+  it('focuses the Files search box every time, not only the first', async () => {
+    useSettings.setState({ onboardingDone: true });
+    useStorage.setState({ mode: 'full', roots: [], canRequestFullAccess: true });
+    useFiles.setState({
+      files: [makeRow({ name: 'A.pdf' })],
+      status: 'idle',
+      requestThumb: jest.fn(),
+    });
+    await renderRouter(APP_DIR, { initialUrl: '/home' });
+    await fireEvent.press(screen.getByLabelText('Search your PDFs'));
+    // The tab stays mounted, so the same input must be focused again.
+    const focus = jest.spyOn(TextInput.State, 'focusTextInput');
+    await fireEvent.press(screen.getAllByLabelText('Home')[0]!);
+    await fireEvent.press(screen.getByLabelText('Search your PDFs'));
+    expect(focus).toHaveBeenCalledTimes(1);
   });
 });

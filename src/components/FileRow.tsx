@@ -21,12 +21,16 @@ function FileRowImpl({ file, onPress, onMore }: Props) {
   const parts = [formatBytes(file.sizeBytes), formatDate(file.modifiedAt, i18n.language)];
   if (file.pageCount != null) parts.push(t('files.pages', { count: file.pageCount }));
   const meta = parts.join(' · ');
+  const flags: string[] = [];
+  if (file.isFavorite) flags.push(t('files.favoriteMark'));
+  if (file.isEncrypted) flags.push(t('files.lockedFile'));
+  if (file.isCorrupt) flags.push(t('files.brokenFile'));
 
   return (
     <View style={styles.row}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${file.name}, ${meta}`}
+        accessibilityLabel={[file.name, meta, ...flags].join(', ')}
         onPress={() => onPress(file)}
         style={styles.main}
       >

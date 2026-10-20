@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
@@ -23,6 +23,24 @@ function inAppFolder(file: FileRow): boolean {
 }
 
 export function FileActionsSheet({ file, onClose }: Props) {
+  if (!file) return null;
+  // Keyed by file: state, pending actions and errors never carry over to another file.
+  return <Sheet key={file.id} file={file} onClose={onClose} />;
+}
+
+/** Returns a getter (not the ref) so callers can check liveness from async continuations. */
+function useIsMounted(): () => boolean {
+  const ref = useRef(true);
+  useEffect(() => {
+    ref.current = true;
+    return () => {
+      ref.current = false;
+    };
+  }, []);
+  return () => ref.current;
+}
+
+function Sheet({ file, onClose }: { file: FileRow; onClose: () => void }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const [panel, setPanel] = useState<Panel>('actions');
@@ -30,12 +48,16 @@ export function FileActionsSheet({ file, onClose }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
   const [errorKey, setErrorKey] = useState<string | null>(null);
 
-  if (!file) return null;
+  const isMounted = useIsMounted();
 
-  const close = () => {
+  const finish = () => {
     setPanel('actions');
     setErrorKey(null);
     onClose();
+  };
+  // Dismissal (backdrop, hardware back) is ignored while an action is pending.
+  const dismiss = () => {
+    if (busy === null) finish();
   };
 
   const run = async (key: string, op: () => Promise<FileActionError | null>) => {
@@ -43,9 +65,10 @@ export function FileActionsSheet({ file, onClose }: Props) {
     setBusy(key);
     setErrorKey(null);
     const error = await op();
+    if (!isMounted()) return; // The sheet moved on to another file (or closed).
     setBusy(null);
     if (error) setErrorKey(fileActionErrorKey(error));
-    else close();
+    else finish();
   };
 
   const confirmDelete = () =>
@@ -84,13 +107,13 @@ export function FileActionsSheet({ file, onClose }: Props) {
   );
 
   if (panel === 'rename') {
-    return <RenameDialog file={file} onCancel={() => setPanel('actions')} onDone={close} />;
+    return <RenameDialog file={file} onCancel={() => setPanel('actions')} onDone={finish} />;
   }
   if (panel === 'info') return <FileInfoSheet file={file} onClose={() => setPanel('actions')} />;
 
   return (
-    <Modal transparent animationType="slide" visible onRequestClose={close}>
-      <Pressable accessibilityLabel={t('files.close')} onPress={close} style={styles.backdrop} />
+    <Modal transparent animationType="slide" visible onRequestClose={dismiss}>
+      <Pressable accessibilityLabel={t('files.close')} onPress={dismiss} style={styles.backdrop} />
       <View style={[styles.sheet, { backgroundColor: colors.background }]}>
         <Text numberOfLines={2} style={[styles.title, { color: colors.text }]}>
           {file.name}
@@ -106,7 +129,7 @@ export function FileActionsSheet({ file, onClose }: Props) {
           file.isFavorite ? t('files.unfavorite') : t('files.favorite'),
           () => {
             useFiles.getState().toggleFavorite(file.id);
-            close();
+            finish();
           },
         )}
         {item('rename', 'pencil-outline', t('files.rename'), () => setPanel('rename'))}

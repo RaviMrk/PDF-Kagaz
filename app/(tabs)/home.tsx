@@ -13,6 +13,10 @@ import { recentFiles } from '@/services/files/fileQuery';
 import { useFiles } from '@/stores/filesStore';
 import { useTheme } from '@/theme/useTheme';
 
+// A fresh value per tap: the Files tab stays mounted, so a constant param would not refocus.
+let focusNonce = 0;
+const nextFocusNonce = () => `${Date.now()}-${++focusNonce}`;
+
 const keyOf = (f: FileRow) => f.id;
 const Gap = () => <View style={styles.gap} />;
 
@@ -35,7 +39,7 @@ function HomeContent() {
     >
       <SearchBar
         placeholder={t('home.searchHint')}
-        onPress={() => router.navigate({ pathname: '/files', params: { focus: 'search' } })}
+        onPress={() => router.navigate({ pathname: '/files', params: { focus: nextFocusNonce() } })}
       />
       {recent.length > 0 ? (
         <View style={styles.section}>

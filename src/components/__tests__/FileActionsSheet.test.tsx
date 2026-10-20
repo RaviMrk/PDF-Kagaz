@@ -89,4 +89,36 @@ describe('FileActionsSheet', () => {
     await renderSheet(inApp);
     expect(screen.queryByLabelText('Move to PDFToolkit folder')).toBeNull();
   });
+
+  it('ignores dismissal while an action is pending, then closes when it finishes', async () => {
+    let resolve!: (v: null) => void;
+    const duplicate = jest.fn(() => new Promise<null>((r) => (resolve = r)));
+    useFiles.setState({ duplicate: duplicate as never });
+    await renderSheet();
+    await fireEvent.press(screen.getByLabelText('Duplicate'));
+    await fireEvent.press(screen.getByLabelText('Close'));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Duplicate')).toBeTruthy();
+    await act(async () => resolve(null));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('never shows file A result on file B sheet', async () => {
+    let resolve!: (v: string) => void;
+    const duplicate = jest.fn(() => new Promise<string>((r) => (resolve = r)));
+    useFiles.setState({ duplicate: duplicate as never });
+    const other = makeRow({ name: 'Other.pdf' });
+    const ui = (f: typeof file) => (
+      <I18nextProvider i18n={initI18n('en')}>
+        <FileActionsSheet file={f} onClose={onClose} />
+      </I18nextProvider>
+    );
+    const view = await render(ui(file));
+    await fireEvent.press(screen.getByLabelText('Duplicate'));
+    await view.rerender(ui(other));
+    await act(async () => resolve('notFound'));
+    expect(screen.queryByText('This file no longer exists')).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Duplicate').props.accessibilityState.disabled).toBeFalsy();
+  });
 });

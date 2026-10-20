@@ -23,14 +23,7 @@ import {
 import { useFiles } from '@/stores/filesStore';
 import { useSettings } from '@/stores/settingsStore';
 import { useTheme } from '@/theme/useTheme';
-
-const NOTICE_KEYS = {
-  notFound: 'files.errorNotFound',
-  exists: 'files.errorExists',
-  invalidName: 'files.errorInvalidChars',
-  permission: 'files.errorPermission',
-  unknown: 'files.errorUnknown',
-} as const;
+import { fileActionErrorKey } from '@/utils/fileActionError';
 
 const SEGMENTS: { key: FileSegment; label: string }[] = [
   { key: 'all', label: 'files.segmentAll' },
@@ -111,8 +104,8 @@ function FilesList() {
           placeholder={t('files.searchPlaceholder')}
           value={search}
           onChangeText={setSearch}
-          autoFocus={focus === 'search'}
-          focusSignal={focus === 'search' ? 'search' : null}
+          autoFocus={!!focus}
+          focusSignal={focus}
         />
         <View style={styles.controls}>
           <SegmentedControl
@@ -188,7 +181,7 @@ function FilesList() {
       {notice ? (
         <View style={[styles.snackbar, { backgroundColor: colors.text }]}>
           <Text accessibilityLiveRegion="polite" style={{ color: colors.background }}>
-            {t(NOTICE_KEYS[notice])}
+            {t(fileActionErrorKey(notice))}
           </Text>
         </View>
       ) : null}

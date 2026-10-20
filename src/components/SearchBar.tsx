@@ -27,7 +27,7 @@ export function SearchBar({
   const input = useRef<TextInput>(null);
 
   useEffect(() => {
-    if (focusSignal) input.current?.focus();
+    if (focusSignal && input.current) TextInput.State.focusTextInput(input.current);
   }, [focusSignal]);
 
   const icon = <MaterialCommunityIcons name="magnify" size={24} color={colors.textMuted} />;
