@@ -18,6 +18,7 @@ import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.records.Field
 import expo.modules.kotlin.records.Record
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -66,11 +67,10 @@ class PdfNativeModule : Module() {
       val root = rootUri.trimEnd('/')
       val result = try {
         if (root.startsWith("content://")) scanTree(root, progress) else scanFileRoot(root, volumes, progress)
-      } catch (e: SecurityException) {
-        null
-      } catch (e: SafWalker.SafRootUnreadableException) {
-        null
-      } catch (e: IllegalArgumentException) {
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Throwable) {
+        // Revoked grant, provider failure, unmounted volume…: this root fails, the others still count.
         null
       }
       if (result == null) {
@@ -97,32 +97,21 @@ class PdfNativeModule : Module() {
 
   private fun scanChangedFolders(known: List<FolderStamp>): List<Map<String, Any?>> {
     val volumes = Volumes.mounted(context)
-    val knownStamps = LinkedHashMap<String, Double>()
+    val knownStamps = LinkedHashMap<String, Long>()
     for (stamp in known) {
-      if (stamp.uri.startsWith("file://")) knownStamps[stamp.uri.trimEnd('/')] = stamp.modifiedAt
+      if (stamp.uri.startsWith("file://")) knownStamps[stamp.uri.trimEnd('/')] = stamp.modifiedAt.toLong()
     }
-    val candidates = LinkedHashSet<String>(knownStamps.keys)
-    volumes.firstOrNull { it.label == null }?.let { primary ->
-      for (rel in ScanRules.HOT_FOLDERS) {
-        val dir = File(primary.root, rel)
-        if (dir.isDirectory) candidates.add(Volumes.uriOf(dir))
-      }
-    }
-    val walker = PdfWalker()
-    val changes = ArrayList<Map<String, Any?>>()
-    for (uri in candidates) {
-      val dir = File(Uri.parse(uri).path ?: continue)
-      val stamp = knownStamps[uri]
-      if (!dir.isDirectory) {
-        if (stamp != null) changes.add(folderChange(uri, false, 0L, emptyList()))
-        continue
-      }
-      val modifiedAt = dir.lastModified()
-      if (stamp != null && stamp.toLong() == modifiedAt) continue
-      val files = walker.listDir(dir).map { fileInfo(it.file, volumes) }
-      changes.add(folderChange(uri, true, modifiedAt, files))
-    }
-    return changes
+    val hot = volumes.firstOrNull { it.label == null }?.let { primary ->
+      ScanRules.HOT_FOLDERS.map { Volumes.uriOf(File(primary.root, it)) }
+    } ?: emptyList()
+    return ChangedFolders()
+      .check(
+        known = knownStamps,
+        hot = hot,
+        toFile = { uri -> Uri.parse(uri).path?.let(::File) },
+        isMounted = { dir -> Volumes.volumeOf(dir, volumes) != null },
+      )
+      .map { change -> folderChange(change.uri, change.exists, change.modifiedAt, change.pdfs.map { fileInfo(it.file, volumes) }) }
   }
 
   private fun folderChange(uri: String, exists: Boolean, modifiedAt: Long, files: List<Map<String, Any?>>) =

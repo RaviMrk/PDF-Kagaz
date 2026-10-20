@@ -3,6 +3,7 @@ package com.pdfkagaz.pdfnative
 import java.io.File
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -62,7 +63,7 @@ class PdfWalkerTest {
   @Test
   fun listDirIsNonRecursive() {
     val root = buildTree()
-    val found = PdfWalker().listDir(File(root, "Download"))
+    val found = PdfWalker().listDir(File(root, "Download"))!!
     assertEquals(setOf("a.pdf", "अहवाल.pdf", "b c#1%.PDF"), found.map { it.file.name }.toSet())
   }
 
@@ -82,5 +83,24 @@ class PdfWalkerTest {
   @Test
   fun missingRootReturnsEmpty() {
     assertEquals(emptyList<FoundPdf>(), PdfWalker().walk(File(tmp.root, "nope")))
+  }
+
+  @Test
+  fun doesNotFollowSymlinkedDirsOrFiles() {
+    val root = tmp.newFolder("scan")
+    val outside = tmp.newFolder("outside")
+    touch(outside, "o.pdf")
+    touch(root, "Download/real.pdf")
+    Files.createSymbolicLink(File(root, "Download/linkdir").toPath(), outside.toPath())
+    Files.createSymbolicLink(File(root, "Download/link.pdf").toPath(), File(outside, "o.pdf").toPath())
+    assertEquals(listOf("real.pdf"), PdfWalker().walk(root).map { it.file.name })
+    assertEquals(listOf("real.pdf"), PdfWalker().listDir(File(root, "Download"))!!.map { it.file.name })
+  }
+
+  @Test
+  fun listDirSignalsUnreadableWithNull() {
+    val notADir = touch(tmp.root, "file.pdf")
+    assertNull(PdfWalker().listDir(notADir))
+    assertNull(PdfWalker().listDir(File(tmp.root, "missing")))
   }
 }
