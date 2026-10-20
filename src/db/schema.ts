@@ -7,6 +7,7 @@ export const files = sqliteTable(
     uri: text().notNull().unique(),
     name: text().notNull(),
     folder: text().notNull(),
+    parentUri: text('parent_uri'),
     sizeBytes: integer('size_bytes').notNull(),
     modifiedAt: integer('modified_at').notNull(),
     pageCount: integer('page_count'),
@@ -19,6 +20,7 @@ export const files = sqliteTable(
   },
   (t) => [
     index('files_folder_idx').on(t.folder),
+    index('files_parent_uri_idx').on(t.parentUri),
     index('files_is_favorite_idx').on(t.isFavorite),
     index('files_last_opened_at_idx').on(t.lastOpenedAt),
   ],
@@ -42,6 +44,11 @@ export const scanRoots = sqliteTable('scan_roots', {
   uri: text().primaryKey(),
   label: text().notNull(),
   addedAt: integer('added_at').notNull(),
+});
+
+export const folderStamps = sqliteTable('folder_stamps', {
+  uri: text().primaryKey(),
+  modifiedAt: integer('modified_at').notNull(),
 });
 
 export const toolJobs = sqliteTable('tool_jobs', {
@@ -70,6 +77,7 @@ export type BookmarkRow = typeof bookmarks.$inferSelect;
 export type NewBookmarkRow = typeof bookmarks.$inferInsert;
 export type ScanRootRow = typeof scanRoots.$inferSelect;
 export type NewScanRootRow = typeof scanRoots.$inferInsert;
+export type FolderStampRow = typeof folderStamps.$inferSelect;
 export type ToolJobRow = typeof toolJobs.$inferSelect;
 export type NewToolJobRow = typeof toolJobs.$inferInsert;
 export type SignatureRow = typeof signatures.$inferSelect;
