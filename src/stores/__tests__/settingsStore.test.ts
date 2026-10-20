@@ -36,3 +36,29 @@ describe('settingsStore', () => {
     expect(createSettingsStore(kv).getState().theme).toBe('system');
   });
 });
+
+describe('settingsStore files sort', () => {
+  it('defaults to date desc', () => {
+    const s = createSettingsStore(createMemoryStore()).getState();
+    expect(s.filesSortKey).toBe('date');
+    expect(s.filesSortDir).toBe('desc');
+  });
+
+  it('persists setFilesSort', () => {
+    const kv = createMemoryStore();
+    createSettingsStore(kv).getState().setFilesSort('name', 'asc');
+    expect(kv.getString('filesSortKey')).toBe('name');
+    const reloaded = createSettingsStore(kv).getState();
+    expect(reloaded.filesSortKey).toBe('name');
+    expect(reloaded.filesSortDir).toBe('asc');
+  });
+
+  it('falls back to defaults for invalid stored values', () => {
+    const kv = createMemoryStore();
+    kv.set('filesSortKey', 'blue');
+    kv.set('filesSortDir', 'sideways');
+    const s = createSettingsStore(kv).getState();
+    expect(s.filesSortKey).toBe('date');
+    expect(s.filesSortDir).toBe('desc');
+  });
+});
