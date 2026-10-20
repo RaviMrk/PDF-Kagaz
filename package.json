@@ -3,9 +3,11 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@expo/vector-icons": "^15.0.2",
     "babel-preset-expo": "~57.0.0",
     "drizzle-orm": "^0.45.4",
     "expo": "~57.0.30",
+    "expo-asset": "~57.0.20",
     "expo-build-properties": "~57.0.22",
     "expo-constants": "~57.0.22",
     "expo-dev-client": "~57.0.20",
