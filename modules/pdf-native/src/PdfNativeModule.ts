@@ -14,7 +14,6 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
   scanChangedFolders(known: FolderStamp[]): Promise<FolderChange[]>;
   hasAllFilesAccess(): Promise<boolean>;
   openAllFilesAccessSettings(): Promise<void>;
-  // Implemented natively in Task 3 (thumbnails, file operations, folder picker).
   generateThumbnail(uri: string, page: number, width: number): Promise<string>;
   getPageCount(uri: string, password?: string | null): Promise<number>;
   renameFile(uri: string, newName: string): Promise<PdfFileInfo>;

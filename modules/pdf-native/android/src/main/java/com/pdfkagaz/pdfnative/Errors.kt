@@ -2,7 +2,7 @@ package com.pdfkagaz.pdfnative
 
 import expo.modules.kotlin.exception.CodedException
 
-class FileNotFoundException(message: String = "File not found", cause: Throwable? = null) :
+class FileNotFoundCodedException(message: String = "File not found", cause: Throwable? = null) :
   CodedException("ERR_FILE_NOT_FOUND", message, cause)
 
 class PdfEncryptedException(message: String = "PDF is password-protected", cause: Throwable? = null) :
