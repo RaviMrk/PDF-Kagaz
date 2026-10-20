@@ -60,7 +60,7 @@ function toRow(info: PdfFileInfo, source: FileRow['source']): NewFileRow {
  * thumb data when the file content (size or mtime) changed.
  * An empty native parentUri/folder (SAF rename on API 24-25) keeps the old value.
  */
-function upsertMany(db: IndexDb, infos: PdfFileInfo[], source: FileRow['source']) {
+function upsertMany(db: IndexDb, infos: PdfFileInfo[], source: FileRow['source'], promote = false) {
   const byId = new Map<string, NewFileRow>();
   for (const info of infos) byId.set(fileIdForUri(info.uri), toRow(info, source));
   const incoming = [...byId.values()];
@@ -90,7 +90,8 @@ function upsertMany(db: IndexDb, infos: PdfFileInfo[], source: FileRow['source']
       old.folder !== folder ||
       old.parentUri !== parentUri ||
       old.sizeBytes !== row.sizeBytes ||
-      old.modifiedAt !== row.modifiedAt
+      old.modifiedAt !== row.modifiedAt ||
+      (promote && old.source !== row.source)
     ) {
       updated++;
       toWrite.push(row);
@@ -112,6 +113,7 @@ function upsertMany(db: IndexDb, infos: PdfFileInfo[], source: FileRow['source']
           thumbPath: sql`CASE WHEN ${changed} THEN NULL ELSE ${files.thumbPath} END`,
           pageCount: sql`CASE WHEN ${changed} THEN NULL ELSE ${files.pageCount} END`,
           isEncrypted: sql`CASE WHEN ${changed} THEN 0 ELSE ${files.isEncrypted} END`,
+          ...(promote ? { source: sql`excluded.source` } : {}),
         },
       })
       .run();
@@ -202,7 +204,8 @@ function getRow(db: IndexDb, id: string): FileRow {
 
 export function upsertFile(db: IndexDb, info: PdfFileInfo, source: FileRow['source']): FileRow {
   return db.transaction((tx) => {
-    upsertMany(tx, [info], source);
+    // An explicit output/intent registration claims the row; scans never change source.
+    upsertMany(tx, [info], source, source === 'output' || source === 'intent');
     return getRow(tx, fileIdForUri(info.uri));
   });
 }

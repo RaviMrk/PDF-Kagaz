@@ -142,6 +142,18 @@ describe('applyScan', () => {
     expect(listFiles(db).map((r) => r.name)).toContain('f.pdf');
   });
 
+  it('keeps rows under a failed subfolder of a scanned root', () => {
+    const db = makeDb();
+    applyScan(db, scan([info('A/a.pdf'), info('B/b.pdf')]));
+    const diff = applyScan(db, scan([info('B/b.pdf')], [ROOT], [`${ROOT}/A`]));
+    expect(diff.removed).toBe(0);
+    expect(
+      listFiles(db)
+        .map((r) => r.name)
+        .sort(),
+    ).toEqual(['a.pdf', 'b.pdf']);
+  });
+
   it('does not delete non-scan sources on a scan rescan', () => {
     const db = makeDb();
     upsertFile(db, info('Out/o.pdf'), 'output');
@@ -187,6 +199,29 @@ describe('applyScan', () => {
     t = Date.now();
     expect(applyScan(db, scan(many))).toEqual({ added: 0, updated: 0, removed: 0 });
     expect(Date.now() - t).toBeLessThan(1000);
+  });
+});
+
+describe('source promotion', () => {
+  it('upsertFile with output promotes a scan row; scans never demote it', () => {
+    const db = makeDb();
+    applyScan(db, scan([info('Out/x.pdf')]));
+    const row = upsertFile(db, info('Out/x.pdf'), 'output');
+    expect(row.source).toBe('output');
+    expect(deleteBySource(db, 'scan')).toBe(0);
+    expect(listFiles(db)).toHaveLength(1);
+    applyScan(db, scan([info('Out/x.pdf', { sizeBytes: 999 })]));
+    applyFolderChanges(db, [
+      { uri: `${ROOT}/Out`, exists: true, modifiedAt: 1, files: [info('Out/x.pdf')] },
+    ]);
+    expect(listFiles(db)[0]?.source).toBe('output');
+  });
+
+  it('intent promotes scan but a scan upsert does not demote intent', () => {
+    const db = makeDb();
+    applyScan(db, scan([info('A/a.pdf')]));
+    expect(upsertFile(db, info('A/a.pdf'), 'intent').source).toBe('intent');
+    expect(upsertFile(db, info('A/a.pdf'), 'scan').source).toBe('intent');
   });
 });
 

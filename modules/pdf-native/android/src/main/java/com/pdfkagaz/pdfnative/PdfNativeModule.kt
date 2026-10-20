@@ -130,8 +130,10 @@ class PdfNativeModule : Module() {
       if (result == null) {
         failed.add(root)
       } else {
-        files.addAll(result)
+        files.addAll(result.files)
         scanned.add(root)
+        // Subfolders that could not be listed: their rows must not be treated as deleted.
+        for (uri in result.failedDirs) if (uri !in failed) failed.add(uri)
       }
       progress.endRoot()
     }
@@ -139,15 +141,19 @@ class PdfNativeModule : Module() {
     return mapOf("files" to files, "scannedRoots" to scanned, "failedRoots" to failed)
   }
 
+  private class RootScan(val files: List<Map<String, Any?>>, val failedDirs: List<String> = emptyList())
+
   /** Null when the root cannot be listed. */
-  private fun scanFileRoot(root: String, volumes: List<Volume>, progress: ProgressThrottle): List<Map<String, Any?>>? {
+  private fun scanFileRoot(root: String, volumes: List<Volume>, progress: ProgressThrottle): RootScan? {
     val dir = File(Uri.parse(root).path ?: return null)
     if (!dir.isDirectory || dir.listFiles() == null) return null
-    return PdfWalker(progress::update).walk(dir).map { PdfFileInfos.ofFile(it.file, volumes) }
+    val walker = PdfWalker(onProgress = progress::update)
+    val found = walker.walk(dir).map { PdfFileInfos.ofFile(it.file, volumes) }
+    return RootScan(found, walker.failedDirs.map { Volumes.uriOf(it) })
   }
 
-  private fun scanTree(root: String, progress: ProgressThrottle): List<Map<String, Any?>> =
-    SafWalker(context.contentResolver, progress::update).walk(Uri.parse(root))
+  private fun scanTree(root: String, progress: ProgressThrottle): RootScan =
+    RootScan(SafWalker(context.contentResolver, progress::update).walk(Uri.parse(root)))
 
   private fun scanChangedFolders(known: List<FolderStamp>): List<Map<String, Any?>> {
     val volumes = Volumes.mounted(context)

@@ -8,7 +8,7 @@ import android.provider.DocumentsContract.Document
 /**
  * Walks a SAF tree grant with [DocumentsContract] queries, applying the same [ScanRules] as
  * [PdfWalker]. Returns PdfFileInfo maps. A [SecurityException] (revoked grant) or an unreadable
- * root propagates / throws so the caller can mark the root as failed.
+ * root or folder propagates / throws so the caller can mark the root as failed.
  */
 class SafWalker(
   private val resolver: ContentResolver,
@@ -39,8 +39,9 @@ class SafWalker(
       val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, dir.docId)
       val cursor = resolver.query(childrenUri, PROJECTION, null, null, null)
       if (cursor == null) {
-        if (dir.docId == rootId) throw SafRootUnreadableException()
-        continue
+        // A subtree that cannot be listed fails the whole root: document URIs are not path
+        // prefixes of their parent, so a sub-tree cannot be reported as a failed root on its own.
+        throw SafRootUnreadableException()
       }
       scannedFolders++
       val parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, dir.docId).toString()

@@ -103,4 +103,24 @@ class PdfWalkerTest {
     assertNull(PdfWalker().listDir(notADir))
     assertNull(PdfWalker().listDir(File(tmp.root, "missing")))
   }
+
+  @Test
+  fun walkReportsUnlistableSubdirsAndKeepsScanningTheRest() {
+    val root = tmp.newFolder("scan2")
+    touch(root, "Good/ok.pdf")
+    touch(root, "Bad/lost.pdf")
+    val bad = File(root, "Bad").canonicalFile
+    val walker = PdfWalker(lister = { dir -> if (dir.canonicalFile == bad) null else dir.listFiles() })
+    val found = walker.walk(root)
+    assertEquals(listOf("ok.pdf"), found.map { it.file.name })
+    assertEquals(listOf(bad), walker.failedDirs.map { it.canonicalFile })
+  }
+
+  @Test
+  fun skippedDirsAndSymlinksAreNotReportedAsFailed() {
+    val root = buildTree()
+    val walker = PdfWalker()
+    walker.walk(root)
+    assertEquals(emptyList<File>(), walker.failedDirs)
+  }
 }
