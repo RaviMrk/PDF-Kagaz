@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "dependencies": {
     "babel-preset-expo": "~57.0.0",
+    "drizzle-orm": "^0.45.4",
     "expo": "~57.0.30",
     "expo-build-properties": "~57.0.22",
     "expo-constants": "~57.0.22",
@@ -14,6 +15,7 @@
     "expo-localization": "~57.0.2",
     "expo-router": "~57.0.28",
     "expo-splash-screen": "~57.0.10",
+    "expo-sqlite": "~57.0.4",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.4",
     "i18next": "^26.5.3",
@@ -32,8 +34,13 @@
   },
   "devDependencies": {
     "@testing-library/react-native": "^14.1.0",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/jest": "29.5.14",
+    "@types/node": "^26.6.5",
     "@types/react": "~19.2.2",
+    "babel-plugin-inline-import": "^3.0.0",
+    "better-sqlite3": "^13.0.3",
+    "drizzle-kit": "^0.31.11",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~57.0.2",
     "eslint-config-prettier": "^10.1.8",
@@ -48,6 +55,7 @@
     "test": "jest",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
     "format": "prettier --write ."
   },
   "private": true,
