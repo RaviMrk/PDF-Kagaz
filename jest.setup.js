@@ -4,3 +4,9 @@
 jest.mock('react-native-nitro-modules', () => ({
   NitroModules: {},
 }));
+
+// The pdf-native Expo module has no native side under Jest; every test sees jest.fn fakes.
+jest.mock('./modules/pdf-native', () => ({
+  __esModule: true,
+  default: require('./src/test-utils/fakePdfNative').createFakeNativeModule(),
+}));
