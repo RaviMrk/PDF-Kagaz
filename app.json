@@ -38,7 +38,8 @@
             "compileSdkVersion": 36
           }
         }
-      ]
+      ],
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true,

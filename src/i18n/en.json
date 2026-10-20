@@ -1,0 +1,21 @@
+{
+  "tabs": {
+    "home": "Home",
+    "files": "Files",
+    "tools": "Tools",
+    "settings": "Settings"
+  },
+  "placeholder": {
+    "comingSoon": "Coming soon"
+  },
+  "settings": {
+    "theme": "Theme",
+    "themeSystem": "System",
+    "themeLight": "Light",
+    "themeDark": "Dark"
+  },
+  "errors": {
+    "dbInit": "Couldn't open the app's database.",
+    "retry": "Retry"
+  }
+}
