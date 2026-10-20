@@ -3,10 +3,12 @@ import { renderRouter, screen } from 'expo-router/testing-library';
 import path from 'path';
 
 import { useSettings } from '@/stores/settingsStore';
+import { useStorage } from '@/stores/storageStore';
 
 jest.mock('@/db/useDatabaseReady', () => ({
   useDatabaseReady: () => ({ success: true, error: undefined }),
 }));
+jest.mock('@/services/files/useFileIndexLifecycle', () => ({ useFileIndexLifecycle: jest.fn() }));
 
 // Resolve the real app/ directory.
 const APP_DIR = path.join(__dirname, '../../../app');
@@ -14,7 +16,8 @@ const renderApp = (url = '/') => renderRouter(APP_DIR, { initialUrl: url });
 
 describe('app shell', () => {
   beforeEach(() => {
-    useSettings.setState({ theme: 'system' });
+    useSettings.setState({ theme: 'system', onboardingDone: true });
+    useStorage.setState({ mode: 'saf', roots: [], canRequestFullAccess: true });
   });
 
   it('lands on Home and shows the four tabs', async () => {

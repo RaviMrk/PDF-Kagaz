@@ -1,5 +1,8 @@
 import { Redirect } from 'expo-router';
 
+import { useSettings } from '@/stores/settingsStore';
+
 export default function Index() {
-  return <Redirect href="/home" />;
+  const onboardingDone = useSettings((s) => s.onboardingDone);
+  return <Redirect href={onboardingDone ? '/home' : '/onboarding'} />;
 }

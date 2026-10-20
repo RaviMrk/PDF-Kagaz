@@ -12,10 +12,36 @@
     "theme": "Theme",
     "themeSystem": "System",
     "themeLight": "Light",
-    "themeDark": "Dark"
+    "themeDark": "Dark",
+    "scannedFolders": "Scanned folders",
+    "addFolder": "Add folder",
+    "removeFolder": "Remove {{label}}",
+    "accessLost": "Access lost — add it again",
+    "noFolders": "No folders added yet"
   },
   "errors": {
     "dbInit": "Couldn't open the app's database.",
     "retry": "Retry"
+  },
+  "onboarding": {
+    "slide1Title": "All your PDFs in one place",
+    "slide1Body": "We find every PDF on your phone so you never have to dig through folders.",
+    "slide2Title": "Works offline, stays private",
+    "slide2Body": "Your files never leave your phone unless you share them.",
+    "slide3Title": "Find your PDFs",
+    "next": "Next",
+    "skip": "Skip",
+    "notNow": "Not now"
+  },
+  "storage": {
+    "explainer": "To find all your PDFs, PDF Toolkit needs access to your files. Nothing is uploaded.",
+    "grantAll": "Allow access to all files",
+    "pickFolders": "Pick folders instead",
+    "pickHint": "Choose folders like Documents or WhatsApp Documents. Android doesn't allow picking the whole Download folder.",
+    "modeFull": "All files",
+    "modeSaf": "Selected folders",
+    "modeNone": "No access",
+    "title": "Storage access",
+    "error": "Couldn't get access. You can try again from Settings."
   }
 }
