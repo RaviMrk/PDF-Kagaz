@@ -124,3 +124,42 @@ describe('groupByFolder', () => {
     expect(groupByFolder(FILES, 'wor').map((g) => g.folder)).toEqual(['Work']);
   });
 });
+
+describe('legacy rows without parentUri', () => {
+  const legacy = row({
+    id: 'L',
+    name: 'Old.pdf',
+    folder: 'Old',
+    parentUri: null,
+    modifiedAt: 7000,
+  });
+  const sameNameA = row({
+    id: 'S1',
+    name: 's1.pdf',
+    folder: 'Shared',
+    parentUri: 'file:///a/Shared',
+  });
+  const sameNameB = row({
+    id: 'S2',
+    name: 's2.pdf',
+    folder: 'Shared',
+    parentUri: 'file:///b/Shared',
+  });
+
+  it('groups them under a stable legacy key and queryFiles can open that group', () => {
+    const groups = groupByFolder([...FILES, legacy], '');
+    const g = groups.find((x) => x.folder === 'Old');
+    expect(g).toEqual({ parentUri: 'legacy:Old', folder: 'Old', count: 1, latestModifiedAt: 7000 });
+    expect(ids(queryFiles([...FILES, legacy], { ...base, parentUri: 'legacy:Old' }))).toEqual([
+      'L',
+    ]);
+  });
+
+  it('keeps same-named folders with different parents separate', () => {
+    const groups = groupByFolder([sameNameA, sameNameB], '');
+    expect(groups.map((x) => x.parentUri)).toEqual(['file:///a/Shared', 'file:///b/Shared']);
+    expect(
+      ids(queryFiles([sameNameA, sameNameB], { ...base, parentUri: 'file:///b/Shared' })),
+    ).toEqual(['S2']);
+  });
+});

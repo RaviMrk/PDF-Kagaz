@@ -7,6 +7,8 @@ export type ThumbResult = {
   pageCount: number | null;
   isEncrypted: boolean;
   missing: boolean;
+  /** Corrupt PDF (ERR_PDF_INVALID): persist it so it is not re-requested every launch. */
+  invalid: boolean;
 };
 
 type Deps = {
@@ -31,21 +33,25 @@ export function createThumbnailQueue(deps: Deps) {
     pageCount: null,
     isEncrypted: false,
     missing: false,
+    invalid: false,
   });
 
-  async function process(job: Job): Promise<void> {
+  async function generate(job: Job): Promise<ThumbResult | null> {
     try {
       const pageCount = await deps.native.getPageCount(job.uri);
       const thumbPath = await deps.native.generateThumbnail(job.uri, 1, deps.width);
-      deps.onResult({ ...empty(job.id), thumbPath, pageCount });
+      return { ...empty(job.id), thumbPath, pageCount };
     } catch (e) {
-      if (isPdfNativeError(e, 'ERR_PDF_ENCRYPTED'))
-        deps.onResult({ ...empty(job.id), isEncrypted: true });
-      else if (isPdfNativeError(e, 'ERR_PDF_INVALID')) deps.onResult(empty(job.id));
-      else if (isPdfNativeError(e, 'ERR_FILE_NOT_FOUND'))
-        deps.onResult({ ...empty(job.id), missing: true });
-      // other errors: no result, not retried this session
+      if (isPdfNativeError(e, 'ERR_PDF_ENCRYPTED')) return { ...empty(job.id), isEncrypted: true };
+      if (isPdfNativeError(e, 'ERR_PDF_INVALID')) return { ...empty(job.id), invalid: true };
+      if (isPdfNativeError(e, 'ERR_FILE_NOT_FOUND')) return { ...empty(job.id), missing: true };
+      return null; // other errors: no result, not retried this session
     }
+  }
+
+  async function process(job: Job): Promise<void> {
+    const result = await generate(job);
+    if (result) deps.onResult(result);
   }
 
   function pump(): void {

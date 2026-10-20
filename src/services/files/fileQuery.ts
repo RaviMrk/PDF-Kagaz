@@ -21,6 +21,11 @@ export function recentFiles(files: readonly FileRow[], limit: number): FileRow[]
   return opened.concat(rest).slice(0, limit);
 }
 
+/** Group key of a file's folder; rows indexed before the parent_uri migration get a stable legacy key. */
+function folderKey(f: FileRow): string {
+  return f.parentUri ?? `legacy:${f.folder}`;
+}
+
 export type FileQuery = {
   segment: Exclude<FileSegment, 'folders'>;
   sortKey: SortKey;
@@ -30,7 +35,7 @@ export type FileQuery = {
 };
 
 export function queryFiles(files: readonly FileRow[], q: FileQuery): FileRow[] {
-  let rows: FileRow[] = files.filter((f) => q.parentUri == null || f.parentUri === q.parentUri);
+  let rows: FileRow[] = files.filter((f) => q.parentUri == null || folderKey(f) === q.parentUri);
   if (q.segment === 'favorites') rows = rows.filter((f) => f.isFavorite);
   const needle = normalizeForSearch(q.search.trim());
   if (needle !== '') rows = rows.filter((f) => normalizeForSearch(f.name).includes(needle));
@@ -61,14 +66,14 @@ export function groupByFolder(files: readonly FileRow[], search: string): Folder
   const needle = normalizeForSearch(search.trim());
   const groups = new Map<string, FolderGroup>();
   for (const f of files) {
-    if (f.parentUri == null) continue;
-    const g = groups.get(f.parentUri);
+    const key = folderKey(f);
+    const g = groups.get(key);
     if (g) {
       g.count++;
       g.latestModifiedAt = Math.max(g.latestModifiedAt, f.modifiedAt);
     } else {
-      groups.set(f.parentUri, {
-        parentUri: f.parentUri,
+      groups.set(key, {
+        parentUri: key,
         folder: f.folder,
         count: 1,
         latestModifiedAt: f.modifiedAt,

@@ -27,7 +27,14 @@ describe('thumbnailQueue', () => {
     await flush();
     expect(generateThumbnail).toHaveBeenCalledWith('u1', 1, 200);
     expect(results).toEqual([
-      { id: '1', thumbPath: '/t/u1.png', pageCount: 3, isEncrypted: false, missing: false },
+      {
+        id: '1',
+        thumbPath: '/t/u1.png',
+        pageCount: 3,
+        isEncrypted: false,
+        missing: false,
+        invalid: false,
+      },
     ]);
   });
 
@@ -38,7 +45,14 @@ describe('thumbnailQueue', () => {
     await flush();
     expect(generateThumbnail).not.toHaveBeenCalled();
     expect(results).toEqual([
-      { id: '1', thumbPath: null, pageCount: null, isEncrypted: true, missing: false },
+      {
+        id: '1',
+        thumbPath: null,
+        pageCount: null,
+        isEncrypted: true,
+        missing: false,
+        invalid: false,
+      },
     ]);
   });
 
@@ -59,6 +73,7 @@ describe('thumbnailQueue', () => {
       pageCount: null,
       isEncrypted: false,
       missing: false,
+      invalid: true,
     });
   });
 
@@ -67,7 +82,7 @@ describe('thumbnailQueue', () => {
     getPageCount.mockRejectedValueOnce(err('ERR_FILE_NOT_FOUND'));
     queue.request({ id: '1', uri: 'u1' });
     await flush();
-    expect(results[0]).toMatchObject({ id: '1', missing: true, thumbPath: null });
+    expect(results[0]).toMatchObject({ id: '1', missing: true, invalid: false, thumbPath: null });
   });
 
   it('gives no result and no retry on other errors', async () => {
