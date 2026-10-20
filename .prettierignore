@@ -1,0 +1,5 @@
+android/
+.expo/
+src/db/migrations/
+node_modules/
+docs/
