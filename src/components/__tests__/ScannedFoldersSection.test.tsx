@@ -70,7 +70,7 @@ describe('ScannedFoldersSection', () => {
     addFolder.mockRejectedValue(new Error('content://secret'));
     await renderSection();
     await fireEvent.press(screen.getByLabelText('Add folder'));
-    expect(screen.getByText("Couldn't get access. You can try again from Settings.")).toBeTruthy();
+    expect(screen.getByText("Couldn't get access. Please try again.")).toBeTruthy();
     expect(screen.queryByText(/secret/)).toBeNull();
   });
 

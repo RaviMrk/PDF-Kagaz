@@ -72,7 +72,7 @@ export function ScannedFoldersSection() {
       </Pressable>
       {failed ? (
         <Text accessibilityRole="alert" style={[styles.note, { color: colors.danger }]}>
-          {t('storage.error')}
+          {t('storage.errorSettings')}
         </Text>
       ) : null}
     </View>

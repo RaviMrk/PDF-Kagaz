@@ -20,7 +20,6 @@ export default function SettingsScreen() {
   const theme = useSettings((s) => s.theme);
   const setTheme = useSettings((s) => s.setTheme);
   const mode = useStorage((s) => s.mode);
-  const roots = useStorage((s) => s.roots);
   const canRequestFullAccess = useStorage((s) => s.canRequestFullAccess);
   const [grantFailed, setGrantFailed] = useState(false);
   const grantAll = async () => {
@@ -85,10 +84,10 @@ export default function SettingsScreen() {
       ) : null}
       {grantFailed ? (
         <Text accessibilityRole="alert" style={{ color: colors.danger }}>
-          {t('storage.error')}
+          {t('storage.errorSettings')}
         </Text>
       ) : null}
-      {mode === 'saf' || (mode === 'none' && roots.length > 0) ? <ScannedFoldersSection /> : null}
+      {mode !== 'full' && mode !== 'unknown' ? <ScannedFoldersSection /> : null}
     </ScrollView>
   );
 }

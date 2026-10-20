@@ -42,6 +42,7 @@
     "modeSaf": "Selected folders",
     "modeNone": "No access",
     "title": "Storage access",
-    "error": "Couldn't get access. You can try again from Settings."
+    "error": "Couldn't get access. You can try again from Settings.",
+    "errorSettings": "Couldn't get access. Please try again."
   }
 }
