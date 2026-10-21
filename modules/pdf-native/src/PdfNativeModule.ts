@@ -5,6 +5,7 @@ import type {
   PdfFileInfo,
   PdfNativeModuleEvents,
   PickedFolder,
+  ReaderFile,
   ScanResult,
 } from './PdfNative.types';
 
@@ -16,6 +17,10 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
   openAllFilesAccessSettings(): Promise<void>;
   generateThumbnail(uri: string, page: number, width: number): Promise<string>;
   getPageCount(uri: string, password?: string | null): Promise<number>;
+  prepareReaderFile(uri: string): Promise<ReaderFile>;
+  /** 1-based page, width clamped to 1..512; serialized apart from generateThumbnail. */
+  renderReaderThumbnail(fileUri: string, page: number, width: number): Promise<string>;
+  releaseReaderDocument(): Promise<void>;
   renameFile(uri: string, newName: string): Promise<PdfFileInfo>;
   deleteFile(uri: string): Promise<void>;
   duplicateFile(uri: string, parentUri: string): Promise<PdfFileInfo>;

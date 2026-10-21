@@ -4,6 +4,7 @@ import type {
   FolderStamp,
   PdfFileInfo,
   PickedFolder,
+  ReaderFile,
   ScanProgressEvent,
   ScanResult,
 } from '../../../modules/pdf-native';
@@ -13,6 +14,7 @@ export type {
   FolderStamp,
   PdfFileInfo,
   PickedFolder,
+  ReaderFile,
   ScanProgressEvent,
   ScanResult,
 } from '../../../modules/pdf-native';
@@ -24,6 +26,12 @@ export interface PdfNativeApi {
   openAllFilesAccessSettings(): Promise<void>;
   generateThumbnail(uri: string, page: number, width: number): Promise<string>;
   getPageCount(uri: string, password?: string | null): Promise<number>;
+  /** A percent-encoded file:// URI the viewer can open: the file itself or a cache copy of a content:// source. */
+  prepareReaderFile(uri: string): Promise<ReaderFile>;
+  /** Reader page thumbnails, on a lane separate from the Files-list generateThumbnail jobs. */
+  renderReaderThumbnail(fileUri: string, page: number, width: number): Promise<string>;
+  /** Closes the document kept open for reader thumbnails. */
+  releaseReaderDocument(): Promise<void>;
   renameFile(uri: string, newName: string): Promise<PdfFileInfo>;
   deleteFile(uri: string): Promise<void>;
   duplicateFile(uri: string, parentUri: string): Promise<PdfFileInfo>;
@@ -73,6 +81,10 @@ export const pdfNative: PdfNativeApi = {
   openAllFilesAccessSettings: () => PdfNative.openAllFilesAccessSettings(),
   generateThumbnail: (uri, page, width) => PdfNative.generateThumbnail(uri, page, width),
   getPageCount: (uri, password) => PdfNative.getPageCount(uri, password),
+  prepareReaderFile: (uri) => PdfNative.prepareReaderFile(uri),
+  renderReaderThumbnail: (fileUri, page, width) =>
+    PdfNative.renderReaderThumbnail(fileUri, page, width),
+  releaseReaderDocument: () => PdfNative.releaseReaderDocument(),
   renameFile: (uri, newName) => PdfNative.renameFile(uri, newName),
   deleteFile: (uri) => PdfNative.deleteFile(uri),
   duplicateFile: (uri, parentUri) => PdfNative.duplicateFile(uri, parentUri),

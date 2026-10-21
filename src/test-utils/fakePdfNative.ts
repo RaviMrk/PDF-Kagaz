@@ -29,6 +29,15 @@ function createNativeFns(): jest.Mocked<NativeFns> {
     openAllFilesAccessSettings: jest.fn().mockResolvedValue(undefined),
     generateThumbnail: jest.fn().mockResolvedValue('file:///thumb.jpg'),
     getPageCount: jest.fn().mockResolvedValue(1),
+    prepareReaderFile: jest.fn((uri: string) =>
+      Promise.resolve({
+        uri: uri.startsWith('file://') ? uri : 'file:///data/cache/reader/copy.pdf',
+        copied: !uri.startsWith('file://'),
+        sizeBytes: 1000,
+      }),
+    ),
+    renderReaderThumbnail: jest.fn().mockResolvedValue('file:///reader-thumb.jpg'),
+    releaseReaderDocument: jest.fn().mockResolvedValue(undefined),
     renameFile: jest.fn((uri: string, newName: string) =>
       Promise.resolve(infoFromUri(uri, newName)),
     ),

@@ -43,6 +43,41 @@ describe('pdfNative', () => {
     );
   });
 
+  it('forwards prepareReaderFile to the native module and returns its file:// copy', async () => {
+    const copy = {
+      uri: 'file:///data/user/0/app/cache/reader/0123.pdf',
+      copied: true,
+      sizeBytes: 42,
+    };
+    mockedModule.prepareReaderFile.mockResolvedValueOnce(copy);
+
+    await expect(pdfNative.prepareReaderFile('content://x/1')).resolves.toEqual(copy);
+    expect(mockedModule.prepareReaderFile).toHaveBeenCalledWith('content://x/1');
+  });
+
+  it('passes an encoded file:// uri through prepareReaderFile untouched', async () => {
+    // react-native-pdf decodeURIComponent()s file:// sources, so the native encoding must survive.
+    const uri = 'file:///storage/emulated/0/Download/%E0%A4%85%2520%23%3F%20a.pdf';
+    mockedModule.prepareReaderFile.mockResolvedValueOnce({ uri, copied: false, sizeBytes: 1 });
+
+    const file = await pdfNative.prepareReaderFile(uri);
+    expect(file.uri).toBe(uri);
+    expect(decodeURIComponent(file.uri.replace(/file:\/\//i, ''))).toBe(
+      '/storage/emulated/0/Download/अ%20#? a.pdf',
+    );
+  });
+
+  it('forwards the reader thumbnail lane and document release', async () => {
+    mockedModule.renderReaderThumbnail.mockResolvedValueOnce('file:///t.jpg');
+
+    await expect(pdfNative.renderReaderThumbnail('file:///a.pdf', 3, 160)).resolves.toBe(
+      'file:///t.jpg',
+    );
+    expect(mockedModule.renderReaderThumbnail).toHaveBeenCalledWith('file:///a.pdf', 3, 160);
+    await expect(pdfNative.releaseReaderDocument()).resolves.toBeUndefined();
+    expect(mockedModule.releaseReaderDocument).toHaveBeenCalledTimes(1);
+  });
+
   it('subscribes to scan progress through the module event emitter', () => {
     const cb = jest.fn();
     const sub = pdfNative.addScanProgressListener(cb);

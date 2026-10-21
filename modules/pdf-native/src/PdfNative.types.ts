@@ -26,6 +26,12 @@ export type FolderChange = {
 
 export type ScanProgressEvent = { scannedFolders: number; found: number };
 
+/**
+ * What the reader opens. `uri` is always a percent-encoded `file://` URI (`Uri.fromFile`): the
+ * source itself (`copied: false`) or a cache copy of a `content://` source (`copied: true`).
+ */
+export type ReaderFile = { uri: string; copied: boolean; sizeBytes: number };
+
 export type PickedFolder = { uri: string; label: string };
 
 export type PdfNativeModuleEvents = {

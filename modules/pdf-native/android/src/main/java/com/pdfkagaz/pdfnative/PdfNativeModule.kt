@@ -59,6 +59,18 @@ class PdfNativeModule : Module() {
       thumbnails.pageCount(uri, password)
     }
 
+    AsyncFunction("prepareReaderFile") Coroutine { uri: String ->
+      readerFiles.prepare(uri)
+    }
+
+    AsyncFunction("renderReaderThumbnail") Coroutine { fileUri: String, page: Int, width: Int ->
+      readerThumbnails.render(fileUri, page, width)
+    }
+
+    AsyncFunction("releaseReaderDocument") Coroutine { ->
+      readerThumbnails.release()
+    }
+
     AsyncFunction("renameFile") Coroutine { uri: String, newName: String ->
       withContext(Dispatchers.IO) { fileOps.rename(uri, newName) }
     }
@@ -101,6 +113,10 @@ class PdfNativeModule : Module() {
   }
 
   private val thumbnails by lazy { Thumbnails(context) }
+
+  private val readerFiles by lazy { ReaderFiles(context) }
+
+  private val readerThumbnails by lazy { ReaderThumbnails(context) }
 
   private val fileOps by lazy { FileOps(context, ::hasAllFilesAccess) }
 
