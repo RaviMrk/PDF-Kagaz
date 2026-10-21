@@ -17,15 +17,18 @@ import kotlinx.coroutines.withContext
 class PdfIntents(private val context: Context) {
   /**
    * Stats [uri] on IO (missing → ERR_FILE_NOT_FOUND / ERR_VOLUME_UNAVAILABLE, no grant →
-   * ERR_PERMISSION_DENIED) and returns the URI other apps can read: content:// as is, file://
-   * through the provider. Our own providers and app-private files are refused ([UriGuard]).
+   * ERR_PERMISSION_DENIED) and returns the URI other apps can read: content:// (other apps'
+   * providers only) as is; reader cache copies through the provider; any other file:// PDF as a
+   * share-cache copy through the provider. Our own providers and app-private files are refused ([UriGuard]).
    */
   suspend fun shareUriOf(uri: String): Uri = RenderSupport.mapErrors {
     withContext(Dispatchers.IO) {
-      val parsed = UriGuard(context).requireAllowed(Uri.parse(uri))
-      RenderSupport.statOrThrow(context, parsed)
+      val guard = UriGuard(context)
+      val parsed = guard.requireAllowed(Uri.parse(uri))
+      val stat = RenderSupport.statOrThrow(context, parsed)
       if (parsed.scheme != "file") return@withContext parsed
-      val file = File(parsed.path ?: throw FileNotFoundCodedException())
+      val source = File(parsed.path ?: throw FileNotFoundCodedException())
+      val file = if (ShareablePaths.isInside(source.path, guard.readerDir)) source else ShareFiles(context).copyOf(source, stat)
       try {
         FileProvider.getUriForFile(context, "${context.packageName}$AUTHORITY_SUFFIX", file)
       } catch (e: IllegalArgumentException) {

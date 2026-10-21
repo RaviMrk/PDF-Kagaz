@@ -1,16 +1,14 @@
 package com.pdfkagaz.pdfnative
 
 /**
- * Which file:// paths may be handed to other apps through [PdfNativeFileProvider]. The provider's
- * root-path covers the whole filesystem (shared storage, SD cards, reader cache copies), so this
- * keeps the app's own private data out: inside [dataDir] only files under [readerDir] qualify.
- * Paths are expected canonical.
+ * Which file:// paths may be handed to other apps (copied into the share cache or printed).
+ * Inside the app's private dirs (data, device-protected data, Android/data and Android/obb on every
+ * volume) only reader cache copies under [readerDir] qualify. Paths are expected canonical.
  */
 object ShareablePaths {
-  fun isShareable(path: String, dataDir: String, readerDir: String): Boolean =
-    !isUnder(path, dataDir) || isStrictlyUnder(path, readerDir)
+  fun isShareable(path: String, privateDirs: List<String>, readerDir: String): Boolean =
+    privateDirs.none { path == it.trimEnd('/') || isInside(path, it) } || isInside(path, readerDir)
 
-  private fun isUnder(path: String, dir: String) = path == dir || isStrictlyUnder(path, dir)
-
-  private fun isStrictlyUnder(path: String, dir: String) = path.startsWith(dir.trimEnd('/') + "/")
+  /** [path] is strictly below [dir]. */
+  fun isInside(path: String, dir: String): Boolean = path.startsWith(dir.trimEnd('/') + "/")
 }

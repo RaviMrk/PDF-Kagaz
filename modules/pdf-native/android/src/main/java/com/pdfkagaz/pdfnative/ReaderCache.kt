@@ -37,12 +37,13 @@ object ReaderCache {
     keep: String,
     maxFiles: Int = MAX_FILES,
     maxBytes: Long = MAX_BYTES,
+    isCopy: (String) -> Boolean = { it.endsWith(PDF_SUFFIX) },
   ): List<String> {
     val deleted = entries.filter { it.name.endsWith(PART_SUFFIX) }.map { it.name }.toMutableList()
     var keptCount = 1
     var keptBytes = entries.firstOrNull { it.name == keep }?.sizeBytes ?: 0L
     var full = false
-    for (entry in entries.filter { it.name != keep && it.name.endsWith(PDF_SUFFIX) }.sortedByDescending { it.lastModified }) {
+    for (entry in entries.filter { it.name != keep && isCopy(it.name) }.sortedByDescending { it.lastModified }) {
       if (!full && keptCount < maxFiles && keptBytes + entry.sizeBytes <= maxBytes) {
         keptCount++
         keptBytes += entry.sizeBytes

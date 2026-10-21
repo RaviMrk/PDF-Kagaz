@@ -121,8 +121,8 @@ class PdfNativeModule : Module() {
       RenderSupport.mapErrors { withContext(Dispatchers.IO) { resolveIncomingPdf(Uri.parse(uri)) } }
     }
 
-    AsyncFunction("releaseIncomingGrant") { uri: String ->
-      releaseIncomingGrant(uri)
+    AsyncFunction("releaseIncomingGrant") Coroutine { uri: String ->
+      withContext(Dispatchers.IO) { releaseIncomingGrant(uri) }
     }
 
     lateinit var folderPicker: AppContextActivityResultLauncher<FolderPickerInput, Uri?>
@@ -138,18 +138,24 @@ class PdfNativeModule : Module() {
         // takePersistableUriPermission refused; its message contains the URI.
         throw PermissionDeniedException(cause = e)
       } ?: return@Coroutine null
-      withContext(Dispatchers.IO) { pickedFolder(treeUri) }
+      withContext(Dispatchers.IO) {
+        folderGrants.add(treeUri.toString())
+        pickedFolder(treeUri)
+      }
     }
 
-    AsyncFunction("releaseFolder") { uri: String ->
-      releaseFolder(uri)
+    AsyncFunction("releaseFolder") Coroutine { uri: String ->
+      withContext(Dispatchers.IO) { releaseFolder(uri) }
     }
 
-    AsyncFunction("getPersistedFolderUris") {
-      // Folder (tree) grants only: incoming documents also hold persisted grants.
-      context.contentResolver.persistedUriPermissions
-        .filter { it.isReadPermission && IncomingGrants.isTree(it.uri.toString()) }
-        .map { it.uri.toString() }
+    AsyncFunction("getPersistedFolderUris") Coroutine { ->
+      withContext(Dispatchers.IO) {
+        // Folder grants only: incoming documents also hold persisted grants.
+        val roots = folderGrants.roots()
+        context.contentResolver.persistedUriPermissions
+          .filter { it.isReadPermission && it.uri.toString() in roots }
+          .map { it.uri.toString() }
+      }
     }
   }
 
@@ -160,6 +166,8 @@ class PdfNativeModule : Module() {
   private val readerThumbnails by lazy { ReaderThumbnails(context) }
 
   private val intents by lazy { PdfIntents(context) }
+
+  private val folderGrants by lazy { FolderGrants(context) }
 
   private val fileOps by lazy { FileOps(context, ::hasAllFilesAccess) }
 
@@ -278,7 +286,10 @@ class PdfNativeModule : Module() {
     return mapOf("uri" to treeUri.toString(), "label" to label)
   }
 
-  private fun releaseFolder(uri: String) = releaseGrant(Uri.parse(uri))
+  private fun releaseFolder(uri: String) {
+    releaseGrant(Uri.parse(uri))
+    folderGrants.remove(uri)
+  }
 
   private fun releaseGrant(parsed: Uri) {
     val grant = context.contentResolver.persistedUriPermissions.firstOrNull { it.uri == parsed } ?: return
@@ -345,7 +356,7 @@ class PdfNativeModule : Module() {
       val file = File(uri.path ?: throw FileNotFoundCodedException())
       return PdfFileInfos.ofFile(file, Volumes.mounted(context))
     }
-    // Make room first, so taking this grant never makes the system prune a folder (tree) grant.
+    // Make room first, so taking this grant never makes the system prune a folder grant.
     trimIncomingGrants(keep = IncomingGrants.MAX_DOCUMENT_GRANTS - 1)
     try {
       // Keeps access across restarts when the sender granted a persistable permission; most do not.
@@ -358,12 +369,12 @@ class PdfNativeModule : Module() {
 
   private fun trimIncomingGrants(keep: Int) {
     val grants = context.contentResolver.persistedUriPermissions.map { PersistedGrant(it.uri.toString(), it.persistedTime) }
-    for (uri in IncomingGrants.toRelease(grants, keep)) releaseGrant(Uri.parse(uri))
+    for (uri in IncomingGrants.toRelease(grants, folderGrants.roots(), keep)) releaseGrant(Uri.parse(uri))
   }
 
-  /** Releases the persisted grant of an incoming document; folder (tree) grants are left alone. */
+  /** Releases the persisted grant of an incoming document; recorded folder grants are left alone. */
   private fun releaseIncomingGrant(uri: String) {
-    if (IncomingGrants.isTree(uri)) return
+    if (uri in folderGrants.roots()) return
     releaseGrant(Uri.parse(uri))
   }
 
