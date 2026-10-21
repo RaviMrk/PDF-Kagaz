@@ -6,24 +6,24 @@ import org.junit.Test
 
 class UriAccessTest {
   private val own = "com.pdfkagaz.pdftoolkit"
-  private val dataDir = "/data/user/0/$own"
-  private val privateDirs = listOf(dataDir, "/storage/emulated/0/Android/data/$own")
-  private val readerDir = "$dataDir/cache/reader"
+  private val ownAuthorities = setOf("$own.pdfnative.files", "$own.provider", "$own.FileSystemFileProvider")
+  private val rules = PathRules(
+    volumeRoots = listOf("/storage/emulated/0"),
+    appDirs = listOf("/storage/emulated/0/Android/data/$own"),
+    cacheDirs = listOf("/data/user/0/$own/cache/reader", "/data/user/0/$own/cache/share"),
+  )
 
-  private fun file(path: String?) = UriAccess.isAllowed("file", path, null, null, own, privateDirs, readerDir)
+  private fun file(path: String?) = UriAccess.isAllowed("file", path, null, null, own, ownAuthorities, rules)
 
   private fun content(authority: String?, authorityPackage: String?) =
-    UriAccess.isAllowed("content", null, authority, authorityPackage, own, privateDirs, readerDir)
+    UriAccess.isAllowed("content", null, authority, authorityPackage, own, ownAuthorities, rules)
 
   @Test
-  fun sharedStorageAndReaderCopiesAreAllowed() {
+  fun filesFollowTheAllowlist() {
     assertTrue(file("/storage/emulated/0/Download/a.pdf"))
-    assertTrue(file("$readerDir/0123.pdf"))
-  }
-
-  @Test
-  fun appPrivateFilesAreRefused() {
-    assertFalse(file("$dataDir/databases/app.db"))
+    assertTrue(file("/data/user/0/$own/cache/reader/0123.pdf"))
+    assertFalse(file("/data/user/0/$own/databases/app.db"))
+    assertFalse(file("/proc/self/maps"))
     assertFalse(file("/storage/emulated/0/Android/data/$own/files/x.pdf"))
     assertFalse(file(null))
   }
@@ -35,34 +35,42 @@ class UriAccessTest {
   }
 
   @Test
-  fun ownAuthorityIsRefused() {
-    assertFalse(content("$own.pdfnative.files", own))
-    assertFalse(content("$own.provider", own))
+  fun foreignAuthorityWithNullLookupIsAllowed() {
+    // Package visibility (API 30+) can hide a sender's provider; the stat then decides.
+    assertTrue(content("com.hidden.provider", null))
   }
 
   @Test
-  fun userInfoAliasIsRefused() {
-    // content://0@<pkg>.pdfnative.files/… : PackageManager misses it, ContentResolver strips "0@".
+  fun ownDeclaredAuthorityIsRefusedEvenWhenTheLookupMisses() {
+    assertFalse(content("$own.pdfnative.files", null))
+    assertFalse(content("$own.provider", null))
+    assertFalse(content("${own.uppercase()}.PDFNATIVE.FILES", null))
+  }
+
+  @Test
+  fun authorityOwnedByOurPackageIsRefused() {
+    assertFalse(content("$own.undeclared", own))
+  }
+
+  @Test
+  fun userInfoAliasPortAndEncodingAreRefused() {
+    // content://0@<pkg>.pdfnative.files/… : ContentResolver strips "0@" and reaches our provider.
     assertFalse(content("0@$own.pdfnative.files", null))
     assertFalse(content("0@com.whatsapp.provider.media", "com.whatsapp"))
-    assertFalse(content("0%40$own.pdfnative.files", "com.whatsapp"))
-  }
-
-  @Test
-  fun portIsRefused() {
+    assertFalse(content("0%40$own.pdfnative.files", null))
     assertFalse(content("com.whatsapp.provider.media:80", "com.whatsapp"))
   }
 
   @Test
-  fun unresolvedOrMissingAuthorityIsRefused() {
-    assertFalse(content("com.unknown.provider", null))
+  fun missingAuthorityIsRefused() {
     assertFalse(content(null, null))
     assertFalse(content("", "com.whatsapp"))
+    assertFalse(content(" ", null))
   }
 
   @Test
   fun otherSchemesAreRefused() {
-    assertFalse(UriAccess.isAllowed("android.resource", null, null, null, own, privateDirs, readerDir))
-    assertFalse(UriAccess.isAllowed(null, null, null, null, own, privateDirs, readerDir))
+    assertFalse(UriAccess.isAllowed("android.resource", null, null, null, own, ownAuthorities, rules))
+    assertFalse(UriAccess.isAllowed(null, null, null, null, own, ownAuthorities, rules))
   }
 }

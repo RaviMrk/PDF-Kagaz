@@ -1,13 +1,24 @@
 package com.pdfkagaz.pdfnative
 
 /**
- * Which file:// paths may be handed to other apps (copied into the share cache or printed).
- * Inside the app's private dirs (data, device-protected data, Android/data and Android/obb on every
- * volume) only reader cache copies under [readerDir] qualify. Paths are expected canonical.
+ * Canonical directories that decide which file:// paths may be read on behalf of other apps.
+ * [volumeRoots]: currently mounted storage volumes; [appDirs]: this app's Android/data and
+ * Android/obb dirs on them; [cacheDirs]: cacheDir/reader and cacheDir/share.
+ */
+data class PathRules(val volumeRoots: List<String>, val appDirs: List<String>, val cacheDirs: List<String>)
+
+/**
+ * Allowlist for file:// paths handed to other apps (shared, opened with, printed) or indexed from
+ * incoming intents: strictly inside a mounted volume (outside this app's dirs there) or inside a
+ * cache copy dir. Everything else (/proc, /data, /system, unmounted volumes…) is refused.
+ * Paths must be canonical, or the kernel's view of an opened descriptor (/proc/self/fd readlink).
  */
 object ShareablePaths {
-  fun isShareable(path: String, privateDirs: List<String>, readerDir: String): Boolean =
-    privateDirs.none { path == it.trimEnd('/') || isInside(path, it) } || isInside(path, readerDir)
+  fun isShareable(path: String, rules: PathRules): Boolean {
+    if (rules.cacheDirs.any { isInside(path, it) }) return true
+    if (rules.volumeRoots.none { isInside(path, it) }) return false
+    return rules.appDirs.none { path == it.trimEnd('/') || isInside(path, it) }
+  }
 
   /** [path] is strictly below [dir]. */
   fun isInside(path: String, dir: String): Boolean = path.startsWith(dir.trimEnd('/') + "/")

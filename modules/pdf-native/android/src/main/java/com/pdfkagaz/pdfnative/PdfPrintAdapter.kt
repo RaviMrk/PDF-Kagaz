@@ -44,7 +44,8 @@ class PdfPrintAdapter(
   ) {
     thread(name = "PdfPrintAdapter") {
       try {
-        val input = context.contentResolver.openInputStream(uri) ?: throw java.io.FileNotFoundException()
+        // file:// is re-checked on the opened descriptor; content:// goes through the resolver.
+        val input = UriGuard(context).openInput(uri)
         input.use {
           FileOutputStream(destination.fileDescriptor).use { output ->
             val buffer = ByteArray(BUFFER_BYTES)

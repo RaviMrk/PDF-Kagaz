@@ -2,8 +2,8 @@ package com.pdfkagaz.pdfnative
 
 import android.content.Context
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
@@ -41,7 +41,8 @@ class ShareFiles(private val context: Context) {
     try {
       part.deleteRecursively()
       if (!part.mkdirs()) throw IoCodedException()
-      FileInputStream(source).use { input ->
+      // Verified after opening: the descriptor must still point inside the allowlist.
+      ParcelFileDescriptor.AutoCloseInputStream(UriGuard(context).openVerified(source)).use { input ->
         FileOutputStream(File(part, name)).use { output ->
           val buffer = ByteArray(BUFFER_BYTES)
           while (true) {
