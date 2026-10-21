@@ -45,7 +45,10 @@ export function toggleReaderBookmark(
   toggle: ToggleFn = defaultToggle,
 ): { ok: true; bookmarked: boolean } | { ok: false } {
   if (!Number.isInteger(input.page) || input.page < 1) return { ok: false };
-  const page = input.pageCount !== undefined ? Math.min(input.page, input.pageCount) : input.page;
+  const page =
+    input.pageCount !== undefined && Number.isInteger(input.pageCount)
+      ? Math.min(input.page, input.pageCount)
+      : input.page;
   if (page < 1) return { ok: false };
   try {
     return { ok: true, bookmarked: toggle({ fileId: input.fileId, page }).bookmarked };

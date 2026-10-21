@@ -52,6 +52,11 @@ describe('toggleReaderBookmark', () => {
     });
     expect(toggle).not.toHaveBeenCalled();
   });
+  it('rejects a non-integer pageCount page', () => {
+    const toggle = jest.fn().mockReturnValue({ bookmarked: true });
+    toggleReaderBookmark({ fileId: 'f', page: 2, pageCount: NaN }, toggle);
+    expect(toggle).toHaveBeenCalledWith({ fileId: 'f', page: 2 });
+  });
   it('never throws (FK violation)', () => {
     const toggle = jest.fn(() => {
       throw new Error('FOREIGN KEY constraint failed');

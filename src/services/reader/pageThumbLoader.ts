@@ -23,7 +23,13 @@ export function createPageThumbLoader(deps: {
     cache.set(page, uri);
     const cbs = waiters.get(page) ?? [];
     waiters.delete(page);
-    cbs.forEach((cb) => cb(uri));
+    for (const cb of cbs) {
+      try {
+        cb(uri);
+      } catch {
+        // A throwing listener must not break the queue.
+      }
+    }
   };
 
   const pump = () => {
@@ -34,15 +40,18 @@ export function createPageThumbLoader(deps: {
     while (inFlight.size < concurrency && queue.length > 0) {
       const page = queue.pop()!; // LIFO: the newest request is the page on screen.
       inFlight.add(page);
-      native
-        .renderReaderThumbnail(fileUri, page, width)
-        .then(
-          (uri) => settle(page, uri),
-          (e) => {
-            if (isPdfNativeError(e, 'ERR_PDF_ENCRYPTED')) encrypted = true;
-            settle(page, null);
-          },
-        )
+      const onFail = (e: unknown) => {
+        if (isPdfNativeError(e, 'ERR_PDF_ENCRYPTED')) encrypted = true;
+        settle(page, null);
+      };
+      let render: Promise<string>;
+      try {
+        render = native.renderReaderThumbnail(fileUri, page, width);
+      } catch (e) {
+        render = Promise.reject(e);
+      }
+      render
+        .then((uri) => settle(page, uri), onFail)
         .finally(() => {
           inFlight.delete(page);
           pump();

@@ -58,4 +58,43 @@ describe('createLastPageSaver', () => {
     s.flush();
     expect(save).not.toHaveBeenCalled();
   });
+
+  it('never throws from timer or flush, and retries after a failed save', () => {
+    const save = jest.fn().mockImplementationOnce(() => {
+      throw new Error('row removed');
+    });
+    const s = createLastPageSaver(save);
+    s.update(4);
+    expect(() => jest.advanceTimersByTime(500)).not.toThrow();
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(() => s.flush()).not.toThrow();
+    expect(save).toHaveBeenCalledTimes(2);
+    s.flush();
+    expect(save).toHaveBeenCalledTimes(2);
+    s.update(4);
+    jest.advanceTimersByTime(500);
+    expect(save).toHaveBeenCalledTimes(2);
+  });
+
+  it('dispose flushes once, then ignores later updates', () => {
+    const save = jest.fn();
+    const s = createLastPageSaver(save);
+    s.update(7);
+    s.dispose();
+    expect(save).toHaveBeenCalledWith(7);
+    s.update(8);
+    jest.advanceTimersByTime(1000);
+    s.flush();
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it('update after cancel does not save', () => {
+    const save = jest.fn();
+    const s = createLastPageSaver(save);
+    s.cancel();
+    s.update(3);
+    jest.advanceTimersByTime(1000);
+    s.flush();
+    expect(save).not.toHaveBeenCalled();
+  });
 });

@@ -102,4 +102,42 @@ describe('createPageThumbLoader', () => {
     expect(queued).not.toHaveBeenCalled();
     expect(loader.get(2)).toBeUndefined();
   });
+
+  it('frees the slot when native throws synchronously', async () => {
+    const native = {
+      renderReaderThumbnail: jest
+        .fn()
+        .mockImplementationOnce(() => {
+          throw new Error('sync');
+        })
+        .mockResolvedValue('t2'),
+    };
+    const loader = createPageThumbLoader({
+      fileUri: 'file:///a',
+      width: 100,
+      concurrency: 1,
+      native,
+    });
+    loader.request(1, jest.fn());
+    loader.request(2, jest.fn());
+    await flush();
+    expect(loader.get(1)).toBeNull();
+    expect(loader.get(2)).toBe('t2');
+  });
+
+  it('survives a throwing onDone', async () => {
+    const native = { renderReaderThumbnail: jest.fn().mockResolvedValue('t') };
+    const loader = createPageThumbLoader({ fileUri: 'file:///a', width: 100, native });
+    const unhandled = jest.fn();
+    process.on('unhandledRejection', unhandled);
+    loader.request(1, () => {
+      throw new Error('cb');
+    });
+    const ok = jest.fn();
+    loader.request(1, ok);
+    await flush();
+    process.off('unhandledRejection', unhandled);
+    expect(ok).toHaveBeenCalledWith('t');
+    expect(unhandled).not.toHaveBeenCalled();
+  });
 });
