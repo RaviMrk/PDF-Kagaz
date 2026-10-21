@@ -1,5 +1,5 @@
 import { act, fireEvent } from '@testing-library/react-native';
-import { AppState, type AppStateStatus } from 'react-native';
+import { AccessibilityInfo, AppState, type AppStateStatus } from 'react-native';
 import { renderRouter, screen } from 'expo-router/testing-library';
 import path from 'path';
 
@@ -22,6 +22,7 @@ const ID = 'id-a.pdf';
 
 const setLastPage = jest.fn();
 const dropMissing = jest.fn();
+const markOpened = jest.fn();
 
 function useRows(rows: FileRow[]) {
   useFiles.setState({
@@ -30,6 +31,7 @@ function useRows(rows: FileRow[]) {
     requestThumb: jest.fn(),
     setLastPage,
     dropMissing,
+    markOpened,
     getRow: (id: string) => rows.find((r) => r.id === id) ?? null,
   });
 }
@@ -272,5 +274,69 @@ describe('Reader screen', () => {
     expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();
     await pageChanged(14, 200);
     expect(fakePdf.renders).toBe(1);
+  });
+
+  it('marks the file opened once, after it has loaded', async () => {
+    await renderReader();
+    expect(markOpened).not.toHaveBeenCalled();
+    await load(200);
+    await load(200);
+    expect(markOpened).toHaveBeenCalledTimes(1);
+    expect(markOpened).toHaveBeenCalledWith(ID);
+  });
+
+  it('does not mark a file opened when preparing it fails', async () => {
+    prepare.mockRejectedValueOnce(nativeError('ERR_FILE_NOT_FOUND'));
+    await renderReader();
+    expect(markOpened).not.toHaveBeenCalled();
+  });
+
+  it('does not mark a file opened when the password prompt is cancelled', async () => {
+    await renderReader();
+    await pdfError('Password required or incorrect password.');
+    await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+    expect(markOpened).not.toHaveBeenCalled();
+  });
+
+  it('times the first page from the password submit, not from mount', async () => {
+    jest.useFakeTimers({ now: 1_000 });
+    await renderReader();
+    jest.setSystemTime(5_000);
+    await pdfError('Password required or incorrect password.');
+    await fireEvent.changeText(screen.getByPlaceholderText('Password'), 'secret');
+    jest.setSystemTime(9_000);
+    await fireEvent.press(screen.getByRole('button', { name: 'Open' }));
+    jest.setSystemTime(9_300);
+    await load(4);
+    const lines = log.mock.calls.map((c) => String(c[0]));
+    expect(lines.filter((l) => l.startsWith('[reader] first page'))).toEqual([
+      '[reader] first page 300ms 4 pages',
+    ]);
+  });
+
+  it('announces a settled page change once', async () => {
+    jest.useFakeTimers();
+    const announce = jest
+      .spyOn(AccessibilityInfo, 'announceForAccessibility')
+      .mockImplementation(() => {});
+    await renderReader();
+    await load(200);
+    expect(announce).not.toHaveBeenCalled();
+    await pageChanged(13, 200);
+    await pageChanged(14, 200);
+    await pageChanged(15, 200);
+    await act(async () => {
+      jest.advanceTimersByTime(499);
+    });
+    expect(announce).not.toHaveBeenCalled();
+    await act(async () => {
+      jest.advanceTimersByTime(1);
+    });
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith('Page 15 of 200');
+    await act(async () => {
+      jest.advanceTimersByTime(2000);
+    });
+    expect(announce).toHaveBeenCalledTimes(1);
   });
 });

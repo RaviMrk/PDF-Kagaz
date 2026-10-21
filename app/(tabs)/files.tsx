@@ -91,7 +91,6 @@ function FilesList() {
   );
 
   const openFile = useCallback((f: FileRowData) => {
-    useFiles.getState().markOpened(f.id);
     router.push({ pathname: '/reader/[id]', params: { id: f.id } });
   }, []);
   const openMore = useCallback((f: FileRowData) => setActionFile(f), []);

@@ -1,8 +1,9 @@
-import { fireEvent } from '@testing-library/react-native';
+import { act, fireEvent } from '@testing-library/react-native';
 import { TextInput } from 'react-native';
 import { renderRouter, screen } from 'expo-router/testing-library';
 import path from 'path';
 
+import { fakePdf } from '@/test-utils/fakePdf';
 import { makeRow } from '@/test-utils/fileRows';
 import { useFiles } from '@/stores/filesStore';
 import { useSettings } from '@/stores/settingsStore';
@@ -48,6 +49,23 @@ describe('Home tab', () => {
     const input = screen.getByPlaceholderText('Search PDFs');
     expect(input).toBeTruthy();
     expect(input).toHaveProp('autoFocus', true);
+  });
+
+  it('opens a recent file in the reader and marks it opened only once it has loaded', async () => {
+    const markOpened = jest.fn();
+    useFiles.setState({ markOpened });
+    await renderRouter(APP_DIR, { initialUrl: '/home' });
+    await fireEvent.press(screen.getByText('Old.pdf'));
+    await act(async () => {});
+    expect(screen.getByTestId('pdf-native')).toBeTruthy();
+    expect(markOpened).not.toHaveBeenCalled();
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    await act(async () => {
+      fakePdf.lastProps().onLoadComplete(3, '/p', { width: 1, height: 1 }, []);
+    });
+    expect(markOpened).toHaveBeenCalledTimes(1);
+    expect(markOpened).toHaveBeenCalledWith('id-Old.pdf');
+    log.mockRestore();
   });
 
   it('opens the Merge placeholder', async () => {

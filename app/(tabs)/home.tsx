@@ -27,7 +27,6 @@ function HomeContent() {
   const recent = useMemo(() => recentFiles(files, 10), [files]);
 
   const openFile = useCallback((f: FileRow) => {
-    useFiles.getState().markOpened(f.id);
     router.push({ pathname: '/reader/[id]', params: { id: f.id } });
   }, []);
   const openTool = useCallback((tool: QuickTool) => router.push(tool.href), []);

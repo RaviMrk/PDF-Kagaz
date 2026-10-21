@@ -1,6 +1,13 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, StyleSheet, Text, View } from 'react-native';
+import {
+  AccessibilityInfo,
+  ActivityIndicator,
+  AppState,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { PasswordDialog } from '@/components/PasswordDialog';
@@ -30,6 +37,9 @@ const FAILURE_KEYS: Record<ReaderFailure, string> = {
   unknown: 'reader.errorUnknown',
 };
 const RETRYABLE: ReadonlySet<ReaderFailure> = new Set(['io', 'unknown', 'unavailable']);
+
+/** A page is spoken once it has stayed put this long, so fast scrolling does not flood TalkBack. */
+const ANNOUNCE_DELAY_MS = 500;
 
 const isPageOf = (page: number, pageCount: number) =>
   Number.isInteger(page) && page >= 1 && page <= pageCount;
@@ -70,9 +80,23 @@ function OpenReader({ row }: { row: FileRow }) {
   const [barsVisible, setBarsVisible] = useState(true);
   const [jumpVisible, setJumpVisible] = useState(false);
   const pdf = useRef<PdfViewHandle>(null);
-  const [mountedAt] = useState(() => Date.now());
+  // First-page timing starts at mount, or at the last password submit: typing time is not load time.
+  const loadStartedAt = useRef(0);
   const logged = useRef(false);
+  const opened = useRef(false);
+  const announceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saver = useRef<ReturnType<typeof createLastPageSaver> | null>(null);
+
+  useEffect(() => {
+    loadStartedAt.current = Date.now();
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (announceTimer.current !== null) clearTimeout(announceTimer.current);
+    },
+    [],
+  );
 
   // Created per document inside the effect: StrictMode / Fast Refresh re-run it with a live saver.
   useEffect(() => {
@@ -114,7 +138,11 @@ function OpenReader({ row }: { row: FileRow }) {
     dispatch({ type: 'loaded', pageCount });
     if (!logged.current) {
       logged.current = true;
-      console.log(`[reader] first page ${Date.now() - mountedAt}ms ${pageCount} pages`);
+      console.log(`[reader] first page ${Date.now() - loadStartedAt.current}ms ${pageCount} pages`);
+    }
+    if (!opened.current) {
+      opened.current = true;
+      useFiles.getState().markOpened(id);
     }
     if (pageCount < 1) return;
     if (pageRef.current > pageCount) {
@@ -129,6 +157,13 @@ function OpenReader({ row }: { row: FileRow }) {
     if (!isPageOf(p, pageCount)) return;
     showPage(p);
     saver.current?.update(p);
+    if (announceTimer.current !== null) clearTimeout(announceTimer.current);
+    announceTimer.current = setTimeout(() => {
+      announceTimer.current = null;
+      AccessibilityInfo.announceForAccessibility(
+        t('reader.pageAnnounce', { page: p, count: pageCount }),
+      );
+    }, ANNOUNCE_DELAY_MS);
   };
 
   const onError = (kind: PdfViewErrorKind) => dispatch({ type: 'pdfError', kind });
@@ -188,7 +223,10 @@ function OpenReader({ row }: { row: FileRow }) {
         visible={phase.kind === 'needsPassword'}
         fileName={row.name}
         wrong={phase.kind === 'needsPassword' && phase.wrong}
-        onSubmit={(password) => dispatch({ type: 'submitPassword', password })}
+        onSubmit={(password) => {
+          loadStartedAt.current = Date.now();
+          dispatch({ type: 'submitPassword', password });
+        }}
         onCancel={leave}
       />
     </View>

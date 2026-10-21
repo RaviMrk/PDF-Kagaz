@@ -5,6 +5,7 @@ import path from 'path';
 
 import { queryFiles } from '@/services/files/fileQuery';
 import { makeRow } from '@/test-utils/fileRows';
+import { fakePdf } from '@/test-utils/fakePdf';
 import { useFiles } from '@/stores/filesStore';
 import { useSettings } from '@/stores/settingsStore';
 import { useStorage } from '@/stores/storageStore';
@@ -183,10 +184,19 @@ describe('Files tab', () => {
     expect(screen.queryByText('Zebra.pdf')).toBeNull();
   });
 
-  it('opens a file in the reader and marks it opened', async () => {
+  it('opens a file in the reader and marks it opened once it has loaded', async () => {
     await renderFiles();
     await fireEvent.press(screen.getByText('Zebra.pdf'));
+    await act(async () => {});
+    expect(screen.getByTestId('pdf-native')).toBeTruthy();
+    expect(markOpened).not.toHaveBeenCalled();
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    await act(async () => {
+      fakePdf.lastProps().onLoadComplete(3, '/p', { width: 1, height: 1 }, []);
+    });
+    expect(markOpened).toHaveBeenCalledTimes(1);
     expect(markOpened).toHaveBeenCalledWith('id-Zebra.pdf');
+    jest.restoreAllMocks();
   });
 
   it('shows an index error banner with retry', async () => {

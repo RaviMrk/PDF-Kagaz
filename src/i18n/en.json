@@ -124,6 +124,7 @@
     "close": "Close",
     "pageOf": "{{page}} / {{count}}",
     "pageA11y": "Page {{page}} of {{count}}. Jump to page",
+    "pageAnnounce": "Page {{page}} of {{count}}",
     "jumpTitle": "Go to page",
     "jumpPlaceholder": "Page number",
     "jumpGo": "Go",
