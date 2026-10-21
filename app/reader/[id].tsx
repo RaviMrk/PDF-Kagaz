@@ -130,6 +130,9 @@ function OpenReader({ row }: { row: FileRow }) {
   const [menuVisible, setMenuVisible] = useState(false);
   const [outline, setOutline] = useState<OutlineRow[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
+  // Share / print / open-with may copy a large file first; one at a time, shown while it runs.
+  const [actionBusy, setActionBusy] = useState(false);
+  const busyRef = useRef(false);
   const readerTheme = useSettings((s) => s.readerTheme);
   const keepAwake = useSettings((s) => s.readerKeepAwake);
   const horizontal = useSettings((s) => s.readerHorizontal);
@@ -147,7 +150,8 @@ function OpenReader({ row }: { row: FileRow }) {
     loadStartedAt.current = Date.now();
   }, []);
 
-  useReaderKeepAwake(keepAwake);
+  // Only while the document shows: not on the password, error or loading screens.
+  useReaderKeepAwake(keepAwake && phase.kind === 'ready');
 
   useEffect(() => {
     if (!notice) return;
@@ -237,6 +241,7 @@ function OpenReader({ row }: { row: FileRow }) {
 
   const runAction = async (action: ReaderAction) => {
     setMenuVisible(false);
+    if (busyRef.current) return;
     // Printing re-opens the file natively without the password (until M7).
     if (action === 'print' && phase.kind === 'ready' && phase.password !== '') {
       setNotice('reader.printProtected');
@@ -248,7 +253,16 @@ function OpenReader({ row }: { row: FileRow }) {
         : action === 'openWith'
           ? t('reader.openWithTitle')
           : printTitle(row.name);
-    const result = await runReaderAction(action, { uri: row.uri, title });
+    busyRef.current = true;
+    setActionBusy(true);
+    setNotice(null);
+    let result: ReaderActionResult;
+    try {
+      result = await runReaderAction(action, { uri: row.uri, title });
+    } finally {
+      busyRef.current = false;
+      setActionBusy(false);
+    }
     if (result === 'ok') return;
     if (result === 'notFound') useFiles.getState().dropMissing(id);
     setNotice(ACTION_FAILURE_KEYS[result]);
@@ -277,6 +291,8 @@ function OpenReader({ row }: { row: FileRow }) {
           collapsable={false}
           style={{
             flex: 1,
+            // The page starts below the top bar while it shows, instead of under it.
+            paddingTop: barsVisible ? insets.top + TOP_BAR_HEIGHT : 0,
             filter: readerFilter(readerTheme),
             backgroundColor: readerBackground(readerTheme),
           }}
@@ -328,6 +344,15 @@ function OpenReader({ row }: { row: FileRow }) {
       {barsVisible && ready ? (
         <ReaderBottomBar page={page} pageCount={pageCount} onPressPage={() => setJumpVisible(true)}>
           <BarButton
+            label={t('reader.nightMode')}
+            icon="weather-night"
+            color={readerTheme === 'night' ? colors.primary : colors.text}
+            selected={readerTheme === 'night'}
+            onPress={() =>
+              useSettings.getState().setReaderTheme(readerTheme === 'night' ? 'normal' : 'night')
+            }
+          />
+          <BarButton
             label={t('reader.thumbnails')}
             icon="view-carousel-outline"
             color={thumbsVisible ? colors.primary : colors.text}
@@ -346,15 +371,16 @@ function OpenReader({ row }: { row: FileRow }) {
           />
         </View>
       ) : null}
-      {notice ? (
+      {actionBusy || notice ? (
         <View
           style={[
             styles.snackbar,
             { backgroundColor: colors.text, bottom: BOTTOM_BAR_HEIGHT + 16 + insets.bottom },
           ]}
         >
+          {actionBusy ? <ActivityIndicator size="small" color={colors.background} /> : null}
           <Text accessibilityLiveRegion="polite" style={{ color: colors.background }}>
-            {t(notice)}
+            {actionBusy ? t('reader.preparing') : t(notice ?? '')}
           </Text>
         </View>
       ) : null}
@@ -371,6 +397,7 @@ function OpenReader({ row }: { row: FileRow }) {
         theme={readerTheme}
         keepAwake={keepAwake}
         horizontal={horizontal}
+        actionBusy={actionBusy}
         onTheme={(theme) => useSettings.getState().setReaderTheme(theme)}
         onKeepAwake={(on) => useSettings.getState().setReaderKeepAwake(on)}
         onHorizontal={(on) => useSettings.getState().setReaderHorizontal(on)}
@@ -424,11 +451,22 @@ function BarButton({ label, icon, color, selected, onPress }: BarButtonProps) {
 
 /** ReaderBottomBar's minimum height (without the bottom inset). */
 const BOTTOM_BAR_HEIGHT = 56;
+/** ReaderTopBar's minimum height (without the top inset). */
+const TOP_BAR_HEIGHT = 56;
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
   iconButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   thumbs: { position: 'absolute', left: 0, right: 0 },
-  snackbar: { position: 'absolute', left: 16, right: 16, padding: 12, borderRadius: 8 },
+  snackbar: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    padding: 12,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
 });

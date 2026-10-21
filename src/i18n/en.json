@@ -154,6 +154,7 @@
     "themeNormal": "Normal",
     "themeNight": "Night",
     "themeSepia": "Sepia",
+    "nightMode": "Night mode",
     "keepAwake": "Keep screen on",
     "horizontal": "Swipe pages sideways",
     "share": "Share",
@@ -161,6 +162,7 @@
     "openWith": "Open with…",
     "shareTitle": "Share PDF",
     "openWithTitle": "Open with",
+    "preparing": "Preparing…",
     "printProtected": "Password-protected PDFs can't be printed yet",
     "actionFailed": "Couldn't complete that. Try again."
   },

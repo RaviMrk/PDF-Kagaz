@@ -256,6 +256,65 @@ describe('Reader screen features', () => {
       expect(deactivateKeepAwake).toHaveBeenCalledWith('reader');
     });
 
+    it('keeps the screen on only once the document shows, not on password or error screens', async () => {
+      useSettings.setState({ readerKeepAwake: true });
+      await renderReader();
+      await act(async () => {
+        fakePdf.lastProps().onError(new Error('Password required or incorrect password.'));
+      });
+      expect(screen.getByPlaceholderText('Password')).toBeTruthy();
+      expect(activateKeepAwakeAsync).not.toHaveBeenCalled();
+      await fireEvent.changeText(screen.getByPlaceholderText('Password'), 'secret');
+      await press('Open');
+      expect(activateKeepAwakeAsync).not.toHaveBeenCalled();
+      await load(3);
+      expect(activateKeepAwakeAsync).toHaveBeenCalledWith('reader');
+    });
+
+    it('does not keep the screen on for a document that fails to open', async () => {
+      useSettings.setState({ readerKeepAwake: true });
+      await renderReader();
+      await act(async () => {
+        fakePdf.lastProps().onError(new Error('damaged'));
+      });
+      expect(screen.getByText("This PDF is damaged or isn't a PDF")).toBeTruthy();
+      expect(activateKeepAwakeAsync).not.toHaveBeenCalled();
+    });
+
+    it('toggles night mode from the bottom bar', async () => {
+      await renderReader();
+      await load(200);
+      const renders = fakePdf.renders;
+      const night = () => screen.getByRole('button', { name: 'Night mode' });
+      expect(night()).not.toBeSelected();
+      await press('Night mode');
+      expect(useSettings.getState().readerTheme).toBe('night');
+      expect(viewerFilter()).toEqual(NIGHT_FILTER);
+      expect(night()).toBeSelected();
+      await press('Night mode');
+      expect(useSettings.getState().readerTheme).toBe('normal');
+      expect(viewerFilter()).toBeUndefined();
+      // From sepia, the toggle turns night on.
+      useSettings.setState({ readerTheme: 'sepia' });
+      await act(async () => {});
+      await press('Night mode');
+      expect(useSettings.getState().readerTheme).toBe('night');
+      expect(fakePdf.renders).toBe(renders);
+    });
+
+    it('starts the page below the top bar while the bars show', async () => {
+      await renderReader();
+      await load(200);
+      const top = () =>
+        StyleSheet.flatten(screen.getByTestId('reader-viewer').props.style).paddingTop;
+      expect(top()).toBe(56);
+      await act(async () => {
+        fakePdf.lastProps().onPageSingleTap(1);
+      });
+      expect(screen.queryByRole('button', { name: 'More options' })).toBeNull();
+      expect(top()).toBe(0);
+    });
+
     it('releases the screen in the background and keeps it on again when back', async () => {
       const handlers: ((s: AppStateStatus) => void)[] = [];
       jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, handler) => {
@@ -299,6 +358,30 @@ describe('Reader screen features', () => {
       await press('More options');
       await press('Print');
       expect(pdfNative.printPdf).toHaveBeenCalledWith(ROW_URI, 'a');
+    });
+
+    it('shows that a share is being prepared and blocks file actions until it is done', async () => {
+      let finish!: () => void;
+      jest.spyOn(pdfNative, 'sharePdf').mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+      );
+      await renderReader();
+      await load(200);
+      await press('More options');
+      await press('Share');
+      expect(screen.getByText('Preparing…')).toBeTruthy();
+      await press('More options');
+      for (const name of ['Share', 'Print', 'Open with…']) {
+        expect(screen.getByRole('button', { name })).toBeDisabled();
+      }
+      await fireEvent.press(screen.getByRole('button', { name: 'Print' }));
+      expect(pdfNative.printPdf).not.toHaveBeenCalled();
+      await act(async () => finish());
+      expect(screen.queryByText('Preparing…')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Share' })).toBeEnabled();
+      expect(pdfNative.sharePdf).toHaveBeenCalledTimes(1);
     });
 
     it('drops the row when sharing finds the file missing', async () => {

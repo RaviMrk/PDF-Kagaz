@@ -1,5 +1,14 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -12,6 +21,8 @@ type Props = {
   theme: ReaderTheme;
   keepAwake: boolean;
   horizontal: boolean;
+  /** A file action is running: the actions are disabled and "Preparing…" shows. */
+  actionBusy?: boolean;
   onTheme(t: ReaderTheme): void;
   onKeepAwake(on: boolean): void;
   onHorizontal(on: boolean): void;
@@ -39,6 +50,7 @@ export function ReaderMenu({
   theme,
   keepAwake,
   horizontal,
+  actionBusy = false,
   onTheme,
   onKeepAwake,
   onHorizontal,
@@ -104,13 +116,26 @@ export function ReaderMenu({
           {toggleRow(t('reader.keepAwake'), keepAwake, onKeepAwake)}
           {toggleRow(t('reader.horizontal'), horizontal, onHorizontal)}
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          {actionBusy ? (
+            <View style={styles.row}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text
+                accessibilityLiveRegion="polite"
+                style={[styles.rowText, { color: colors.textMuted }]}
+              >
+                {t('reader.preparing')}
+              </Text>
+            </View>
+          ) : null}
           {ACTIONS.map(([action, label, icon]) => (
             <Pressable
               key={action}
               accessibilityRole="button"
               accessibilityLabel={t(label)}
+              accessibilityState={{ disabled: actionBusy }}
+              disabled={actionBusy}
               onPress={() => onAction(action)}
-              style={styles.row}
+              style={[styles.row, actionBusy && styles.disabled]}
             >
               <MaterialCommunityIcons name={icon} size={24} color={colors.text} />
               <Text style={[styles.rowText, { color: colors.text }]}>{t(label)}</Text>
@@ -134,5 +159,6 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: '600', marginBottom: 8 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 48 },
   rowText: { flex: 1, fontSize: 16 },
+  disabled: { opacity: 0.4 },
   divider: { height: StyleSheet.hairlineWidth, marginVertical: 8 },
 });
