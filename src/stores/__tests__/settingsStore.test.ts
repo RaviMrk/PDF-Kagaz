@@ -62,3 +62,33 @@ describe('settingsStore files sort', () => {
     expect(s.filesSortDir).toBe('desc');
   });
 });
+
+describe('settingsStore reader prefs', () => {
+  it('has defaults', () => {
+    const s = createSettingsStore(createMemoryStore()).getState();
+    expect(s.readerTheme).toBe('normal');
+    expect(s.readerKeepAwake).toBe(false);
+    expect(s.readerHorizontal).toBe(false);
+  });
+
+  it('persists the setters to the key-value store and reloads them', () => {
+    const kv = createMemoryStore();
+    const store = createSettingsStore(kv);
+    store.getState().setReaderTheme('sepia');
+    store.getState().setReaderKeepAwake(true);
+    store.getState().setReaderHorizontal(true);
+    expect(kv.getString('readerTheme')).toBe('sepia');
+    expect(kv.getBoolean('readerKeepAwake')).toBe(true);
+    expect(kv.getBoolean('readerHorizontal')).toBe(true);
+    const reloaded = createSettingsStore(kv).getState();
+    expect(reloaded.readerTheme).toBe('sepia');
+    expect(reloaded.readerKeepAwake).toBe(true);
+    expect(reloaded.readerHorizontal).toBe(true);
+  });
+
+  it('treats an unknown stored reader theme as normal', () => {
+    const kv = createMemoryStore();
+    kv.set('readerTheme', 'purple');
+    expect(createSettingsStore(kv).getState().readerTheme).toBe('normal');
+  });
+});

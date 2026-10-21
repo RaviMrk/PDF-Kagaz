@@ -25,6 +25,7 @@ import {
   removeScanRoot,
   replaceFile,
   setFavorite,
+  setLastPage,
   updateThumb,
   upsertFile,
 } from '../fileIndexRepo';
@@ -634,5 +635,14 @@ describe('app-folder output rows are adopted by scans (one row per moved file)',
     );
     expect(getFile(db2, media.id)).toBeDefined();
     expect(listFiles(db2)).toHaveLength(2);
+  });
+});
+
+describe('setLastPage', () => {
+  it('stores the last page', () => {
+    const db = makeDb();
+    const id = upsertFile(db, info('A/a.pdf'), 'scan').id;
+    setLastPage(db, id, 57);
+    expect(getFile(db, id)?.lastPage).toBe(57);
   });
 });

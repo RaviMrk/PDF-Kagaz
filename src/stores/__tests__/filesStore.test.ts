@@ -744,3 +744,100 @@ describe('filesStore: final review fixes', () => {
     expect(store.getState().notice).toBe('unknown');
   });
 });
+
+describe('filesStore: reader actions', () => {
+  const WA = 'content://com.whatsapp.provider/x/1';
+  const content = (uri = WA): PdfFileInfo => ({
+    uri,
+    name: 'invoice.pdf',
+    folder: '',
+    parentUri: '',
+    parentModifiedAt: 0,
+    sizeBytes: 10,
+    modifiedAt: 20,
+  });
+
+  it('setLastPage updates the state row and the DB', () => {
+    const { store, db } = setup({ seed: [info('A/a.pdf')] });
+    store.getState().loadFromCache();
+    store.getState().setLastPage(idOf('A/a.pdf'), 12);
+    expect(store.getState().files[0]?.lastPage).toBe(12);
+    expect(getFile(db, idOf('A/a.pdf'))?.lastPage).toBe(12);
+  });
+
+  it('setLastPage does not throw when the DB fails', () => {
+    const { store, breakDb } = setup({ seed: [info('A/a.pdf')] });
+    store.getState().loadFromCache();
+    breakDb();
+    expect(() => store.getState().setLastPage(idOf('A/a.pdf'), 3)).not.toThrow();
+    expect(store.getState().files[0]?.lastPage).not.toBe(3);
+  });
+
+  it('getRow reads state, then the DB, else null', () => {
+    const { store } = setup({ seed: [info('A/a.pdf')] });
+    expect(store.getState().files).toEqual([]);
+    expect(store.getState().getRow(idOf('A/a.pdf'))?.name).toBe('a.pdf');
+    expect(store.getState().getRow('nope')).toBeNull();
+  });
+
+  it('dropMissing removes the row, sets the notice and keeps others', () => {
+    const { store, db } = setup({ seed: [info('A/a.pdf'), info('A/b.pdf')] });
+    store.getState().loadFromCache();
+    store.getState().dropMissing(idOf('A/a.pdf'));
+    expect(store.getState().files.map((f) => f.name)).toEqual(['b.pdf']);
+    expect(getFile(db, idOf('A/a.pdf'))).toBeUndefined();
+    expect(store.getState().notice).toBe('notFound');
+  });
+
+  it('dropMissing releases the grant only for intent rows', () => {
+    const { store, native } = setup({ seed: [info('A/a.pdf')] });
+    store.getState().loadFromCache();
+    const row = store.getState().registerIncoming(content());
+    store.getState().dropMissing(idOf('A/a.pdf'));
+    expect(native.releaseIncomingGrant).not.toHaveBeenCalled();
+    store.getState().dropMissing(row!.id);
+    expect(native.releaseIncomingGrant).toHaveBeenCalledWith(WA);
+  });
+
+  it('release failures are ignored', () => {
+    const { store, native } = setup();
+    native.releaseIncomingGrant.mockRejectedValue(new Error('x'));
+    const row = store.getState().registerIncoming(content());
+    expect(() => store.getState().dropMissing(row!.id)).not.toThrow();
+  });
+
+  it('remove of an intent row releases its grant', async () => {
+    const { store, native } = setup();
+    const row = store.getState().registerIncoming(content());
+    expect(await store.getState().remove(row!.id)).toBeNull();
+    expect(native.releaseIncomingGrant).toHaveBeenCalledWith(WA);
+  });
+
+  it('registerIncoming inserts an intent row, marks it opened, and is idempotent', () => {
+    const { store } = setup();
+    const row = store.getState().registerIncoming(content());
+    expect(row).toMatchObject({
+      id: fileIdForUri(WA),
+      source: 'intent',
+      lastOpenedAt: 1_000_000,
+      folder: '',
+    });
+    store.getState().registerIncoming(content());
+    expect(store.getState().files).toHaveLength(1);
+    expect(store.getState().files[0]?.source).toBe('intent');
+  });
+
+  it('registerIncoming keeps an existing scan row and its source', () => {
+    const { store } = setup({ seed: [info('A/a.pdf')] });
+    const row = store.getState().registerIncoming(info('A/a.pdf'));
+    expect(row?.source).toBe('scan');
+    expect(row?.lastOpenedAt).toBe(1_000_000);
+    expect(store.getState().files).toHaveLength(1);
+  });
+
+  it('registerIncoming returns null when the DB fails', () => {
+    const { store, breakDb } = setup();
+    breakDb();
+    expect(store.getState().registerIncoming(content())).toBeNull();
+  });
+});

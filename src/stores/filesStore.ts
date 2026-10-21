@@ -14,6 +14,7 @@ import {
   removeFile,
   replaceFile,
   setFavorite,
+  setLastPage as setLastPageInDb,
   updateThumb,
   upsertFile,
   type IndexDb,
@@ -22,12 +23,14 @@ import {
 import {
   isPdfNativeError,
   pdfNative,
+  type PdfFileInfo,
   type PdfNativeApi,
   type ScanProgressEvent,
 } from '@/services/native/pdfNative';
 import type { FileRef, StorageProvider } from '@/services/storage/StorageProvider';
 import { createThumbnailQueue, type ThumbResult } from '@/services/thumbnails/thumbnailQueue';
 import { useStorage } from '@/stores/storageStore';
+import { fileIdForUri } from '@/utils/fileId';
 
 export type FilesStatus = 'idle' | 'loading' | 'scanning';
 /** Codes only (mapped to i18n keys by the UI): never file names or paths. */
@@ -51,6 +54,16 @@ export type FilesState = {
   remove: (id: string) => Promise<FileActionError | null>;
   duplicate: (id: string) => Promise<FileActionError | null>;
   moveToAppFolder: (id: string) => Promise<FileActionError | null>;
+  /** The row from state, else from the DB (e.g. a reader opened before the list loaded). */
+  getRow: (id: string) => FileRow | null;
+  setLastPage: (id: string, page: number) => void;
+  /**
+   * Drops a row whose file is gone. Callers pass only an id whose open failed with a confirmed
+   * ERR_FILE_NOT_FOUND; ERR_VOLUME_UNAVAILABLE, ERR_IO and ERR_PERMISSION_DENIED keep the row.
+   */
+  dropMissing: (id: string) => void;
+  /** Registers a PDF handed to the app (share/open-with): reuses an indexed row, else adds an 'intent' row. */
+  registerIncoming: (info: PdfFileInfo) => FileRow | null;
   requestThumb: (file: FileRow) => void;
   /** The stored thumbnail file could not be loaded (cache cleared): regenerate it once. */
   thumbMissing: (id: string) => void;
@@ -61,7 +74,7 @@ export type FilesState = {
 export type FilesStoreDeps = {
   getDb: () => IndexDb;
   getProvider: () => StorageProvider | null;
-  native: Pick<PdfNativeApi, 'generateThumbnail' | 'getPageCount'>;
+  native: Pick<PdfNativeApi, 'generateThumbnail' | 'getPageCount' | 'releaseIncomingGrant'>;
   thumbWidth: number;
   now: () => number;
   /**
@@ -110,10 +123,21 @@ export function createFilesStore(deps: FilesStoreDeps) {
 
     const dropRow = (id: string) => set({ files: get().files.filter((f) => f.id !== id) });
 
+    /** Best-effort: persisted incoming grants must not accumulate once their row is gone. */
+    const releaseGrant = (row: Pick<FileRow, 'source' | 'uri'>) => {
+      if (row.source !== 'intent') return;
+      try {
+        deps.native.releaseIncomingGrant(row.uri).catch(() => {});
+      } catch {
+        // Ignored: nothing to do if the grant is already gone.
+      }
+    };
+
     /** Writes a batch of thumbnail results in one transaction and publishes them in one update. */
     const applyThumbs = (results: ThumbResult[]) => {
       const patches = new Map<string, Partial<FileRow>>();
       const removed = new Set<string>();
+      const removedIntent: FileRow[] = [];
       try {
         deps.getDb().transaction((tx) => {
           for (const r of results) {
@@ -123,6 +147,7 @@ export function createFilesStore(deps: FilesStoreDeps) {
             if (r.missing) {
               removeFile(tx, r.id);
               removed.add(r.id);
+              removedIntent.push(row);
               continue;
             }
             const patch = {
@@ -139,6 +164,7 @@ export function createFilesStore(deps: FilesStoreDeps) {
         // DB unavailable: the thumbnails are regenerated on a later launch.
         return;
       }
+      removedIntent.forEach(releaseGrant);
       if (patches.size === 0 && removed.size === 0) return;
       const files = get()
         .files.filter((f) => !removed.has(f.id))
@@ -231,10 +257,11 @@ export function createFilesStore(deps: FilesStoreDeps) {
     async function fileOp(id: string, op: FileOp): Promise<FileActionError | null> {
       const provider = deps.getProvider();
       if (!provider) return 'permission';
+      let row: FileRow | undefined;
       try {
         const db = deps.getDb();
         // Read inside the lock: a scan that just finished may have changed the row.
-        const row = getFile(db, id);
+        row = getFile(db, id);
         if (!row) {
           dropRow(id);
           return 'notFound';
@@ -248,6 +275,7 @@ export function createFilesStore(deps: FilesStoreDeps) {
           // Deleted outside the app between the scan and this action.
           try {
             removeFile(deps.getDb(), id);
+            if (row) releaseGrant(row);
           } catch {
             // The next scan removes it.
           }
@@ -312,15 +340,74 @@ export function createFilesStore(deps: FilesStoreDeps) {
         patchRow(id, { lastOpenedAt: at });
       },
 
+      // Reader actions below are synchronous: each DB write is one statement/transaction and the
+      // scan applies its result and re-lists in one synchronous block, so none can interleave
+      // with a scan or file action (those only yield at awaits) and none of them is overwritten
+      // by a stale scan result. Like the actions above they never throw.
+      getRow(id) {
+        const row = get().files.find((f) => f.id === id);
+        if (row) return row;
+        try {
+          return getFile(deps.getDb(), id) ?? null;
+        } catch {
+          return null;
+        }
+      },
+
+      setLastPage(id, page) {
+        try {
+          setLastPageInDb(deps.getDb(), id, page);
+        } catch {
+          return; // Losing a resume position is not worth a notice.
+        }
+        patchRow(id, { lastPage: page });
+      },
+
+      dropMissing(id) {
+        let row: FileRow | undefined;
+        try {
+          const db = deps.getDb();
+          row = getFile(db, id);
+          removeFile(db, id);
+        } catch {
+          // The next scan removes it; the list still drops it for now.
+        }
+        if (row) releaseGrant(row);
+        dropRow(id);
+        set({ notice: 'notFound' });
+      },
+
+      registerIncoming(info) {
+        const id = fileIdForUri(info.uri);
+        let row: FileRow | undefined;
+        try {
+          const db = deps.getDb();
+          row = getFile(db, id) ?? upsertFile(db, info, 'intent');
+          markOpenedInDb(db, id, deps.now());
+          row = getFile(db, id) ?? row;
+        } catch {
+          return null;
+        }
+        const fresh = row;
+        const list = get().files;
+        set({
+          files: list.some((f) => f.id === id)
+            ? list.map((f) => (f.id === id ? fresh : f))
+            : [...list, fresh],
+        });
+        return fresh;
+      },
+
       rename: (id, newName) =>
         runFileOp(id, async (provider, ref, row, db) => {
           replaceFile(db, id, await provider.rename(ref, newName), row.source);
         }),
 
       remove: (id) =>
-        runFileOp(id, async (provider, ref, _row, db) => {
+        runFileOp(id, async (provider, ref, row, db) => {
           await provider.remove(ref);
           removeFile(db, id);
+          releaseGrant(row);
         }),
 
       duplicate: (id) =>

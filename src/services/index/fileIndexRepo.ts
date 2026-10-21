@@ -427,6 +427,10 @@ export function markOpened(db: IndexDb, id: string, at: number): void {
   db.update(files).set({ lastOpenedAt: at }).where(eq(files.id, id)).run();
 }
 
+export function setLastPage(db: IndexDb, id: string, page: number): void {
+  db.update(files).set({ lastPage: page }).where(eq(files.id, id)).run();
+}
+
 export function updateThumb(
   db: IndexDb,
   id: string,
