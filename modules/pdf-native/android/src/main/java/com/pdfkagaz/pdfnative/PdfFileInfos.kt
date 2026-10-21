@@ -16,7 +16,8 @@ data class SafLocation(val parentUri: String, val folder: String, val parentModi
 
 /** Builds PdfFileInfo maps (see PdfNative.types.ts) for file://, SAF document and MediaStore URIs. */
 object PdfFileInfos {
-  fun ofFile(file: File, volumes: List<Volume>): Map<String, Any?> {
+  /** [parentModifiedAt] lets a scan stat each folder once instead of once per file. */
+  fun ofFile(file: File, volumes: List<Volume>, parentModifiedAt: (File) -> Long = { it.lastModified() }): Map<String, Any?> {
     val parent = file.parentFile ?: file
     val volume = Volumes.volumeOf(parent, volumes)
     val folder = if (volume == null) {
@@ -24,7 +25,7 @@ object PdfFileInfos {
     } else {
       ScanRules.displayFolder(Volumes.relativeTo(volume, parent), volume.label)
     }
-    return info(Volumes.uriOf(file), file.name, folder, Volumes.uriOf(parent), parent.lastModified(), file.length(), file.lastModified())
+    return info(Volumes.uriOf(file), file.name, folder, Volumes.uriOf(parent), parentModifiedAt(parent), file.length(), file.lastModified())
   }
 
   /** A SAF document; [location] null when the provider cannot tell where it lives. */

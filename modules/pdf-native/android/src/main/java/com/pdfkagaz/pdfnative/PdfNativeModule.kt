@@ -18,6 +18,8 @@ import expo.modules.kotlin.functions.Queues
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import java.util.stream.Collectors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -142,7 +144,12 @@ class PdfNativeModule : Module() {
     val dir = File(Uri.parse(root).path ?: return null)
     if (!dir.isDirectory || dir.listFiles() == null) return null
     val walker = PdfWalker(onProgress = progress::update, parallelism = WALK_PARALLELISM)
-    val found = walker.walk(dir).map { PdfFileInfos.ofFile(it.file, volumes) }
+    // Each file costs ~3 stats through FUSE: map in parallel and stat each folder once.
+    val folderTimes = ConcurrentHashMap<String, Long>()
+    val found = walker.walk(dir)
+      .parallelStream()
+      .map { PdfFileInfos.ofFile(it.file, volumes) { parent -> folderTimes.getOrPut(parent.path) { parent.lastModified() } } }
+      .collect(Collectors.toList())
     return RootScan(found, walker.failedDirs.map { Volumes.uriOf(it) })
   }
 
@@ -154,7 +161,7 @@ class PdfNativeModule : Module() {
     val hot = volumes.firstOrNull { it.label == null }?.let { primary ->
       ScanRules.HOT_FOLDERS.map { Volumes.uriOf(File(primary.root, it)) }
     } ?: emptyList()
-    return ChangedFolders()
+    return ChangedFolders(parallelism = WALK_PARALLELISM)
       .check(
         known = knownStamps,
         hot = hot,

@@ -1,6 +1,8 @@
 package com.pdfkagaz.pdfnative
 
 import java.io.File
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -89,5 +91,37 @@ class ChangedFoldersTest {
   @Test(expected = IllegalArgumentException::class)
   fun knownStampsRejectsMismatchedArrays() {
     ChangedFolders.knownStamps(listOf("file:///a", "file:///b"), listOf(1.0))
+  }
+
+  @Test
+  fun parallelCheckStatsFoldersConcurrently() {
+    val a = dirWith("A", "a.pdf")
+    val b = dirWith("B", "b.pdf")
+    // Both folders must be checked at the same time, or await() times out.
+    val barrier = CyclicBarrier(2)
+    val changes = ChangedFolders(parallelism = 4).check(
+      known = mapOf(a.path to 1L, b.path to 1L),
+      hot = emptyList(),
+      toFile = toFile,
+      isMounted = { barrier.await(5, TimeUnit.SECONDS); true },
+    )
+    assertEquals(listOf(a.path, b.path), changes.map { it.uri })
+  }
+
+  @Test
+  fun parallelCheckKeepsCandidateOrderAndSemantics() {
+    val dirs = (0 until 12).map { dirWith("D$it", "f$it.pdf") }
+    val gone = File(tmp.root, "Gone").path
+    val unchanged = dirs[3]
+    val known = LinkedHashMap<String, Long>()
+    dirs.forEach { known[it.path] = 1L }
+    known[unchanged.path] = unchanged.lastModified()
+    known[gone] = 5L
+    val sequential = ChangedFolders().check(known, listOf(dirs[0].path), toFile, mounted)
+    val parallel = ChangedFolders(parallelism = 4).check(known, listOf(dirs[0].path), toFile, mounted)
+    assertEquals(sequential, parallel)
+    assertEquals(12, parallel.size)
+    assertEquals(gone, parallel.last().uri)
+    assertFalse(parallel.last().exists)
   }
 }
