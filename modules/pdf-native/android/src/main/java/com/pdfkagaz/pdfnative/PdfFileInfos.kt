@@ -4,8 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.provider.DocumentsContract
-import android.provider.DocumentsContract.Document
-import android.provider.MediaStore
+import android.provider.OpenableColumns
 import java.io.File
 
 /** Name, size and modification time (epoch ms) of a file:// or content:// URI. */
@@ -50,27 +49,32 @@ object PdfFileInfos {
       "modifiedAt" to modified,
     )
 
-  /** Null when the file / document does not exist. SecurityException (no grant) propagates. */
+  /**
+   * Null when the file / document does not exist. SecurityException (no grant) propagates; a
+   * file:// path on an unmounted volume (removed SD card) throws ERR_VOLUME_UNAVAILABLE.
+   */
   fun stat(context: Context, uri: Uri): UriStat? {
     if (uri.scheme == "file") {
       val file = File(uri.path ?: return null)
-      return if (file.isFile) UriStat(file.name, file.length(), file.lastModified()) else null
+      if (file.isFile) return UriStat(file.name, file.length(), file.lastModified())
+      if (Volumes.isOnUnavailableVolume(file, Volumes.mounted(context))) throw VolumeUnavailableException()
+      return null
     }
-    val isDocument = DocumentsContract.isDocumentUri(context, uri)
-    val projection = if (isDocument) {
-      arrayOf(Document.COLUMN_DISPLAY_NAME, Document.COLUMN_SIZE, Document.COLUMN_LAST_MODIFIED)
-    } else {
-      arrayOf(MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE, MediaStore.MediaColumns.DATE_MODIFIED)
-    }
+    val kind = StatColumns.kindOf(DocumentsContract.isDocumentUri(context, uri), uri.authority)
     return try {
-      context.contentResolver.query(uri, projection, null, null, null)?.use { c ->
+      context.contentResolver.query(uri, StatColumns.projection(kind), null, null, null)?.use { c ->
         if (!c.moveToFirst()) return null
-        val modified = if (c.isNull(2)) 0L else c.getLong(2)
-        UriStat(
-          name = c.getString(0) ?: "",
-          sizeBytes = if (c.isNull(1)) 0L else c.getLong(1),
-          // MediaStore DATE_MODIFIED is in seconds.
-          modifiedAt = if (isDocument) modified else modified * 1000L,
+        // Read by name: providers may omit or reorder columns (FileProvider returns only name + size).
+        fun long(column: String?): Long? {
+          val i = if (column == null) -1 else c.getColumnIndex(column)
+          return if (i < 0 || c.isNull(i)) null else c.getLong(i)
+        }
+        val nameIndex = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        StatColumns.toStat(
+          kind,
+          name = if (nameIndex < 0) null else c.getString(nameIndex),
+          size = long(OpenableColumns.SIZE),
+          modified = long(StatColumns.modifiedColumn(kind)),
         )
       }
     } catch (e: java.io.FileNotFoundException) {

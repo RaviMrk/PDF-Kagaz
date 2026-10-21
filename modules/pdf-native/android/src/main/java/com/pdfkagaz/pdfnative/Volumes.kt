@@ -3,6 +3,7 @@ package com.pdfkagaz.pdfnative
 import android.content.Context
 import android.net.Uri
 import android.os.storage.StorageManager
+import expo.modules.kotlin.exception.CodedException
 import java.io.File
 
 /** A mounted volume root; [label] is null for primary storage, else its description (e.g. "SD card"). */
@@ -29,6 +30,22 @@ object Volumes {
       .filter { path == it.root.absolutePath || path.startsWith(it.root.absolutePath + "/") }
       .maxByOrNull { it.root.absolutePath.length }
   }
+
+  /**
+   * True when [file] lives under shared storage (/storage or /mnt) but on no mounted volume, e.g.
+   * a removed SD card. Such a file is not gone: its index row (favourite, bookmarks) must stay.
+   */
+  fun isOnUnavailableVolume(file: File, volumes: List<Volume>): Boolean {
+    val path = file.absolutePath
+    val shared = SHARED_STORAGE_PREFIXES.any { path.startsWith(it) }
+    return shared && volumeOf(file, volumes) == null
+  }
+
+  /** The coded error for a file:// target that does not exist (never carries the path). */
+  fun missingFileError(file: File, volumes: List<Volume>): CodedException =
+    if (isOnUnavailableVolume(file, volumes)) VolumeUnavailableException() else FileNotFoundCodedException()
+
+  private val SHARED_STORAGE_PREFIXES = listOf("/storage/", "/mnt/")
 
   /** Path of [dir] relative to its volume root ('' for the root itself). */
   fun relativeTo(volume: Volume, dir: File): String =

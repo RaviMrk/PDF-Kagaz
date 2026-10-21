@@ -36,5 +36,6 @@ export function parentOf(file: FileRef): string {
   if (file.parentUri) return file.parentUri;
   const slash = file.uri.lastIndexOf('/');
   if (file.uri.startsWith('file://') && slash > 'file://'.length) return file.uri.slice(0, slash);
-  throw new Error(`Cannot determine parent folder of ${file.uri}`);
+  // Fixed message: errors must never carry uris or names.
+  throw new Error('Cannot determine the parent folder');
 }

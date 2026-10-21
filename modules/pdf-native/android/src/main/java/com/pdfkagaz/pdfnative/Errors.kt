@@ -29,3 +29,7 @@ class NoActivityException(message: String = "No current activity", cause: Throwa
 /** Disk full, provider failure or any other I/O error; never carries a file name or path. */
 class IoCodedException(message: String = "File operation failed", cause: Throwable? = null) :
   CodedException("ERR_IO", message, cause)
+
+/** The file is on a storage volume (e.g. a removed SD card) that is not mounted right now. */
+class VolumeUnavailableException(message: String = "Storage volume is not available", cause: Throwable? = null) :
+  CodedException("ERR_VOLUME_UNAVAILABLE", message, cause)

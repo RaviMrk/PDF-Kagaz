@@ -29,8 +29,11 @@ export function createFullAccessProvider(deps: FullAccessDeps): StorageProvider 
     async requestAccess() {
       try {
         if (apiLevel >= 30) {
+          // Listen first: Settings may background the app before the open call resolves, and a
+          // missed background event would leave us waiting for the 120 s timeout.
+          const returned = deps.waitForForeground();
           await native.openAllFilesAccessSettings();
-          await deps.waitForForeground();
+          await returned;
           return await hasAccess();
         }
         const { READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE } = permissions.PERMISSIONS;

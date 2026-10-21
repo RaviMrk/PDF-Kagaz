@@ -210,7 +210,12 @@ class PdfNativeModule : Module() {
 
   private fun pickedFolder(treeUri: Uri): Map<String, Any?> {
     val rootUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri))
-    val label = PdfFileInfos.stat(context, rootUri)?.name ?: treeUri.lastPathSegment ?: ""
+    val label = try {
+      PdfFileInfos.stat(context, rootUri)?.name
+    } catch (e: SecurityException) {
+      // Grant not usable after all; its message contains the URI.
+      throw PermissionDeniedException(cause = e)
+    } ?: treeUri.lastPathSegment ?: ""
     return mapOf("uri" to treeUri.toString(), "label" to label)
   }
 

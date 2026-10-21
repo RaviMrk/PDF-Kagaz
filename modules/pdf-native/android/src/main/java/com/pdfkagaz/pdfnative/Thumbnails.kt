@@ -111,6 +111,11 @@ class Thumbnails(private val context: Context) {
     try {
       context.contentResolver.openFileDescriptor(uri, "r") ?: throw FileNotFoundCodedException()
     } catch (e: java.io.FileNotFoundException) {
+      // A file on a removed SD card is not gone: report it as unavailable so its row is kept.
+      val file = if (uri.scheme == "file") uri.path?.let(::File) else null
+      if (file != null && Volumes.isOnUnavailableVolume(file, Volumes.mounted(context))) {
+        throw VolumeUnavailableException(cause = e)
+      }
       throw FileNotFoundCodedException(cause = e)
     } catch (e: SecurityException) {
       throw PermissionDeniedException(cause = e)

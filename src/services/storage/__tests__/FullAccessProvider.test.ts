@@ -1,6 +1,7 @@
 import { createFakePdfNative } from '@/test-utils/fakePdfNative';
 
 import { createFullAccessProvider } from '../FullAccessProvider';
+import { parentOf } from '../StorageProvider';
 
 const permissions = {
   PERMISSIONS: {
@@ -23,21 +24,29 @@ function setup(apiLevel: number) {
 describe('FullAccessProvider', () => {
   beforeEach(() => permissions.requestMultiple.mockReset());
 
-  it('API 33: opens settings, waits for foreground, returns the re-check', async () => {
+  it('API 33: listens for the return before opening settings, then returns the re-check', async () => {
     const { native, waitForForeground, provider } = setup(33);
     const order: string[] = [];
-    native.openAllFilesAccessSettings.mockImplementation(async () => {
+    let opened!: () => void;
+    native.openAllFilesAccessSettings.mockImplementation(() => {
       order.push('open');
+      // Settings may cover the app (background event) before this call resolves.
+      return new Promise<void>((r) => (opened = r));
     });
-    waitForForeground.mockImplementation(async () => {
-      order.push('wait');
+    waitForForeground.mockImplementation(() => {
+      order.push('listen');
+      return Promise.resolve();
     });
     native.hasAllFilesAccess.mockImplementation(async () => {
       order.push('check');
       return true;
     });
-    await expect(provider.requestAccess()).resolves.toBe(true);
-    expect(order).toEqual(['open', 'wait', 'check']);
+    const granted = provider.requestAccess();
+    await Promise.resolve();
+    expect(order).toEqual(['listen', 'open']);
+    opened();
+    await expect(granted).resolves.toBe(true);
+    expect(order).toEqual(['listen', 'open', 'check']);
   });
 
   it('API 33: returns false when still denied, and never throws', async () => {
@@ -102,5 +111,15 @@ describe('FullAccessProvider', () => {
     await expect(provider.listRoots()).resolves.toEqual([]);
     await expect(provider.addRoot()).resolves.toBeNull();
     await expect(provider.removeRoot('x')).resolves.toBeUndefined();
+  });
+
+  it('parentOf failures never carry the uri (F7)', () => {
+    const file = { uri: 'content://media/external/file/secret-name.pdf', parentUri: null };
+    expect(() => parentOf(file)).toThrow();
+    try {
+      parentOf(file);
+    } catch (e) {
+      expect(String((e as Error).message)).not.toMatch(/secret|content:/);
+    }
   });
 });

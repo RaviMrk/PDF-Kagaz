@@ -2,6 +2,7 @@ import type { FileActionError } from '@/stores/filesStore';
 
 const KEYS: Record<FileActionError, string> = {
   notFound: 'files.errorNotFound',
+  unavailable: 'files.errorUnavailable',
   exists: 'files.errorExists',
   invalidName: 'files.errorInvalidChars',
   permission: 'files.errorPermission',

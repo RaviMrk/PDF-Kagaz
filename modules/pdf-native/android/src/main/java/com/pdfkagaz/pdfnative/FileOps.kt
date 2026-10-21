@@ -35,7 +35,12 @@ class FileOps(private val context: Context, private val hasAllFilesAccess: () ->
     when {
       parsed.scheme == "file" -> {
         val file = fileOf(parsed)
-        if (file.exists() && !file.delete()) throw PermissionDeniedException("Could not delete file")
+        if (!file.exists()) {
+          // Already gone, unless its volume (SD card) is just not mounted.
+          if (Volumes.isOnUnavailableVolume(file, volumes())) throw VolumeUnavailableException()
+        } else if (!file.delete()) {
+          throw PermissionDeniedException("Could not delete file")
+        }
       }
       DocumentsContract.isDocumentUri(context, parsed) -> {
         if (PdfFileInfos.stat(context, parsed) == null) return@mapErrors
@@ -73,7 +78,7 @@ class FileOps(private val context: Context, private val hasAllFilesAccess: () ->
   // region file://
 
   private fun renameFile(file: File, newName: String): Map<String, Any?> {
-    if (!file.isFile) throw FileNotFoundCodedException()
+    if (!file.isFile) throw Volumes.missingFileError(file, volumes())
     val dir = file.parentFile ?: throw PermissionDeniedException()
     if (newName != file.name) {
       val target = File(dir, newName)
@@ -96,7 +101,7 @@ class FileOps(private val context: Context, private val hasAllFilesAccess: () ->
   }
 
   private fun duplicateFile(file: File): Map<String, Any?> {
-    if (!file.isFile) throw FileNotFoundCodedException()
+    if (!file.isFile) throw Volumes.missingFileError(file, volumes())
     val dir = file.parentFile ?: throw PermissionDeniedException()
     val name = FileNames.duplicateName(file.name) { File(dir, it).exists() }
     val target = File(dir, name)
