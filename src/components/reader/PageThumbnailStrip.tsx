@@ -71,8 +71,9 @@ const Thumb = memo(function Thumb({ page, loader, selected, onSelect }: ThumbPro
   const [result, setResult] = useState<{ page: number; uri: string | null } | null>(null);
   const uri = result?.page === page ? result.uri : loader.get(page);
 
+  // Always asks: a cached page is answered synchronously, which also covers a page that settled
+  // between this render and the effect (a recycled item would otherwise keep its placeholder).
   useEffect(() => {
-    if (loader.get(page) !== undefined) return;
     let alive = true;
     loader.request(page, (done) => {
       if (alive) setResult({ page, uri: done });

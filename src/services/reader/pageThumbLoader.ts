@@ -19,8 +19,9 @@ export function createPageThumbLoader(deps: {
   const inFlight = new Set<number>();
   let encrypted = false;
 
-  const settle = (page: number, uri: string | null) => {
-    cache.set(page, uri);
+  /** [cached] false: a transient failure, answered null now and rendered again on the next request. */
+  const settle = (page: number, uri: string | null, cached = true) => {
+    if (cached) cache.set(page, uri);
     const cbs = waiters.get(page) ?? [];
     waiters.delete(page);
     for (const cb of cbs) {
@@ -42,7 +43,11 @@ export function createPageThumbLoader(deps: {
       inFlight.add(page);
       const onFail = (e: unknown) => {
         if (isPdfNativeError(e, 'ERR_PDF_ENCRYPTED')) encrypted = true;
-        settle(page, null);
+        settle(
+          page,
+          null,
+          isPdfNativeError(e, 'ERR_PDF_ENCRYPTED') || isPdfNativeError(e, 'ERR_PDF_INVALID'),
+        );
       };
       let render: Promise<string>;
       try {

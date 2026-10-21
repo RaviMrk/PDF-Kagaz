@@ -68,19 +68,43 @@ describe('createPageThumbLoader', () => {
     expect(native.renderReaderThumbnail).toHaveBeenCalledTimes(1);
   });
 
-  it('other errors only null that page', async () => {
+  it('other errors only null that page, and are not cached', async () => {
     const native = {
       renderReaderThumbnail: jest
         .fn()
         .mockRejectedValueOnce(nativeError('ERR_IO'))
-        .mockResolvedValueOnce('t2'),
+        .mockResolvedValueOnce('t2')
+        .mockResolvedValueOnce('t1'),
+    };
+    const loader = createPageThumbLoader({ fileUri: 'file:///a', width: 100, native });
+    const first = jest.fn();
+    loader.request(1, first);
+    loader.request(2, jest.fn());
+    await flush();
+    expect(first).toHaveBeenCalledWith(null);
+    expect(loader.get(1)).toBeUndefined();
+    expect(loader.get(2)).toBe('t2');
+    // A transient failure is retried when the page asks again.
+    const again = jest.fn();
+    loader.request(1, again);
+    await flush();
+    expect(native.renderReaderThumbnail).toHaveBeenCalledTimes(3);
+    expect(again).toHaveBeenCalledWith('t1');
+    expect(loader.get(1)).toBe('t1');
+  });
+
+  it('caches a damaged page as null', async () => {
+    const native = {
+      renderReaderThumbnail: jest.fn().mockRejectedValue(nativeError('ERR_PDF_INVALID')),
     };
     const loader = createPageThumbLoader({ fileUri: 'file:///a', width: 100, native });
     loader.request(1, jest.fn());
-    loader.request(2, jest.fn());
     await flush();
     expect(loader.get(1)).toBeNull();
-    expect(loader.get(2)).toBe('t2');
+    const again = jest.fn();
+    loader.request(1, again);
+    expect(again).toHaveBeenCalledWith(null);
+    expect(native.renderReaderThumbnail).toHaveBeenCalledTimes(1);
   });
 
   it('cancelPending drops queued pages', async () => {
@@ -118,10 +142,12 @@ describe('createPageThumbLoader', () => {
       concurrency: 1,
       native,
     });
-    loader.request(1, jest.fn());
+    const first = jest.fn();
+    loader.request(1, first);
     loader.request(2, jest.fn());
     await flush();
-    expect(loader.get(1)).toBeNull();
+    expect(first).toHaveBeenCalledWith(null);
+    expect(loader.get(1)).toBeUndefined();
     expect(loader.get(2)).toBe('t2');
   });
 
