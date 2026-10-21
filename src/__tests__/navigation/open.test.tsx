@@ -5,7 +5,7 @@ import path from 'path';
 
 import * as nativeIntent from '../../../app/+native-intent';
 import type { PdfFileInfo } from '@/services/native/pdfNative';
-import { allowIncomingUri } from '@/services/intent/incomingLink';
+import { navigateToIncoming } from '@/services/intent/useIncomingPdfs';
 import { pdfNative } from '@/services/native/pdfNative';
 import { fakePdf } from '@/test-utils/fakePdf';
 import { nativeError } from '@/test-utils/fakePdfNative';
@@ -57,11 +57,10 @@ async function openInApp(href: string) {
   await act(async () => {});
 }
 
-/** A PDF arriving while the app runs (warm VIEW or SEND). */
+/** A PDF arriving while the app runs (warm SEND; a warm VIEW takes the same nonce route). */
 async function incoming(uri: string) {
-  allowIncomingUri(uri);
   await act(async () => {
-    router.push({ pathname: '/open', params: { uri } });
+    navigateToIncoming(uri);
   });
   await act(async () => {});
 }
@@ -74,7 +73,11 @@ describe('/open', () => {
     fakePdf.reset();
     useSettings.setState({ onboardingDone: true });
     useStorage.setState({ mode: 'full', roots: [], canRequestFullAccess: true });
-    registerIncoming = jest.fn((info: PdfFileInfo) => ROWS.find((r) => r.uri === info.uri) ?? null);
+    registerIncoming = jest.fn(
+      (info: PdfFileInfo) =>
+        ROWS.find((r) => r.uri === info.uri) ??
+        makeRow({ name: 'z.pdf', id: 'id-z', uri: info.uri, source: 'intent' }),
+    );
     useFiles.setState({
       files: ROWS,
       status: 'idle',
@@ -110,28 +113,47 @@ describe('/open', () => {
     expect(r.pathname()).toBe('/home');
   });
 
-  it('ignores /open reached in-app without a permit and goes Home', async () => {
+  it.each([
+    ['the old uri form', `/open?uri=${encodeURIComponent('file:///sdcard/a.pdf')}`],
+    ['an unknown nonce', '/open?t=00000000-0000-4000-8000-000000000000'],
+    ['a repeated nonce param', '/open?t=a&t=b'],
+    ['no nonce', '/open'],
+  ])('ignores /open reached in-app with %s and goes Home', async (_label, href) => {
     const r = await render('/files');
-    await openInApp(`/open?uri=${encodeURIComponent('file:///sdcard/a.pdf')}`);
+    await openInApp(href);
     expect(resolve).not.toHaveBeenCalled();
     expect(registerIncoming).not.toHaveBeenCalled();
     expect(r.pathname()).toBe('/home');
   });
 
-  it('shows the unknown error for a repeated uri param', async () => {
-    allowIncomingUri('content://x/1');
-    await render('/home');
-    await openInApp('/open?uri=content%3A%2F%2Fx%2F1&uri=content%3A%2F%2Fx%2F2');
-    expect(resolve).not.toHaveBeenCalled();
-    expect(screen.getByText("Couldn't open this PDF")).toBeTruthy();
-    expect(screen.getByText('Something went wrong')).toBeTruthy();
+  it.each([
+    'content://com.android.providers.downloads.documents/document/msf%3A1000001234',
+    'content://com.google.android.gm.sapi/acc/message_attachment_external/%23msg-f%3A1/0.1?mimeType=application%2Fpdf',
+    'content://com.google.android.apps.docs.storage/document/acc%3D1%3Bdoc%3D%E0%A4%85%E0%A4%B9%2Fx',
+  ])('resolves the byte-identical raw uri on a cold VIEW (%s)', async (raw) => {
+    const r = await render(viewUrl(raw));
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledWith(raw);
+    expect(registerIncoming.mock.calls[0][0].uri).toBe(raw);
+    expect(r.pathname()).toBe('/reader/id-z');
   });
 
-  it('shows the unknown error without a uri', async () => {
-    await render('/home');
-    await openInApp('/open');
-    expect(resolve).not.toHaveBeenCalled();
-    expect(screen.getByText('Something went wrong')).toBeTruthy();
+  it('resolves the byte-identical raw uri on a warm share', async () => {
+    const raw = 'content://com.android.providers.downloads.documents/document/msf%3A42%2F';
+    const r = await render('/home');
+    await incoming(raw);
+    expect(resolve).toHaveBeenCalledWith(raw);
+    expect(r.pathname()).toBe('/reader/id-z');
+  });
+
+  it('does nothing when a used nonce is replayed', async () => {
+    const href = viewUrl(URI);
+    const r = await render(href);
+    expect(r.pathname()).toBe('/reader/id-x');
+    await openInApp(href);
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(registerIncoming).toHaveBeenCalledTimes(1);
+    expect(r.pathname()).toBe('/home');
   });
 
   it('explains a refused file and goes Home', async () => {

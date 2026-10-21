@@ -5,21 +5,19 @@ const r = (key: string, name: string, id?: string) => ({
   name,
   ...(id === undefined ? {} : { params: { id } }),
 });
+const reader = (id: string) => ({ name: 'reader/[id]', params: { id } });
 
 describe('incomingReaderRoutes', () => {
-  it('drops /open and pushes the reader on the user screens', () => {
+  it('puts the reader in place of /open on the user screens', () => {
     expect(incomingReaderRoutes([r('t', '(tabs)'), r('o', 'open')], 'o', 'B')).toEqual([
       r('t', '(tabs)'),
-      { name: 'reader/[id]', params: { id: 'B' } },
+      reader('B'),
     ]);
   });
 
-  it('replaces the reader that was on top', () => {
+  it('replaces the reader directly under /open', () => {
     const routes = [r('t', '(tabs)'), r('a', 'reader/[id]', 'A'), r('o', 'open')];
-    expect(incomingReaderRoutes(routes, 'o', 'B')).toEqual([
-      r('t', '(tabs)'),
-      { name: 'reader/[id]', params: { id: 'B' } },
-    ]);
+    expect(incomingReaderRoutes(routes, 'o', 'B')).toEqual([r('t', '(tabs)'), reader('B')]);
   });
 
   it('never keeps a second reader of the same file', () => {
@@ -27,13 +25,30 @@ describe('incomingReaderRoutes', () => {
     expect(incomingReaderRoutes(routes, 'o', 'B')).toEqual([
       r('t', '(tabs)'),
       r('s', 'scan'),
-      { name: 'reader/[id]', params: { id: 'B' } },
+      reader('B'),
     ]);
   });
 
   it('works when /open is the only screen (cold start)', () => {
-    expect(incomingReaderRoutes([r('o', 'open')], 'o', 'B')).toEqual([
-      { name: 'reader/[id]', params: { id: 'B' } },
+    expect(incomingReaderRoutes([r('o', 'open')], 'o', 'B')).toEqual([reader('B')]);
+  });
+
+  it('keeps a later /open still in flight above the new reader', () => {
+    const routes = [r('t', '(tabs)'), r('o1', 'open'), r('o2', 'open')];
+    expect(incomingReaderRoutes(routes, 'o1', 'A')).toEqual([
+      r('t', '(tabs)'),
+      reader('A'),
+      r('o2', 'open'),
     ]);
+  });
+
+  it('then lets that /open replace the reader under it', () => {
+    const routes = [r('t', '(tabs)'), r('ra', 'reader/[id]', 'A'), r('o2', 'open')];
+    expect(incomingReaderRoutes(routes, 'o2', 'B')).toEqual([r('t', '(tabs)'), reader('B')]);
+  });
+
+  it('drops readers above the /open being resolved', () => {
+    const routes = [r('t', '(tabs)'), r('o1', 'open'), r('rb', 'reader/[id]', 'B')];
+    expect(incomingReaderRoutes(routes, 'o1', 'A')).toEqual([r('t', '(tabs)'), reader('A')]);
   });
 });

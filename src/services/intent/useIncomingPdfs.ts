@@ -1,7 +1,7 @@
 import { router, useRootNavigationState } from 'expo-router';
 import { useEffect } from 'react';
 
-import { allowIncomingUri } from '@/services/intent/incomingLink';
+import { registerIncomingUri } from '@/services/intent/incomingLink';
 import { pdfNative, type PdfNativeApi } from '@/services/native/pdfNative';
 
 type Deps = {
@@ -9,10 +9,9 @@ type Deps = {
   navigate: (uri: string) => void;
 };
 
-/** Opens /open for a uri shared to the app, with the one-shot permit /open requires. */
+/** Opens /open for a uri shared to the app; the raw uri travels under a one-time nonce. */
 export function navigateToIncoming(uri: string): void {
-  allowIncomingUri(uri);
-  router.push({ pathname: '/open', params: { uri } });
+  router.push({ pathname: '/open', params: { t: registerIncomingUri(uri) } });
 }
 
 const defaultDeps: Deps = { native: pdfNative, navigate: navigateToIncoming };

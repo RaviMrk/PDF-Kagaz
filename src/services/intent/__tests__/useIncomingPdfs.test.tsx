@@ -4,7 +4,7 @@ import type { IncomingPdfEvent } from '@/services/native/pdfNative';
 
 import { router } from 'expo-router';
 
-import { takeIncomingPermit } from '../incomingLink';
+import { takeIncomingUri } from '../incomingLink';
 import { navigateToIncoming, useIncomingPdfs } from '../useIncomingPdfs';
 
 let mockNavKey: string | undefined = 'root';
@@ -70,13 +70,13 @@ describe('useIncomingPdfs', () => {
 });
 
 describe('navigateToIncoming', () => {
-  it('permits the uri once and pushes /open', () => {
-    navigateToIncoming('content://x/4');
-    expect(router.push).toHaveBeenCalledWith({
-      pathname: '/open',
-      params: { uri: 'content://x/4' },
-    });
-    expect(takeIncomingPermit('content://x/4')).toBe(true);
-    expect(takeIncomingPermit('content://x/4')).toBe(false);
+  it('pushes /open with a one-time nonce for the raw uri', () => {
+    const raw = 'content://x/4%3A%2F';
+    navigateToIncoming(raw);
+    const call = (router.push as jest.Mock).mock.calls.at(-1)![0];
+    expect(call.pathname).toBe('/open');
+    expect(Object.keys(call.params)).toEqual(['t']);
+    expect(takeIncomingUri(call.params.t)).toBe(raw);
+    expect(takeIncomingUri(call.params.t)).toBeNull();
   });
 });

@@ -5,7 +5,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { useTranslation } from 'react-i18next';
 
 import { EmptyState } from '@/components/EmptyState';
-import { takeIncomingPermit } from '@/services/intent/incomingLink';
+import { takeIncomingUri } from '@/services/intent/incomingLink';
 import { incomingReaderRoutes } from '@/services/intent/incomingReaderRoutes';
 import { openIncomingPdf, type IncomingResult } from '@/services/intent/openIncomingPdf';
 import { useTheme } from '@/theme/useTheme';
@@ -24,22 +24,21 @@ export default function OpenScreen() {
   const { colors } = useTheme();
   const navigation = useNavigation();
   const route = useRoute();
-  const params = useLocalSearchParams<{ uri?: string | string[] }>();
-  // A repeated (?uri=a&uri=b) or missing uri is not something a system intent produces.
-  const uri = typeof params.uri === 'string' && params.uri !== '' ? params.uri : undefined;
-  // The failure belongs to the uri it was reported for; a new uri starts over.
-  const [result, setResult] = useState<{ uri: string; failure: Failure } | null>(null);
-  // One attempt per uri, even when the effect runs again (Strict Mode remount); null = refused.
-  const pending = useRef<{ uri: string; result: Promise<IncomingResult> | null } | null>(null);
-  const failure: Failure | null = !uri ? 'unknown' : result?.uri === uri ? result.failure : null;
+  // Only a one-time nonce travels in the route; the raw uri never does (see incomingLink).
+  const params = useLocalSearchParams<{ t?: string | string[] }>();
+  const nonce = typeof params.t === 'string' ? params.t : '';
+  // The failure belongs to the nonce it was reported for; a new nonce starts over.
+  const [result, setResult] = useState<{ nonce: string; failure: Failure } | null>(null);
+  // One attempt per nonce, even when the effect runs again (Strict Mode remount); null = refused.
+  const pending = useRef<{ nonce: string; result: Promise<IncomingResult> | null } | null>(null);
+  const failure: Failure | null = result?.nonce === nonce ? result.failure : null;
 
   useEffect(() => {
-    if (!uri) return;
-    if (pending.current?.uri !== uri) {
-      // Only a system intent grants a permit; a deep link to /open is ignored.
-      const permitted = takeIncomingPermit(uri);
-      pending.current = { uri, result: permitted ? openIncomingPdf(uri) : null };
-      if (!permitted) router.replace('/home');
+    if (pending.current?.nonce !== nonce) {
+      // Missing, unknown or used nonce: not a system intent, nothing to open.
+      const uri = nonce === '' ? null : takeIncomingUri(nonce);
+      pending.current = { nonce, result: uri === null ? null : openIncomingPdf(uri) };
+      if (uri === null) router.replace('/home');
     }
     const attempt = pending.current.result;
     if (!attempt) return;
@@ -47,7 +46,7 @@ export default function OpenScreen() {
     void attempt.then((r) => {
       if (!active) return;
       if (!r.ok) {
-        setResult({ uri, failure: r.reason });
+        setResult({ nonce, failure: r.reason });
         return;
       }
       navigation.dispatch((state) => {
@@ -58,7 +57,7 @@ export default function OpenScreen() {
     return () => {
       active = false;
     };
-  }, [uri, navigation, route.key]);
+  }, [nonce, navigation, route.key]);
 
   if (failure) {
     return (
