@@ -443,3 +443,121 @@ describe('scan roots', () => {
     ).toEqual(['a.pdf', 'o.pdf']);
   });
 });
+
+describe('app-folder output rows are adopted by scans (one row per moved file)', () => {
+  const MEDIA = 'content://media/external/file/42';
+  const TREE = 'content://com.android.externalstorage.documents/tree/primary%3ADocuments';
+  const SAF_DOC = `${TREE}/document/primary%3ADocuments%2FPDFToolkit%2Fx.pdf`;
+
+  /** What a SAF-mode "Move to PDFToolkit folder" records: a MediaStore uri as output. */
+  function movedOutput(db: ReturnType<typeof makeDb>, over: Partial<PdfFileInfo> = {}) {
+    const row = upsertFile(
+      db,
+      {
+        uri: MEDIA,
+        name: 'x.pdf',
+        folder: 'Documents/PDFToolkit',
+        parentUri: `${ROOT}/Documents/PDFToolkit`,
+        parentModifiedAt: 0,
+        sizeBytes: 100,
+        // MediaStore DATE_MODIFIED has second precision.
+        modifiedAt: 1_700_000_000_000,
+        ...over,
+      },
+      'output',
+    );
+    setFavorite(db, row.id, true);
+    markOpened(db, row.id, 77);
+    db.update(files).set({ lastPage: 3 }).where(eq(files.id, row.id)).run();
+    db.insert(bookmarks).values({ fileId: row.id, page: 2, createdAt: 1 }).run();
+    return row;
+  }
+
+  const safDoc = (over: Partial<PdfFileInfo> = {}): PdfFileInfo => ({
+    uri: SAF_DOC,
+    name: 'x.pdf',
+    folder: 'Documents/PDFToolkit',
+    parentUri: `${TREE}/document/primary%3ADocuments%2FPDFToolkit`,
+    parentModifiedAt: 0,
+    sizeBytes: 100,
+    modifiedAt: 1_700_000_000_456,
+    ...over,
+  });
+
+  it('a SAF scan of Documents keeps one output row and moves favourite, lastPage, lastOpenedAt, bookmarks', () => {
+    const db = makeDb();
+    const output = movedOutput(db);
+    const diff = applyScan(db, {
+      result: { files: [safDoc()], scannedRoots: [TREE], failedRoots: [] },
+      source: 'saf',
+    });
+    const rows = listFiles(db);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: fileIdForUri(SAF_DOC),
+      // Scans never demote an output row.
+      source: 'output',
+      isFavorite: true,
+      lastPage: 3,
+      lastOpenedAt: 77,
+    });
+    expect(db.select().from(bookmarks).where(eq(bookmarks.fileId, rows[0]!.id)).all()).toHaveLength(
+      1,
+    );
+    expect(getFile(db, output.id)).toBeUndefined();
+    expect(diff.added + diff.updated + diff.removed).toBeGreaterThan(0);
+    // The next scan of the same tree is a no-op: still one row.
+    const again = applyScan(db, {
+      result: { files: [safDoc()], scannedRoots: [TREE], failedRoots: [] },
+      source: 'saf',
+    });
+    expect(again).toEqual({ added: 0, updated: 0, removed: 0 });
+    expect(listFiles(db)).toHaveLength(1);
+  });
+
+  it('a full-access scan after a SAF move keeps one file:// row with the favourite', () => {
+    const db = makeDb();
+    movedOutput(db);
+    applyScan(db, scan([info('Documents/PDFToolkit/x.pdf', { modifiedAt: 1_700_000_000_999 })]));
+    const rows = listFiles(db);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: idOf('Documents/PDFToolkit/x.pdf'),
+      source: 'output',
+      isFavorite: true,
+      lastPage: 3,
+    });
+  });
+
+  it('a large scan adopts the output row too', () => {
+    const db = makeDb();
+    movedOutput(db);
+    const many = Array.from({ length: 150 }, (_, i) => info(`D/f${i}.pdf`));
+    applyScan(
+      db,
+      scan([...many, info('Documents/PDFToolkit/x.pdf', { modifiedAt: 1_700_000_000_001 })]),
+    );
+    expect(listFiles(db)).toHaveLength(151);
+    expect(getFile(db, idOf('Documents/PDFToolkit/x.pdf'))?.isFavorite).toBe(true);
+  });
+
+  it('leaves output rows alone when content or location differ', () => {
+    const db = makeDb();
+    const output = movedOutput(db);
+    const elsewhere = movedOutput(db, {
+      uri: 'content://media/external/file/43',
+      folder: 'Download',
+      parentUri: `${ROOT}/Download`,
+    });
+    applyScan(
+      db,
+      scan([
+        info('Documents/PDFToolkit/x.pdf', { sizeBytes: 101, modifiedAt: 1_700_000_000_000 }),
+        info('Download/x.pdf', { modifiedAt: 1_700_000_000_000 }),
+      ]),
+    );
+    expect(getFile(db, output.id)?.source).toBe('output');
+    expect(getFile(db, elsewhere.id)?.source).toBe('output');
+    expect(listFiles(db)).toHaveLength(4);
+  });
+});

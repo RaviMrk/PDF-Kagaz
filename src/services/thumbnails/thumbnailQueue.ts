@@ -53,7 +53,9 @@ export function createThumbnailQueue(deps: Deps) {
       if (isPdfNativeError(e, 'ERR_PDF_ENCRYPTED')) return { ...empty(job), isEncrypted: true };
       if (isPdfNativeError(e, 'ERR_PDF_INVALID')) return { ...empty(job), invalid: true };
       if (isPdfNativeError(e, 'ERR_FILE_NOT_FOUND')) return { ...empty(job), missing: true };
-      return null; // other errors: no result, not retried this session
+      // Other errors (incl. ERR_VOLUME_UNAVAILABLE: SD card removed, the row stays): no result,
+      // not retried this session.
+      return null;
     }
   }
 
@@ -73,18 +75,25 @@ export function createThumbnailQueue(deps: Deps) {
     }
   }
 
+  function request(file: Job): void {
+    const job: Job = {
+      id: file.id,
+      uri: file.uri,
+      modifiedAt: file.modifiedAt,
+      sizeBytes: file.sizeBytes,
+    };
+    if (seen.has(keyOf(job))) return;
+    seen.add(keyOf(job));
+    pending.push(job);
+    pump();
+  }
+
   return {
-    request(file: Job): void {
-      const job: Job = {
-        id: file.id,
-        uri: file.uri,
-        modifiedAt: file.modifiedAt,
-        sizeBytes: file.sizeBytes,
-      };
-      if (seen.has(keyOf(job))) return;
-      seen.add(keyOf(job));
-      pending.push(job);
-      pump();
+    request,
+    /** Runs a job again although its key was seen (its cached thumbnail file disappeared). */
+    retry(file: Job): void {
+      seen.delete(keyOf(file));
+      request(file);
     },
     clear(): void {
       for (const j of pending) seen.delete(keyOf(j));

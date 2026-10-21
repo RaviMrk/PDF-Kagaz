@@ -31,7 +31,8 @@ import { useStorage } from '@/stores/storageStore';
 
 export type FilesStatus = 'idle' | 'loading' | 'scanning';
 /** Codes only (mapped to i18n keys by the UI): never file names or paths. */
-export type FileActionError = 'notFound' | 'exists' | 'invalidName' | 'permission' | 'unknown';
+export type FileActionError =
+  'notFound' | 'unavailable' | 'exists' | 'invalidName' | 'permission' | 'unknown';
 /** Index-level failure the UI can show: the cached list could not be read, or a scan failed. */
 export type FilesError = 'cache' | 'scan';
 
@@ -51,6 +52,8 @@ export type FilesState = {
   duplicate: (id: string) => Promise<FileActionError | null>;
   moveToAppFolder: (id: string) => Promise<FileActionError | null>;
   requestThumb: (file: FileRow) => void;
+  /** The stored thumbnail file could not be loaded (cache cleared): regenerate it once. */
+  thumbMissing: (id: string) => void;
   clearNotice: () => void;
   reportError: (error: FilesError) => void;
 };
@@ -70,6 +73,8 @@ export type FilesStoreDeps = {
 
 function toActionError(e: unknown): FileActionError {
   if (isPdfNativeError(e, 'ERR_FILE_NOT_FOUND')) return 'notFound';
+  // On a volume that is not mounted (SD card removed): the file is not gone, the row stays.
+  if (isPdfNativeError(e, 'ERR_VOLUME_UNAVAILABLE')) return 'unavailable';
   if (isPdfNativeError(e, 'ERR_FILE_EXISTS')) return 'exists';
   if (isPdfNativeError(e, 'ERR_INVALID_NAME')) return 'invalidName';
   if (isPdfNativeError(e, 'ERR_PERMISSION_DENIED')) return 'permission';
@@ -165,6 +170,9 @@ export function createFilesStore(deps: FilesStoreDeps) {
       width: deps.thumbWidth,
       onResult: onThumb,
     });
+
+    // Rows whose thumbnail was regenerated after its cached file vanished: at most once per session.
+    const thumbRetried = new Set<string>();
 
     async function scan(provider: StorageProvider, kind: 'full' | 'quick'): Promise<void> {
       const started = deps.now();
@@ -280,16 +288,27 @@ export function createFilesStore(deps: FilesStoreDeps) {
         return next;
       },
 
+      // Called from press handlers: a DB error must not throw (fatal in release builds).
       toggleFavorite(id) {
         const row = get().files.find((f) => f.id === id);
         if (!row) return;
-        setFavorite(deps.getDb(), id, !row.isFavorite);
+        try {
+          setFavorite(deps.getDb(), id, !row.isFavorite);
+        } catch {
+          set({ notice: 'unknown' });
+          return;
+        }
         patchRow(id, { isFavorite: !row.isFavorite });
       },
 
       markOpened(id) {
         const at = deps.now();
-        markOpenedInDb(deps.getDb(), id, at);
+        try {
+          markOpenedInDb(deps.getDb(), id, at);
+        } catch {
+          set({ notice: 'unknown' });
+          return;
+        }
         patchRow(id, { lastOpenedAt: at });
       },
 
@@ -319,6 +338,20 @@ export function createFilesStore(deps: FilesStoreDeps) {
       requestThumb(file) {
         if (file.thumbPath || file.isEncrypted || file.isCorrupt) return;
         thumbs.request(file);
+      },
+
+      thumbMissing(id) {
+        const row = get().files.find((f) => f.id === id);
+        if (!row?.thumbPath) return;
+        try {
+          updateThumb(deps.getDb(), id, { thumbPath: null });
+        } catch {
+          // DB unavailable: the next launch tries the stored path again.
+        }
+        patchRow(id, { thumbPath: null });
+        if (thumbRetried.has(id)) return; // Still unloadable: keep the placeholder icon.
+        thumbRetried.add(id);
+        if (!row.isEncrypted && !row.isCorrupt) thumbs.retry(row);
       },
 
       clearNotice() {

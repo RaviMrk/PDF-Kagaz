@@ -17,7 +17,11 @@
     "addFolder": "Add folder",
     "removeFolder": "Remove {{label}}",
     "accessLost": "Access lost — add it again",
-    "noFolders": "No folders added yet"
+    "noFolders": "No folders added yet",
+    "removeFolderTitle": "Remove this folder?",
+    "removeFolderBody": "PDFs from \"{{label}}\" will disappear from the app, along with their favourites and bookmarks. The files stay on your phone.",
+    "remove": "Remove",
+    "cancel": "Cancel"
   },
   "errors": {
     "dbInit": "Couldn't open the app's database.",
@@ -43,7 +47,8 @@
     "modeNone": "No access",
     "title": "Storage access",
     "error": "Couldn't get access. You can try again from Settings.",
-    "errorSettings": "Couldn't get access. Please try again."
+    "errorSettings": "Couldn't get access. Please try again.",
+    "waiting": "Waiting for access…"
   },
   "files": {
     "searchPlaceholder": "Search PDFs",
@@ -61,6 +66,7 @@
     "pages_one": "{{count}} page",
     "scanning": "Scanning… {{count}} PDFs found",
     "emptyAll": "No PDFs found yet",
+    "emptyScanning": "Looking for PDFs…",
     "emptyFavorites": "Star a file to see it here",
     "emptyRecent": "Files you open will show up here",
     "emptySearch": "No PDFs match \"{{query}}\"",
@@ -83,6 +89,7 @@
     "errorTooLong": "That name is too long",
     "errorExists": "A file with that name already exists",
     "errorNotFound": "This file no longer exists",
+    "errorUnavailable": "This storage isn't available right now. Reconnect it and try again.",
     "errorPermission": "PDF Toolkit can't change this file",
     "errorUnknown": "Something went wrong",
     "infoName": "Name",

@@ -169,4 +169,25 @@ describe('thumbnailQueue', () => {
     expect(generateThumbnail).toHaveBeenCalledTimes(2);
     expect(results.map((r) => r.modifiedAt)).toEqual([1, 2]);
   });
+
+  it('retry() runs a finished job again for the same content version', async () => {
+    const { queue, generateThumbnail } = setup();
+    const job = { id: '1', uri: 'u1', modifiedAt: 1, sizeBytes: 10 };
+    queue.request(job);
+    await flush();
+    queue.request(job);
+    await flush();
+    expect(generateThumbnail).toHaveBeenCalledTimes(1);
+    queue.retry(job);
+    await flush();
+    expect(generateThumbnail).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives no result for a file on an unavailable volume', async () => {
+    const { queue, results, getPageCount } = setup();
+    getPageCount.mockRejectedValueOnce(err('ERR_VOLUME_UNAVAILABLE'));
+    queue.request({ id: '1', uri: 'u1', modifiedAt: 1, sizeBytes: 10 });
+    await flush();
+    expect(results).toEqual([]);
+  });
 });

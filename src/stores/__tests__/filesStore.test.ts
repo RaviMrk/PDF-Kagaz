@@ -6,6 +6,7 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { bookmarks, files } from '@/db/schema';
 import {
   applyScan,
+  getFile,
   listFiles,
   setFavorite,
   upsertFile,
@@ -82,8 +83,12 @@ function setup(
   const provider = opts.provider === undefined ? fakeProvider() : opts.provider;
   const native = createFakePdfNative();
   let clock = 1_000_000;
+  let dbBroken = false;
   const store = createFilesStore({
-    getDb: () => db,
+    getDb: () => {
+      if (dbBroken) throw new Error('disk I/O error');
+      return db;
+    },
     getProvider: () => provider,
     native,
     thumbWidth: 144,
@@ -97,6 +102,9 @@ function setup(
     store,
     tick: (ms: number) => {
       clock += ms;
+    },
+    breakDb: () => {
+      dbBroken = true;
     },
   };
 }
@@ -630,5 +638,109 @@ describe('filesStore: errors', () => {
     const { store } = setup();
     store.getState().reportError('scan');
     expect(store.getState()).toMatchObject({ status: 'idle', error: 'scan' });
+  });
+});
+
+describe('filesStore: final review fixes', () => {
+  it('regenerates a thumbnail whose cached file is gone, at most once per row per session (F1)', async () => {
+    const { store, db, native } = setup({ seed: [info('A/a.pdf')] });
+    const id = idOf('A/a.pdf');
+    store.getState().loadFromCache();
+    store.getState().requestThumb(store.getState().files[0]!);
+    await flush();
+    expect(native.generateThumbnail).toHaveBeenCalledTimes(1);
+
+    // The OS trimmed the cache: the Image cannot load the stored thumbPath.
+    store.getState().thumbMissing(id);
+    expect(getFile(db, id)?.thumbPath).toBeNull();
+    await flush();
+    expect(native.generateThumbnail).toHaveBeenCalledTimes(2);
+    expect(store.getState().files[0]?.thumbPath).toBe('file:///thumb.jpg');
+
+    // Still unloadable: no loop. The row falls back to the placeholder icon.
+    store.getState().thumbMissing(id);
+    await flush();
+    store.getState().requestThumb(store.getState().files[0]!);
+    await flush();
+    expect(native.generateThumbnail).toHaveBeenCalledTimes(2);
+    expect(store.getState().files[0]?.thumbPath).toBeNull();
+  });
+
+  it('SAF move then a SAF scan that sees the moved file leaves exactly one row, favourite kept (F2)', async () => {
+    const TREE = 'content://com.android.externalstorage.documents/tree/primary%3ADocuments';
+    const moved: PdfFileInfo = {
+      uri: 'content://media/external/file/42',
+      name: 'a.pdf',
+      folder: 'Documents/PDFToolkit',
+      parentUri: `${ROOT}/Documents/PDFToolkit`,
+      parentModifiedAt: 0,
+      sizeBytes: 100,
+      modifiedAt: 5000,
+    };
+    const scanned: PdfFileInfo = {
+      ...moved,
+      uri: `${TREE}/document/primary%3ADocuments%2FPDFToolkit%2Fa.pdf`,
+      parentUri: `${TREE}/document/primary%3ADocuments%2FPDFToolkit`,
+      modifiedAt: 5432,
+    };
+    const provider = fakeProvider({
+      mode: 'saf',
+      source: 'saf',
+      moveToAppFolder: jest.fn().mockResolvedValue(moved),
+      fullScan: jest
+        .fn()
+        .mockResolvedValue({ files: [scanned], scannedRoots: [TREE], failedRoots: [] }),
+    });
+    const { store, db } = setup({ provider });
+    upsertFile(db, info('A/a.pdf'), 'saf');
+    setFavorite(db, idOf('A/a.pdf'), true);
+    store.getState().loadFromCache();
+    await expect(store.getState().moveToAppFolder(idOf('A/a.pdf'))).resolves.toBeNull();
+    await store.getState().refresh('full');
+    expect(store.getState().files).toHaveLength(1);
+    expect(store.getState().files[0]).toMatchObject({
+      uri: scanned.uri,
+      source: 'output',
+      isFavorite: true,
+    });
+    expect(listFiles(db)).toHaveLength(1);
+  });
+
+  it('a thumbnail on an unavailable volume (SD card removed) keeps the row and sets no notice (F3)', async () => {
+    const { store, db, native } = setup({ seed: [info('A/a.pdf')] });
+    native.getPageCount.mockRejectedValue(nativeError('ERR_VOLUME_UNAVAILABLE'));
+    setFavorite(db, idOf('A/a.pdf'), true);
+    store.getState().loadFromCache();
+    store.getState().requestThumb(store.getState().files[0]!);
+    await flush();
+    expect(store.getState().files).toHaveLength(1);
+    expect(store.getState().notice).toBeNull();
+    expect(getFile(db, idOf('A/a.pdf'))).toMatchObject({ isFavorite: true, isCorrupt: false });
+  });
+
+  it('a file action on an unavailable volume keeps the row and reports unavailable (F3)', async () => {
+    const provider = fakeProvider({
+      remove: jest.fn().mockRejectedValue(nativeError('ERR_VOLUME_UNAVAILABLE')),
+    });
+    const { store, db } = setup({ provider, seed: [info('A/a.pdf')] });
+    setFavorite(db, idOf('A/a.pdf'), true);
+    store.getState().loadFromCache();
+    await expect(store.getState().remove(idOf('A/a.pdf'))).resolves.toBe('unavailable');
+    expect(store.getState().files).toHaveLength(1);
+    expect(getFile(db, idOf('A/a.pdf'))?.isFavorite).toBe(true);
+  });
+
+  it('toggleFavorite and markOpened never throw on a DB error and show a notice (F4)', () => {
+    const { store, breakDb } = setup({ seed: [info('A/a.pdf')] });
+    store.getState().loadFromCache();
+    const id = idOf('A/a.pdf');
+    breakDb();
+    expect(() => store.getState().toggleFavorite(id)).not.toThrow();
+    expect(store.getState().files[0]?.isFavorite).toBe(false);
+    expect(store.getState().notice).toBe('unknown');
+    store.getState().clearNotice();
+    expect(() => store.getState().markOpened(id)).not.toThrow();
+    expect(store.getState().files[0]?.lastOpenedAt).toBeNull();
+    expect(store.getState().notice).toBe('unknown');
   });
 });
