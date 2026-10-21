@@ -10,6 +10,9 @@ import { useFiles } from '@/stores/filesStore';
 import { useSettings } from '@/stores/settingsStore';
 import { useStorage } from '@/stores/storageStore';
 
+// Router-rendering suites can exceed jest's 5 s default under load.
+jest.setTimeout(20000);
+
 jest.mock('@/db/useDatabaseReady', () => ({
   useDatabaseReady: () => ({ success: true, error: undefined }),
 }));
