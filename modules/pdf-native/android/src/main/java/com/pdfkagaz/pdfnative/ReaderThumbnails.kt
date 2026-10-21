@@ -18,14 +18,26 @@ class ReaderThumbnails(private val context: Context) {
   /** [page] is 1-based; [fileUri] is the prepared file:// URI. Returns a file:// URI of a cached JPEG. */
   suspend fun render(fileUri: String, page: Int, width: Int): String = RenderSupport.mapErrors {
     withContext(Dispatchers.IO) {
+      val startedIn = lock.withLock { generation }
       val parsed = Uri.parse(fileUri)
       val stat = RenderSupport.statOrThrow(context, parsed)
+      val modifiedAt = ReaderCache.stableModifiedAt(
+        parsed.path.orEmpty(),
+        File(context.cacheDir, ReaderFiles.DIR).absolutePath,
+        stat.modifiedAt,
+      )
       val targetWidth = width.coerceIn(1, MAX_WIDTH)
       val dir = File(context.cacheDir, "thumbs").apply { mkdirs() }
-      val target = File(dir, "${ThumbKey.of(fileUri, stat.sizeBytes, stat.modifiedAt, page, targetWidth)}.jpg")
+      val target = File(dir, "${ThumbKey.of(fileUri, stat.sizeBytes, modifiedAt, page, targetWidth)}.jpg")
       if (!(target.isFile && target.length() > 0)) {
         lock.withLock {
-          RenderSupport.renderPageJpeg(rendererFor(fileUri, parsed, stat), page, targetWidth, target)
+          if (generation == startedIn) {
+            val renderer = rendererFor(OpenKey(fileUri, stat.sizeBytes, modifiedAt), parsed)
+            RenderSupport.renderPageJpeg(renderer, page, targetWidth, target)
+          } else {
+            // Released while this render was queued: render once without keeping the document open.
+            RenderSupport.openRenderer(context, parsed).use { RenderSupport.renderPageJpeg(it, page, targetWidth, target) }
+          }
         }
       }
       Uri.fromFile(target).toString()
@@ -33,11 +45,15 @@ class ReaderThumbnails(private val context: Context) {
   }
 
   /** Closes the cached renderer and its descriptor; safe to call when none is open. */
-  suspend fun release() = withContext(Dispatchers.IO) { lock.withLock { closeCurrent() } }
+  suspend fun release() = withContext(Dispatchers.IO) {
+    lock.withLock {
+      generation++
+      closeCurrent()
+    }
+  }
 
-  /** Caller holds [lock]. Reopens when the document (or its size / modification time) changed. */
-  private fun rendererFor(fileUri: String, parsed: Uri, stat: UriStat): PdfRenderer {
-    val key = OpenKey(fileUri, stat.sizeBytes, stat.modifiedAt)
+  /** Caller holds [lock]. Reopens when the document (or its size / stable modification time) changed. */
+  private fun rendererFor(key: OpenKey, parsed: Uri): PdfRenderer {
     current?.let { if (it.key == key) return it.renderer }
     closeCurrent()
     return RenderSupport.openRenderer(context, parsed).also { current = OpenDocument(key, it) }
@@ -63,6 +79,9 @@ class ReaderThumbnails(private val context: Context) {
 
     /** Guarded by [lock]; process-wide so a recreated module still releases it. */
     private var current: OpenDocument? = null
+
+    /** Guarded by [lock]; bumped by every release so renders queued before it do not reopen. */
+    private var generation = 0L
 
     private const val MAX_WIDTH = 512
   }

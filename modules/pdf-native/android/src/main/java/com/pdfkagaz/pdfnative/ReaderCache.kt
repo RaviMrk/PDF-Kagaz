@@ -1,5 +1,7 @@
 package com.pdfkagaz.pdfnative
 
+import java.io.File
+
 /** A file in the reader copy cache (cacheDir/reader). */
 data class CacheEntry(val name: String, val lastModified: Long, val sizeBytes: Long)
 
@@ -14,6 +16,14 @@ object ReaderCache {
   /** A hashed name (never the source's display name) that changes whenever the source does. */
   fun fileNameFor(uri: String, sizeBytes: Long, modifiedAt: Long): String =
     "${ThumbKey.of(uri, sizeBytes, modifiedAt, 0, 0)}$PDF_SUFFIX"
+
+  /**
+   * The modification time to key thumbnails and the open renderer on. A copy directly in [readerDir]
+   * gets 0: its name already hashes the source uri, size and mtime, and prepareReaderFile touches it
+   * on every reuse (LRU), which must not change its keys.
+   */
+  fun stableModifiedAt(path: String, readerDir: String, modifiedAt: Long): Long =
+    if (File(path).absoluteFile.parentFile == File(readerDir).absoluteFile) 0L else modifiedAt
 
   /** Providers that only expose OpenableColumns report 0: their copy cannot be trusted, recopy. */
   fun reusable(modifiedAt: Long): Boolean = modifiedAt > 0

@@ -89,11 +89,12 @@ class ReaderFiles(private val context: Context) {
   private fun readerFile(file: File, copied: Boolean, sizeBytes: Long): Map<String, Any?> =
     mapOf("uri" to Uri.fromFile(file).toString(), "copied" to copied, "sizeBytes" to sizeBytes)
 
-  private companion object {
+  companion object {
+    /** Cache copies live directly in cacheDir/<DIR>. */
     const val DIR = "reader"
-    const val BUFFER_BYTES = 256 * 1024
+    private const val BUFFER_BYTES = 256 * 1024
 
     /** One copy at a time, so eviction never removes another call's in-progress .part file. */
-    val copyLock = Mutex()
+    private val copyLock = Mutex()
   }
 }
