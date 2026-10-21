@@ -7,6 +7,7 @@ import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { DbGate } from '@/components/DbGate';
+import { IncomingPdfs } from '@/components/IncomingPdfs';
 import { IndexLifecycle } from '@/components/IndexLifecycle';
 import { initI18n, resolveLanguage } from '@/i18n';
 import { useSettings } from '@/stores/settingsStore';
@@ -28,6 +29,7 @@ export default function RootLayout() {
         <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
         <DbGate>
           <IndexLifecycle />
+          <IncomingPdfs />
           <Stack
             screenOptions={{
               headerShown: false,

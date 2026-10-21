@@ -78,6 +78,51 @@ describe('Home tab', () => {
   });
 });
 
+describe('Home without storage access', () => {
+  beforeEach(() => {
+    useSettings.setState({ onboardingDone: true });
+    useStorage.setState({ mode: 'none', roots: [], canRequestFullAccess: true });
+    useFiles.setState({
+      files: [
+        makeRow({ name: 'Scanned.pdf', lastOpenedAt: 5000 }),
+        makeRow({
+          name: 'Shared.pdf',
+          uri: 'content://x/1',
+          folder: '',
+          parentUri: '',
+          source: 'intent',
+          lastOpenedAt: 9000,
+        }),
+        makeRow({ name: 'Unopened.pdf', source: 'intent', folder: '', parentUri: '' }),
+      ],
+      status: 'idle',
+      requestThumb: jest.fn(),
+    });
+  });
+
+  it('shows the explainer and only opened shared files in Recent', async () => {
+    await renderRouter(APP_DIR, { initialUrl: '/home' });
+    expect(screen.getByText(/needs access to your files/)).toBeTruthy();
+    expect(screen.getByText('Recent')).toBeTruthy();
+    const names = screen.getAllByTestId('recent-card-name').map((n) => n.props.children);
+    expect(names).toEqual(['Shared.pdf']);
+  });
+
+  it('opens a recent shared file in the reader', async () => {
+    await renderRouter(APP_DIR, { initialUrl: '/home' });
+    await fireEvent.press(screen.getByText('Shared.pdf'));
+    await act(async () => {});
+    expect(screen.getByTestId('pdf-native')).toBeTruthy();
+  });
+
+  it('hides Recent when nothing was opened', async () => {
+    useFiles.setState({ files: [makeRow({ name: 'Scanned.pdf', lastOpenedAt: 5000 })] });
+    await renderRouter(APP_DIR, { initialUrl: '/home' });
+    expect(screen.getByText(/needs access to your files/)).toBeTruthy();
+    expect(screen.queryByText('Recent')).toBeNull();
+  });
+});
+
 describe('Home search refocus', () => {
   it('focuses the Files search box every time, not only the first', async () => {
     useSettings.setState({ onboardingDone: true });

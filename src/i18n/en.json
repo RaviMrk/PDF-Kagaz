@@ -173,5 +173,13 @@
     "cancel": "Cancel",
     "show": "Show password",
     "hide": "Hide password"
+  },
+  "open": {
+    "opening": "Opening PDF…",
+    "failedTitle": "Couldn't open this PDF",
+    "errorPermission": "PDF Toolkit wasn't given access to this file. Try sharing it again.",
+    "errorNotFound": "This file no longer exists",
+    "errorUnknown": "Something went wrong",
+    "goHome": "Go to Home"
   }
 }

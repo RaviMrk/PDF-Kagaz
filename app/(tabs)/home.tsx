@@ -1,4 +1,3 @@
-import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
 import { useCallback, useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -6,9 +5,8 @@ import { useTranslation } from 'react-i18next';
 
 import { PermissionGate } from '@/components/PermissionGate';
 import { QuickToolsGrid, type QuickTool } from '@/components/QuickToolsGrid';
-import { RecentCard } from '@/components/RecentCard';
+import { RecentSection } from '@/components/RecentSection';
 import { SearchBar } from '@/components/SearchBar';
-import type { FileRow } from '@/db/schema';
 import { recentFiles } from '@/services/files/fileQuery';
 import { useFiles } from '@/stores/filesStore';
 import { useTheme } from '@/theme/useTheme';
@@ -17,18 +15,12 @@ import { useTheme } from '@/theme/useTheme';
 let focusNonce = 0;
 const nextFocusNonce = () => `${Date.now()}-${++focusNonce}`;
 
-const keyOf = (f: FileRow) => f.id;
-const Gap = () => <View style={styles.gap} />;
-
 function HomeContent() {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const files = useFiles((s) => s.files);
   const recent = useMemo(() => recentFiles(files, 10), [files]);
 
-  const openFile = useCallback((f: FileRow) => {
-    router.push({ pathname: '/reader/[id]', params: { id: f.id } });
-  }, []);
   const openTool = useCallback((tool: QuickTool) => router.push(tool.href), []);
 
   return (
@@ -40,23 +32,7 @@ function HomeContent() {
         placeholder={t('home.searchHint')}
         onPress={() => router.navigate({ pathname: '/files', params: { focus: nextFocusNonce() } })}
       />
-      {recent.length > 0 ? (
-        <View style={styles.section}>
-          <Text accessibilityRole="header" style={[styles.heading, { color: colors.text }]}>
-            {t('home.recent')}
-          </Text>
-          <View style={styles.recentList}>
-            <FlashList
-              horizontal
-              data={recent}
-              keyExtractor={keyOf}
-              renderItem={({ item }) => <RecentCard file={item} onPress={openFile} />}
-              ItemSeparatorComponent={Gap}
-              showsHorizontalScrollIndicator={false}
-            />
-          </View>
-        </View>
-      ) : null}
+      <RecentSection files={recent} />
       <View style={styles.section}>
         <Text accessibilityRole="header" style={[styles.heading, { color: colors.text }]}>
           {t('home.tools')}
@@ -67,9 +43,25 @@ function HomeContent() {
   );
 }
 
+/** Without storage access, only files opened from other apps or made here can be listed. */
+function OpenedWithoutAccess() {
+  const files = useFiles((s) => s.files);
+  const opened = useMemo(
+    () =>
+      recentFiles(
+        files.filter(
+          (f) => (f.source === 'intent' || f.source === 'output') && f.lastOpenedAt != null,
+        ),
+        10,
+      ),
+    [files],
+  );
+  return <RecentSection files={opened} />;
+}
+
 export default function Screen() {
   return (
-    <PermissionGate>
+    <PermissionGate withoutAccess={<OpenedWithoutAccess />}>
       <HomeContent />
     </PermissionGate>
   );
@@ -79,6 +71,4 @@ const styles = StyleSheet.create({
   content: { padding: 16, gap: 24 },
   section: { gap: 12 },
   heading: { fontSize: 18, fontWeight: '600' },
-  recentList: { height: 220 },
-  gap: { width: 12 },
 });

@@ -5,7 +5,13 @@ import { StorageAccessCard } from '@/components/StorageAccessCard';
 import { useStorage } from '@/stores/storageStore';
 import { useTheme } from '@/theme/useTheme';
 
-export function PermissionGate({ children }: { children: ReactNode }) {
+type Props = {
+  children: ReactNode;
+  /** Shown below the access explainer when there is no storage access. */
+  withoutAccess?: ReactNode;
+};
+
+export function PermissionGate({ children, withoutAccess }: Props) {
   const mode = useStorage((s) => s.mode);
   const { colors } = useTheme();
 
@@ -20,6 +26,7 @@ export function PermissionGate({ children }: { children: ReactNode }) {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <StorageAccessCard />
+        {withoutAccess}
       </View>
     );
   }
@@ -27,5 +34,5 @@ export function PermissionGate({ children }: { children: ReactNode }) {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 24 },
 });

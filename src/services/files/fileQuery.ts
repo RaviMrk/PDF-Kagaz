@@ -66,6 +66,8 @@ export function groupByFolder(files: readonly FileRow[], search: string): Folder
   const needle = normalizeForSearch(search.trim());
   const groups = new Map<string, FolderGroup>();
   for (const f of files) {
+    // Files opened from other apps have no folder of their own (folder and parentUri "").
+    if (f.source === 'intent') continue;
     const key = folderKey(f);
     const g = groups.get(key);
     if (g) {

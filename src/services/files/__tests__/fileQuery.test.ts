@@ -164,3 +164,27 @@ describe('legacy rows without parentUri', () => {
     ).toEqual(['S2']);
   });
 });
+
+describe('opened-from-intent rows', () => {
+  const intent = row({
+    id: 'I',
+    name: 'Shared.pdf',
+    uri: 'content://x/1',
+    folder: '',
+    parentUri: '',
+    source: 'intent',
+    lastOpenedAt: 9000,
+  });
+
+  it('are left out of Folders', () => {
+    expect(groupByFolder([row({ id: 'S', name: 'A.pdf' }), intent], '')).toEqual([
+      { parentUri: 'file:///docs', folder: 'Docs', count: 1, latestModifiedAt: 1000 },
+    ]);
+  });
+
+  it('stay in All and Recent', () => {
+    const base = { sortKey: 'name', sortDir: 'asc', search: '' } as const;
+    expect(ids(queryFiles([intent], { ...base, segment: 'all' }))).toEqual(['I']);
+    expect(ids(queryFiles([intent], { ...base, segment: 'recent' }))).toEqual(['I']);
+  });
+});
