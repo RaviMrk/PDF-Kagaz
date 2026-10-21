@@ -62,6 +62,12 @@ describe('redirectSystemPath', () => {
     );
   });
 
+  it('leaves the launch VIEW of a PDF to takeIncomingPdf, so it is opened once', () => {
+    // expo-router drops a late initial URL; the launch VIEW is delivered by takeIncomingPdf.
+    expect(redirectSystemPath({ path: 'content://x/launch', initial: true })).toBe('/');
+    expect(redirectSystemPath({ path: 'file:///sdcard/a.pdf', initial: true })).toBe('/');
+  });
+
   it('rewrites a system VIEW of a PDF to a nonce for the byte-identical uri', () => {
     const raw =
       'content://com.google.android.apps.docs.storage/document/acc%3D1%3Bdoc%3D%E0%A4%85%2Fx';

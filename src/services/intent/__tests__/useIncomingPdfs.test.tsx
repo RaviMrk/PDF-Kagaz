@@ -4,6 +4,7 @@ import type { IncomingPdfEvent } from '@/services/native/pdfNative';
 
 import { router } from 'expo-router';
 
+import { redirectSystemPath } from '../../../../app/+native-intent';
 import { takeIncomingUri } from '../incomingLink';
 import { navigateToIncoming, useIncomingPdfs } from '../useIncomingPdfs';
 
@@ -36,6 +37,17 @@ describe('useIncomingPdfs', () => {
     await renderHook(() => useIncomingPdfs(d));
     await act(async () => {});
     expect(d.navigate).toHaveBeenCalledWith('content://x/2');
+  });
+
+  it('opens a cold "Open with" VIEW from takeIncomingPdf once, not also as a link', async () => {
+    const raw = 'content://com.android.providers.downloads.documents/document/42';
+    // Both paths see the launch intent: the link is dropped, the take path opens it.
+    expect(redirectSystemPath({ path: raw, initial: true })).toBe('/');
+    const d = makeDeps(raw);
+    await renderHook(() => useIncomingPdfs(d));
+    await act(async () => {});
+    expect(d.navigate).toHaveBeenCalledTimes(1);
+    expect(d.navigate).toHaveBeenCalledWith(raw);
   });
 
   it('does nothing without a launch PDF', async () => {

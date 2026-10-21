@@ -47,7 +47,7 @@ export interface PdfNativeApi {
   openPdfWith(uri: string, chooserTitle: string): Promise<void>;
   /** Hands the PDF to the Android print service. */
   printPdf(uri: string, jobName: string): Promise<void>;
-  /** The PDF shared to the app at launch (ACTION_SEND), consumed so it is returned once; else null. */
+  /** The PDF the app was launched with (ACTION_SEND or ACTION_VIEW), consumed so it is returned once; else null. */
   takeIncomingPdf(): Promise<string | null>;
   /** File info for a shared/opened PDF; content:// rows get folder "" and parentUri "". */
   resolveIncomingPdf(uri: string): Promise<PdfFileInfo>;

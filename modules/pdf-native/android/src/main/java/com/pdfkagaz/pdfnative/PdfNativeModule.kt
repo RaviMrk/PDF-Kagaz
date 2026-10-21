@@ -31,7 +31,7 @@ class PdfNativeModule : Module() {
 
     Events(SCAN_PROGRESS_EVENT, INCOMING_PDF_EVENT)
 
-    // ACTION_VIEW is left to Linking; only PDFs shared with ACTION_SEND are reported here.
+    // A VIEW while running arrives through Linking; only PDFs shared with ACTION_SEND are reported here.
     OnNewIntent { intent ->
       val uri = IncomingPdf.streamUriOf(intent.action, intent.type, streamOf(intent)) ?: return@OnNewIntent
       sendEvent(INCOMING_PDF_EVENT, mapOf("uri" to uri))
@@ -330,12 +330,20 @@ class PdfNativeModule : Module() {
     printManager.print(jobName, PdfPrintAdapter(context, uri, jobName), null)
   }
 
-  /** The PDF the current activity was started with (ACTION_SEND), consumed so a recreate does not reopen it. */
+  /**
+   * The PDF the current activity was started with (ACTION_SEND stream or ACTION_VIEW data),
+   * consumed so a recreate or a late Linking.getInitialURL does not reopen it. The launch VIEW is
+   * delivered here, not through Linking: expo-router drops an initial URL that arrives late.
+   */
   private fun takeIncomingPdf(): String? {
     val activity = appContext.currentActivity ?: return null
     val intent = activity.intent ?: return null
-    val uri = IncomingPdf.streamUriOf(intent.action, intent.type, streamOf(intent)) ?: return null
-    activity.intent = Intent(intent).setAction(Intent.ACTION_MAIN).apply { removeExtra(Intent.EXTRA_STREAM) }
+    val uri = IncomingPdf.launchUriOf(intent.action, intent.type, streamOf(intent), intent.dataString) ?: return null
+    activity.intent = Intent(intent).setAction(Intent.ACTION_MAIN).apply {
+      removeExtra(Intent.EXTRA_STREAM)
+      data = null
+      clipData = null
+    }
     return uri
   }
 

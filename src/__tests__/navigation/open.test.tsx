@@ -5,6 +5,7 @@ import path from 'path';
 
 import * as nativeIntent from '../../../app/+native-intent';
 import type { PdfFileInfo } from '@/services/native/pdfNative';
+import { incomingPdfHref } from '@/services/intent/incomingLink';
 import { navigateToIncoming } from '@/services/intent/useIncomingPdfs';
 import { pdfNative } from '@/services/native/pdfNative';
 import { fakePdf } from '@/test-utils/fakePdf';
@@ -31,12 +32,12 @@ const ROWS = [
 ];
 
 /**
- * A cold-start system VIEW: on device +native-intent rewrites the raw content:// URI once (and
- * grants the permit). renderRouter would run it again on the rewritten path, so that second
- * pass is made an identity here.
+ * A cold-start system VIEW: on device takeIncomingPdf hands the raw content:// URI to
+ * useIncomingPdfs, which opens /open under a one-time nonce (+native-intent drops the initial
+ * link). renderRouter runs +native-intent on the initial URL, so that pass is made an identity.
  */
 function viewUrl(uri: string): string {
-  const href = nativeIntent.redirectSystemPath({ path: uri, initial: true });
+  const href = incomingPdfHref(uri)!;
   jest.spyOn(nativeIntent, 'redirectSystemPath').mockImplementation(({ path }) => path);
   return href;
 }

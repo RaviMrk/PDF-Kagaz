@@ -17,8 +17,9 @@ export function navigateToIncoming(uri: string): void {
 const defaultDeps: Deps = { native: pdfNative, navigate: navigateToIncoming };
 
 /**
- * Opens PDFs shared to the app (ACTION_SEND): the launch one once the navigator is ready, then
- * the ones shared while it runs. ACTION_VIEW arrives as a link (+native-intent).
+ * Opens PDFs handed to the app: the launch one (ACTION_SEND or ACTION_VIEW, consumed natively so
+ * it is returned once) when the navigator is ready, then the ones shared while it runs. A VIEW
+ * while running arrives as a link (+native-intent).
  */
 export function useIncomingPdfs(deps: Deps = defaultDeps): void {
   const ready = useRootNavigationState()?.key != null;
