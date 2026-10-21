@@ -560,4 +560,76 @@ describe('app-folder output rows are adopted by scans (one row per moved file)',
     expect(getFile(db, elsewhere.id)?.source).toBe('output');
     expect(listFiles(db)).toHaveLength(4);
   });
+
+  it('two real copies with the same name, size and second are never merged and do not flip-flop (R2)', () => {
+    const db = makeDb();
+    movedOutput(db);
+    const run = () =>
+      applyScan(
+        db,
+        scan([
+          info('Documents/PDFToolkit/x.pdf', { modifiedAt: 1_700_000_000_100 }),
+          info('Documents/PDFToolkit/old/x.pdf', { modifiedAt: 1_700_000_000_200 }),
+        ]),
+      );
+    const ids = [idOf('Documents/PDFToolkit/x.pdf'), idOf('Documents/PDFToolkit/old/x.pdf')];
+    for (let i = 0; i < 3; i++) {
+      const diff = run();
+      const rows = listFiles(db);
+      expect(rows.map((r) => r.id).sort()).toEqual([...ids].sort());
+      expect(rows.find((r) => r.id === ids[0])).toMatchObject({
+        isFavorite: true,
+        source: 'output',
+      });
+      if (i > 0) expect(diff).toEqual({ added: 0, updated: 0, removed: 0 });
+    }
+  });
+
+  it('never adopts an output row the scan reached directly', () => {
+    const db = makeDb();
+    upsertFile(db, info('Documents/PDFToolkit/x.pdf'), 'output');
+    applyScan(db, scan([info('Documents/PDFToolkit/x.pdf'), info('Documents/PDFToolkit/y/x.pdf')]));
+    expect(listFiles(db)).toHaveLength(2);
+    expect(getFile(db, idOf('Documents/PDFToolkit/x.pdf'))?.source).toBe('output');
+    expect(getFile(db, idOf('Documents/PDFToolkit/y/x.pdf'))).toBeDefined();
+  });
+
+  it('only adopts MediaStore output rows into the primary app folder', () => {
+    const db = makeDb();
+    const saf = upsertFile(
+      db,
+      {
+        uri: SAF_DOC,
+        name: 'x.pdf',
+        folder: 'Documents/PDFToolkit',
+        parentUri: `${TREE}/document/primary%3ADocuments%2FPDFToolkit`,
+        parentModifiedAt: 0,
+        sizeBytes: 100,
+        modifiedAt: 1_700_000_000_000,
+      },
+      'output',
+    );
+    applyScan(db, scan([info('Documents/PDFToolkit/x.pdf', { modifiedAt: 1_700_000_000_000 })]));
+    expect(getFile(db, saf.id)).toBeDefined();
+    expect(listFiles(db)).toHaveLength(2);
+
+    const db2 = makeDb();
+    const media = movedOutput(db2);
+    const sd = 'file:///storage/1A2B-3C4D';
+    applyScan(
+      db2,
+      scan(
+        [
+          {
+            ...info('Documents/PDFToolkit/x.pdf', { modifiedAt: 1_700_000_000_000 }),
+            uri: `${sd}/Documents/PDFToolkit/x.pdf`,
+            parentUri: `${sd}/Documents/PDFToolkit`,
+          },
+        ],
+        [sd],
+      ),
+    );
+    expect(getFile(db2, media.id)).toBeDefined();
+    expect(listFiles(db2)).toHaveLength(2);
+  });
 });

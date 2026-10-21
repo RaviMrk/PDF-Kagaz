@@ -16,7 +16,7 @@ import type {
   PdfFileInfo,
   ScanResult,
 } from '@/services/native/pdfNative';
-import { isInAppFolder } from '@/utils/appFolder';
+import { isDirectlyInPrimaryAppFolder, isInAppFolder } from '@/utils/appFolder';
 import { fileIdForUri } from '@/utils/fileId';
 
 /** Accepts both ExpoSQLiteDatabase (app) and BetterSQLite3Database (tests). */
@@ -244,13 +244,13 @@ const contentKey = (r: { name: string; sizeBytes: number; modifiedAt: number }) 
  * One row per moved file. Without full access, "Move to PDFToolkit folder" records the moved file
  * as an 'output' row with a MediaStore uri; a later scan that can see the app folder (a picked
  * Documents tree, or full access after a mode switch) lists the same file under another uri.
- * Rule: a scanned file in the app folder with the same name, size and modification second as an
- * app-folder output row is that file — the scanned row takes over the output row's favourite,
+ * Rule: a scanned file directly in the primary app folder with the same name, size and modification second as an
+ * MediaStore output row (one the scan did not reach directly) is that file — the scanned row takes over the output row's favourite,
  * last page, last opened time and bookmarks (replaceFile semantics) and the output row is dropped.
  * The surviving row keeps source 'output' (scans never demote) under the uri this mode can reach.
  * Returns the number of output rows dropped.
  */
-function adoptMovedOutputs(tx: IndexDb, infos: PdfFileInfo[]): number {
+function adoptMovedOutputs(tx: IndexDb, infos: PdfFileInfo[], reachedIds: Set<string>): number {
   const outputs = tx
     .select({
       id: files.id,
@@ -263,13 +263,16 @@ function adoptMovedOutputs(tx: IndexDb, infos: PdfFileInfo[]): number {
     .from(files)
     .where(eq(files.source, 'output'))
     .all()
-    .filter((row) => isInAppFolder(row));
+    .filter(
+      (row) =>
+        row.uri.startsWith('content://media/') && !reachedIds.has(row.id) && isInAppFolder(row),
+    );
   if (outputs.length === 0) return 0;
   const byContent = new Map(outputs.map((row) => [contentKey(row), row]));
   let adopted = 0;
   for (const info of infos) {
     const output = byContent.get(contentKey(info));
-    if (!output || output.uri === info.uri || !isInAppFolder(info)) continue;
+    if (!output || output.uri === info.uri || !isDirectlyInPrimaryAppFolder(info)) continue;
     byContent.delete(contentKey(info));
     replaceFile(tx, output.id, info, 'output');
     adopted++;
@@ -306,7 +309,7 @@ export function applyScan(
       )
       .map((row) => row.id);
     deleteIds(tx, stale);
-    const adopted = adoptMovedOutputs(tx, result.files);
+    const adopted = adoptMovedOutputs(tx, result.files, keep);
 
     if (source === 'scan') {
       tx.delete(folderStamps).run();
@@ -342,7 +345,7 @@ export function applyFolderChanges(db: IndexDb, changes: FolderChange[]): ScanDi
         .map((r) => r.id)
         .filter((id) => !keepIds.includes(id));
       deleteIds(tx, stale);
-      diff.removed += stale.length + adoptMovedOutputs(tx, change.files);
+      diff.removed += stale.length + adoptMovedOutputs(tx, change.files, new Set(keepIds));
       tx.insert(folderStamps)
         .values({ uri: change.uri, modifiedAt: change.modifiedAt })
         .onConflictDoUpdate({ target: folderStamps.uri, set: { modifiedAt: change.modifiedAt } })

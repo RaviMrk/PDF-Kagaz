@@ -28,9 +28,9 @@ function HomeContent() {
 
   const openFile = useCallback((f: FileRow) => {
     useFiles.getState().markOpened(f.id);
-    router.push(`/reader/${f.id}`);
+    router.push({ pathname: '/reader/[id]', params: { id: f.id } });
   }, []);
-  const openTool = useCallback((tool: QuickTool) => router.push(tool.href as never), []);
+  const openTool = useCallback((tool: QuickTool) => router.push(tool.href), []);
 
   return (
     <ScrollView

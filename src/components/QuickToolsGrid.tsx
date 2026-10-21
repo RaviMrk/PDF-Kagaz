@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import type { Href } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
@@ -9,14 +10,26 @@ type Icon = keyof typeof MaterialCommunityIcons.glyphMap;
 export type QuickTool = {
   key: 'scan' | 'merge' | 'compress' | 'imagesToPdf';
   icon: Icon;
-  href: string;
+  href: Href;
 };
 
 export const QUICK_TOOLS: QuickTool[] = [
   { key: 'scan', icon: 'camera-outline', href: '/scan' },
-  { key: 'merge', icon: 'file-multiple-outline', href: '/tool/merge' },
-  { key: 'compress', icon: 'arrow-collapse-all', href: '/tool/compress' },
-  { key: 'imagesToPdf', icon: 'image-multiple-outline', href: '/tool/images-to-pdf' },
+  {
+    key: 'merge',
+    icon: 'file-multiple-outline',
+    href: { pathname: '/tool/[toolId]', params: { toolId: 'merge' } },
+  },
+  {
+    key: 'compress',
+    icon: 'arrow-collapse-all',
+    href: { pathname: '/tool/[toolId]', params: { toolId: 'compress' } },
+  },
+  {
+    key: 'imagesToPdf',
+    icon: 'image-multiple-outline',
+    href: { pathname: '/tool/[toolId]', params: { toolId: 'images-to-pdf' } },
+  },
 ];
 
 export function QuickToolsGrid({ onSelect }: { onSelect: (tool: QuickTool) => void }) {

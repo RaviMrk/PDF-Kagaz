@@ -113,6 +113,30 @@ describe('Files tab', () => {
     jest.restoreAllMocks();
   });
 
+  it('hardware back closes the reader, not the folder drill-in, while the reader is on top (R1)', async () => {
+    type BackListener = Parameters<typeof BackHandler.addEventListener>[1];
+    const handlers = new Set<BackListener>();
+    jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_event, handler) => {
+      handlers.add(handler);
+      return { remove: () => handlers.delete(handler) };
+    });
+    const pressBack = () =>
+      [...handlers].reverse().some((h) => h({} as Parameters<BackListener>[0]) === true);
+    await renderFiles();
+    await fireEvent.press(screen.getByRole('tab', { name: 'Folders' }));
+    await fireEvent.press(screen.getByText('Download'));
+    await fireEvent.press(screen.getByText('Zebra.pdf'));
+    // toHavePathname is unavailable under RNTL v14; the reader placeholder tells where we are.
+    expect(screen.getByText('Coming soon')).toBeTruthy();
+    await act(async () => {
+      pressBack();
+    });
+    expect(screen.queryByText('Coming soon')).toBeNull();
+    expect(screen.getByText('Zebra.pdf')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Back to folders' })).toBeTruthy();
+    jest.restoreAllMocks();
+  });
+
   it('shows the scanning text, not "No PDFs found yet", during the first scan (F10)', async () => {
     useFiles.setState({ files: [], status: 'scanning', progress: null });
     await renderFiles();

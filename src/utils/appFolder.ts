@@ -18,3 +18,19 @@ export function isInAppFolder(file: { uri: string; folder?: string | null }): bo
     return false;
   }
 }
+
+const DIRECT_PRIMARY_APP_FOLDER =
+  /(?:\/storage\/emulated\/\d+\/|primary:)Documents\/PDFToolkit\/[^/]+$/;
+
+/** A direct child of the app folder on primary storage (nested folders and SD cards: false). */
+export function isDirectlyInPrimaryAppFolder(file: {
+  uri: string;
+  folder?: string | null;
+}): boolean {
+  if (file.folder === APP_FOLDER_DISPLAY) return true;
+  try {
+    return DIRECT_PRIMARY_APP_FOLDER.test(decodeURIComponent(file.uri));
+  } catch {
+    return false;
+  }
+}

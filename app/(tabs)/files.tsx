@@ -1,5 +1,5 @@
 import { FlashList } from '@shopify/flash-list';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -60,14 +60,17 @@ function FilesList() {
   }, [notice]);
 
   // Android back inside a folder returns to the folder list instead of leaving the tab.
-  useEffect(() => {
-    if (!folder) return;
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      setFolder(null);
-      return true;
-    });
-    return () => sub.remove();
-  }, [folder]);
+  // Focus-scoped: a screen pushed on top (the reader) must get back first.
+  useFocusEffect(
+    useCallback(() => {
+      if (!folder) return;
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        setFolder(null);
+        return true;
+      });
+      return () => sub.remove();
+    }, [folder]),
+  );
 
   const fileRows = useMemo(
     () =>
@@ -89,7 +92,7 @@ function FilesList() {
 
   const openFile = useCallback((f: FileRowData) => {
     useFiles.getState().markOpened(f.id);
-    router.push(`/reader/${f.id}`);
+    router.push({ pathname: '/reader/[id]', params: { id: f.id } });
   }, []);
   const openMore = useCallback((f: FileRowData) => setActionFile(f), []);
   const closeMore = useCallback(() => setActionFile(null), []);
