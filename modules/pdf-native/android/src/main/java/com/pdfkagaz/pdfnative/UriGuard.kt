@@ -38,7 +38,8 @@ class UriGuard(private val context: Context) {
   /**
    * Opens an allowed file read-only, then checks what was actually opened (the kernel's path for
    * the descriptor) against the same allowlist before a byte is read: a symlink swapped in after
-   * [requireAllowed] cannot redirect the read. Throws ERR_PERMISSION_DENIED and closes otherwise.
+   * [requireAllowed] cannot redirect the read. The kernel may name a volume by an alias
+   * ([KernelPaths]). Throws ERR_PERMISSION_DENIED and closes otherwise.
    */
   fun openVerified(file: File): ParcelFileDescriptor {
     val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
@@ -47,7 +48,7 @@ class UriGuard(private val context: Context) {
     } catch (e: ErrnoException) {
       null
     }
-    if (target == null || !ShareablePaths.isShareable(target, pathRules())) {
+    if (target == null || !KernelPaths.isShareable(target, pathRules(), realVolumeRoots())) {
       fd.close()
       throw PermissionDeniedException()
     }
@@ -62,6 +63,25 @@ class UriGuard(private val context: Context) {
     }
     return context.contentResolver.openInputStream(allowed) ?: throw FileNotFoundCodedException()
   }
+
+  /**
+   * (kernel path, canonical path) of each mounted volume root whose kernel path differs: the
+   * root is opened read-only and its descriptor's path read back, as [openVerified] sees files.
+   */
+  private fun realVolumeRoots(): List<Pair<String, String>> =
+    Volumes.mounted(context).mapNotNull { volume ->
+      val canonical = volume.root.canonicalPath
+      val real = kernelPathOf(volume.root)
+      if (real == null || real == canonical) null else real to canonical
+    }
+
+  private fun kernelPathOf(dir: File): String? =
+    try {
+      ParcelFileDescriptor.open(dir, ParcelFileDescriptor.MODE_READ_ONLY).use { Os.readlink("/proc/self/fd/${it.fd}") }
+    } catch (e: Exception) {
+      // ErrnoException, FileNotFoundException (no access to the root), SecurityException.
+      null
+    }
 
   private fun pathRules(): PathRules {
     val appDirs = context.getExternalFilesDirs(null).map { it?.parentFile } +
