@@ -2,7 +2,10 @@ import { act, renderHook } from '@testing-library/react-native';
 
 import type { IncomingPdfEvent } from '@/services/native/pdfNative';
 
-import { useIncomingPdfs } from '../useIncomingPdfs';
+import { router } from 'expo-router';
+
+import { takeIncomingPermit } from '../incomingLink';
+import { navigateToIncoming, useIncomingPdfs } from '../useIncomingPdfs';
 
 let mockNavKey: string | undefined = 'root';
 jest.mock('expo-router', () => ({
@@ -63,5 +66,17 @@ describe('useIncomingPdfs', () => {
     expect(d.navigate).toHaveBeenCalledWith('content://x/3');
     await unmount();
     expect(d.remove).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('navigateToIncoming', () => {
+  it('permits the uri once and pushes /open', () => {
+    navigateToIncoming('content://x/4');
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/open',
+      params: { uri: 'content://x/4' },
+    });
+    expect(takeIncomingPermit('content://x/4')).toBe(true);
+    expect(takeIncomingPermit('content://x/4')).toBe(false);
   });
 });
