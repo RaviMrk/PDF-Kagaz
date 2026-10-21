@@ -114,6 +114,35 @@ describe('PdfView', () => {
     expect(fakePdf.renders).toBe(3);
   });
 
+  it('calls the newest callbacks after a callback-only re-render without re-rendering the native view', async () => {
+    const first = props();
+    const second = props();
+    await render(<PdfView {...first} />);
+    await screen.rerender(<PdfView {...second} />);
+    expect(fakePdf.renders).toBe(1);
+    const p = fakePdf.lastProps();
+    p.onLoadComplete(3, '/p', { width: 1, height: 1 }, undefined);
+    p.onPageChanged(2, 3);
+    p.onError(new Error('cannot create document'));
+    p.onPageSingleTap(1, 0, 0);
+    expect(second.onLoad).toHaveBeenCalledWith({ pageCount: 3, outline: [] });
+    expect(second.onPageChange).toHaveBeenCalledWith(2, 3);
+    expect(second.onError).toHaveBeenCalledWith('invalid');
+    expect(second.onTap).toHaveBeenCalledTimes(1);
+    for (const fn of [first.onLoad, first.onPageChange, first.onError, first.onTap]) {
+      expect(fn).not.toHaveBeenCalled();
+    }
+  });
+
+  it('reloads at the initialPage of the render that changes the orientation', async () => {
+    await render(<PdfView {...props({ initialPage: 1 })} />);
+    await screen.rerender(<PdfView {...props({ initialPage: 30 })} />);
+    expect(fakePdf.lastProps().page).toBe(1);
+    await screen.rerender(<PdfView {...props({ initialPage: 30, horizontal: true })} />);
+    expect(fakePdf.renders).toBe(2);
+    expect(fakePdf.lastProps().page).toBe(30);
+  });
+
   it('refuses a non-file uri', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
     await expect(render(<PdfView {...props({ fileUri: 'content://x/1' })} />)).rejects.toThrow(

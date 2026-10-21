@@ -2,7 +2,16 @@
 import fs from 'fs';
 import path from 'path';
 
-import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFString } from '@cantoo/pdf-lib';
+import {
+  PDFArray,
+  PDFDict,
+  PDFDocument,
+  PDFHexString,
+  PDFName,
+  PDFNumber,
+  PDFRef,
+  PDFString,
+} from '@cantoo/pdf-lib';
 
 const dir = path.join(__dirname, '..', '..', '__fixtures__');
 const read = (name: string) => fs.readFileSync(path.join(dir, name));
@@ -46,15 +55,41 @@ describe('PDF fixtures', () => {
     expect(fs.readdirSync(dir)).toContain('अहवाल.pdf'.normalize('NFC'));
   });
 
-  it('outline.pdf has 10 pages and a Chapter 1 / Chapter 2 outline', async () => {
+  it('outline.pdf has 10 pages and a two-level outline with page destinations', async () => {
     const doc = await PDFDocument.load(read('outline.pdf'));
     expect(doc.getPageCount()).toBe(10);
+    const pageRefs = doc.getPages().map((p) => p.ref);
     const outlines = doc.catalog.lookup(PDFName.of('Outlines'), PDFDict);
     expect(outlines).toBeDefined();
-    const title = (item: PDFDict) =>
-      item.lookup(PDFName.of('Title'), PDFString, PDFHexString).decodeText();
-    const first = outlines.lookup(PDFName.of('First'), PDFDict);
-    expect(title(first)).toBe('Chapter 1');
-    expect(title(first.lookup(PDFName.of('Next'), PDFDict))).toBe('Chapter 2');
+    const count = (item: PDFDict) => item.lookup(PDFName.of('Count'), PDFNumber).asNumber();
+    type Entry = { title: string; page: number; count?: number; children: Entry[] };
+    const read1 = (first: PDFDict | undefined): Entry[] => {
+      const out: Entry[] = [];
+      for (let item = first; item; item = item.lookupMaybe(PDFName.of('Next'), PDFDict)) {
+        const dest = item.lookup(PDFName.of('Dest'), PDFArray);
+        const kids = item.lookupMaybe(PDFName.of('First'), PDFDict);
+        out.push({
+          title: item.lookup(PDFName.of('Title'), PDFString, PDFHexString).decodeText(),
+          page: pageRefs.indexOf(dest.get(0) as PDFRef) + 1,
+          ...(kids ? { count: count(item) } : {}),
+          children: read1(kids),
+        });
+      }
+      return out;
+    };
+    expect(count(outlines)).toBe(5);
+    expect(read1(outlines.lookup(PDFName.of('First'), PDFDict))).toEqual([
+      {
+        title: 'Chapter 1',
+        page: 1,
+        count: 2,
+        children: [
+          { title: 'Section 1.1', page: 2, children: [] },
+          { title: 'Section 1.2', page: 3, children: [] },
+        ],
+      },
+      { title: 'Chapter 2', page: 5, children: [] },
+      { title: 'Chapter 3', page: 9, children: [] },
+    ]);
   });
 });

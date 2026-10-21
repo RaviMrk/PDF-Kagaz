@@ -2,10 +2,12 @@ import {
   forwardRef,
   memo,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   type ComponentType,
   type RefAttributes,
+  type RefObject,
 } from 'react';
 import { ActivityIndicator, StyleSheet } from 'react-native';
 import Pdf, { type PdfProps, type PdfRef } from 'react-native-pdf';
@@ -50,54 +52,92 @@ function renderActivityIndicator() {
   return <ActivityIndicator size="large" />;
 }
 
+type Callbacks = Pick<PdfViewProps, 'onLoad' | 'onPageChange' | 'onError' | 'onTap'>;
+type NativeViewProps = Pick<
+  PdfViewProps,
+  'fileUri' | 'password' | 'initialPage' | 'horizontal' | 'testID'
+> & {
+  callbacks: RefObject<Callbacks>;
+  pdf: RefObject<PdfRef | null>;
+};
+
 /**
- * The only importer of react-native-pdf. On Fabric every prop update reloads the whole document,
- * so the view re-renders only when the file, password or orientation changes; callbacks are read
- * from a ref and `initialPage` only applies to a (re)load — later jumps go through `goToPage`.
+ * Memoised on the file, password and orientation only: on Fabric every prop update of the native
+ * view reloads the whole document. Callbacks are read from `callbacks.current` at call time.
  */
-const PdfViewInner = forwardRef<PdfViewHandle, PdfViewProps>(function PdfView(props, ref) {
+const NativeView = memo(
+  function NativeView({
+    fileUri,
+    password,
+    initialPage,
+    horizontal,
+    testID,
+    callbacks,
+    pdf,
+  }: NativeViewProps) {
+    const source = useMemo(() => ({ uri: fileUri }), [fileUri]);
+    return (
+      <NativePdf
+        ref={pdf}
+        testID={testID}
+        source={source}
+        page={initialPage}
+        password={password}
+        horizontal={horizontal}
+        enablePaging={horizontal}
+        scale={1}
+        minScale={1}
+        maxScale={4}
+        fitPolicy={horizontal ? 2 : 0}
+        spacing={horizontal ? 0 : 8}
+        enableAntialiasing
+        enableDoubleTapZoom
+        style={styles.pdf}
+        renderActivityIndicator={renderActivityIndicator}
+        onLoadComplete={(pageCount, _path, _size, tableContents) =>
+          callbacks.current.onLoad({ pageCount, outline: toOutline(tableContents) })
+        }
+        onPageChanged={(page, pageCount) => callbacks.current.onPageChange(page, pageCount)}
+        onError={(error) => callbacks.current.onError(errorKindOf(error))}
+        onPageSingleTap={() => callbacks.current.onTap()}
+      />
+    );
+  },
+  (a, b) => a.fileUri === b.fileUri && a.password === b.password && a.horizontal === b.horizontal,
+);
+
+/**
+ * The only importer of react-native-pdf. The native view re-renders (and so reloads the document)
+ * only when `fileUri`, `password` or `horizontal` changes; callbacks may change on every render and
+ * the newest ones are always called.
+ *
+ * `initialPage` contract: it is read only when the document (re)loads — on mount and whenever
+ * `password` or `horizontal` changes — and the view then opens at the `initialPage` of THAT render.
+ * Callers must therefore always pass the live current page (not the page the reader opened at).
+ * Later jumps go through `ref.goToPage(page)`.
+ */
+export const PdfView = forwardRef<PdfViewHandle, PdfViewProps>(function PdfView(props, ref) {
   const { fileUri, password, initialPage, horizontal, testID } = props;
   if (!fileUri.startsWith('file://')) throw new Error('PdfView needs a file:// uri');
 
-  const latest = useRef(props);
-  latest.current = props;
+  const callbacks = useRef<Callbacks>(props);
+  useLayoutEffect(() => {
+    callbacks.current = props;
+  });
   const pdf = useRef<PdfRef>(null);
-
   useImperativeHandle(ref, () => ({ goToPage: (page) => pdf.current?.setPage(page) }), []);
 
-  const source = useMemo(() => ({ uri: fileUri }), [fileUri]);
-
   return (
-    <NativePdf
-      ref={pdf}
-      testID={testID}
-      source={source}
-      page={initialPage}
+    <NativeView
+      fileUri={fileUri}
       password={password}
+      initialPage={initialPage}
       horizontal={horizontal}
-      enablePaging={horizontal}
-      scale={1}
-      minScale={1}
-      maxScale={4}
-      fitPolicy={horizontal ? 2 : 0}
-      spacing={horizontal ? 0 : 8}
-      enableAntialiasing
-      enableDoubleTapZoom
-      style={styles.pdf}
-      renderActivityIndicator={renderActivityIndicator}
-      onLoadComplete={(pageCount, _path, _size, tableContents) =>
-        latest.current.onLoad({ pageCount, outline: toOutline(tableContents) })
-      }
-      onPageChanged={(page, pageCount) => latest.current.onPageChange(page, pageCount)}
-      onError={(error) => latest.current.onError(errorKindOf(error))}
-      onPageSingleTap={() => latest.current.onTap()}
+      testID={testID}
+      callbacks={callbacks}
+      pdf={pdf}
     />
   );
 });
-
-export const PdfView = memo(
-  PdfViewInner,
-  (a, b) => a.fileUri === b.fileUri && a.password === b.password && a.horizontal === b.horizontal,
-);
 
 const styles = StyleSheet.create({ pdf: { flex: 1 } });
