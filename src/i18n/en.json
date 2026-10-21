@@ -119,5 +119,33 @@
     "merge": "Merge",
     "compress": "Compress",
     "imagesToPdf": "Images to PDF"
+  },
+  "reader": {
+    "close": "Close",
+    "pageOf": "{{page}} / {{count}}",
+    "pageA11y": "Page {{page}} of {{count}}. Jump to page",
+    "jumpTitle": "Go to page",
+    "jumpPlaceholder": "Page number",
+    "jumpGo": "Go",
+    "jumpError": "Enter a page from 1 to {{count}}",
+    "cancel": "Cancel",
+    "loading": "Opening PDF…",
+    "errorNoRow": "This file isn't in your library",
+    "errorNotFound": "This file no longer exists",
+    "errorUnavailable": "This file is on storage that isn't available right now",
+    "errorPermission": "PDF Toolkit can't open this file anymore. Open it again from the app you got it from.",
+    "errorInvalid": "This PDF is damaged or isn't a PDF",
+    "errorIo": "Couldn't open this file. Check free space and try again.",
+    "errorUnknown": "Something went wrong while opening this PDF"
+  },
+  "password": {
+    "title": "Password required",
+    "body": "\"{{name}}\" is protected. Enter its password to open it.",
+    "placeholder": "Password",
+    "wrong": "Wrong password. Try again.",
+    "open": "Open",
+    "cancel": "Cancel",
+    "show": "Show password",
+    "hide": "Hide password"
   }
 }
