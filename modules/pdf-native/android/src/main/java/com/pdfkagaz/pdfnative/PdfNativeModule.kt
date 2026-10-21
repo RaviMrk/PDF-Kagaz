@@ -1,13 +1,10 @@
 package com.pdfkagaz.pdfnative
 
-import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
 import android.os.SystemClock
 import android.print.PrintManager
 import android.provider.DocumentsContract
@@ -306,12 +303,7 @@ class PdfNativeModule : Module() {
 
   // region access
 
-  private fun hasAllFilesAccess(): Boolean =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-      Environment.isExternalStorageManager()
-    } else {
-      context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-    }
+  private fun hasAllFilesAccess(): Boolean = StorageAccess.has(context)
 
   private fun openAllFilesAccessSettings() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return

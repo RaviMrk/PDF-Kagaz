@@ -28,12 +28,27 @@ object RenderSupport {
       throw IoCodedException(cause = e)
     }
 
+  /**
+   * Missing → ERR_FILE_NOT_FOUND, except where it may only be hidden from us ([MissingFiles]: no
+   * storage access right now) → ERR_PERMISSION_DENIED, so the file's row is kept.
+   */
   fun statOrThrow(context: Context, uri: Uri): UriStat =
     try {
-      PdfFileInfos.stat(context, uri) ?: throw FileNotFoundCodedException()
+      PdfFileInfos.stat(context, uri) ?: throw missingError(context, uri)
     } catch (e: SecurityException) {
       throw PermissionDeniedException(cause = e)
     }
+
+  private fun missingError(context: Context, uri: Uri): CodedException {
+    val hidden = MissingFiles.mayBeHidden(
+      scheme = uri.scheme,
+      path = uri.path,
+      authority = uri.authority,
+      volumeRoots = Volumes.mounted(context).map { it.root.absolutePath },
+      hasStorageAccess = StorageAccess.has(context),
+    )
+    return if (hidden) PermissionDeniedException() else FileNotFoundCodedException()
+  }
 
   fun openFd(context: Context, uri: Uri): ParcelFileDescriptor =
     try {
