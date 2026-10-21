@@ -33,6 +33,7 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
   printPdf(uri: string, jobName: string): Promise<void>;
   takeIncomingPdf(): Promise<string | null>;
   resolveIncomingPdf(uri: string): Promise<PdfFileInfo>;
+  releaseIncomingGrant(uri: string): Promise<void>;
 }
 
 export default requireNativeModule<PdfNativeModule>('PdfNative');

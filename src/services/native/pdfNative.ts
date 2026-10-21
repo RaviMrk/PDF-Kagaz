@@ -51,6 +51,8 @@ export interface PdfNativeApi {
   takeIncomingPdf(): Promise<string | null>;
   /** File info for a shared/opened PDF; content:// rows get folder "" and parentUri "". */
   resolveIncomingPdf(uri: string): Promise<PdfFileInfo>;
+  /** Releases the persisted read grant taken for an incoming document (call when its row is removed). */
+  releaseIncomingGrant(uri: string): Promise<void>;
   addScanProgressListener(cb: (e: ScanProgressEvent) => void): { remove(): void };
   /** PDFs shared to the app while it is running (ACTION_VIEW is left to Linking). */
   addIncomingPdfListener(cb: (e: IncomingPdfEvent) => void): { remove(): void };
@@ -111,6 +113,7 @@ export const pdfNative: PdfNativeApi = {
   printPdf: (uri, jobName) => PdfNative.printPdf(uri, jobName),
   takeIncomingPdf: () => PdfNative.takeIncomingPdf(),
   resolveIncomingPdf: (uri) => PdfNative.resolveIncomingPdf(uri),
+  releaseIncomingGrant: (uri) => PdfNative.releaseIncomingGrant(uri),
   addScanProgressListener: (cb) => PdfNative.addListener('onScanProgress', cb),
   addIncomingPdfListener: (cb) => PdfNative.addListener('onIncomingPdf', cb),
 };

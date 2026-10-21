@@ -53,6 +53,7 @@ function createNativeFns(): jest.Mocked<NativeFns> {
     printPdf: jest.fn().mockResolvedValue(undefined),
     takeIncomingPdf: jest.fn().mockResolvedValue(null),
     resolveIncomingPdf: jest.fn((uri: string) => Promise.resolve(infoFromUri(uri))),
+    releaseIncomingGrant: jest.fn().mockResolvedValue(undefined),
   };
 }
 

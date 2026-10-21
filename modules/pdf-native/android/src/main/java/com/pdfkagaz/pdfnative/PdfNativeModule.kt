@@ -105,8 +105,12 @@ class PdfNativeModule : Module() {
     }
 
     AsyncFunction("printPdf") Coroutine { uri: String, jobName: String ->
-      RenderSupport.mapErrors { withContext(Dispatchers.IO) { RenderSupport.statOrThrow(context, Uri.parse(uri)) } }
-      withContext(Dispatchers.Main) { printPdf(Uri.parse(uri), jobName) }
+      val printable = RenderSupport.mapErrors {
+        withContext(Dispatchers.IO) {
+          UriGuard(context).requireAllowed(Uri.parse(uri)).also { RenderSupport.statOrThrow(context, it) }
+        }
+      }
+      withContext(Dispatchers.Main) { printPdf(printable, jobName) }
     }
 
     AsyncFunction("takeIncomingPdf") {
@@ -115,6 +119,10 @@ class PdfNativeModule : Module() {
 
     AsyncFunction("resolveIncomingPdf") Coroutine { uri: String ->
       RenderSupport.mapErrors { withContext(Dispatchers.IO) { resolveIncomingPdf(Uri.parse(uri)) } }
+    }
+
+    AsyncFunction("releaseIncomingGrant") { uri: String ->
+      releaseIncomingGrant(uri)
     }
 
     lateinit var folderPicker: AppContextActivityResultLauncher<FolderPickerInput, Uri?>
@@ -138,7 +146,10 @@ class PdfNativeModule : Module() {
     }
 
     AsyncFunction("getPersistedFolderUris") {
-      context.contentResolver.persistedUriPermissions.filter { it.isReadPermission }.map { it.uri.toString() }
+      // Folder (tree) grants only: incoming documents also hold persisted grants.
+      context.contentResolver.persistedUriPermissions
+        .filter { it.isReadPermission && IncomingGrants.isTree(it.uri.toString()) }
+        .map { it.uri.toString() }
     }
   }
 
@@ -267,8 +278,9 @@ class PdfNativeModule : Module() {
     return mapOf("uri" to treeUri.toString(), "label" to label)
   }
 
-  private fun releaseFolder(uri: String) {
-    val parsed = Uri.parse(uri)
+  private fun releaseFolder(uri: String) = releaseGrant(Uri.parse(uri))
+
+  private fun releaseGrant(parsed: Uri) {
     val grant = context.contentResolver.persistedUriPermissions.firstOrNull { it.uri == parsed } ?: return
     val flags = (if (grant.isReadPermission) Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
       (if (grant.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
@@ -324,13 +336,17 @@ class PdfNativeModule : Module() {
     return uri
   }
 
-  private fun resolveIncomingPdf(uri: Uri): Map<String, Any?> {
+  /** Our own providers and app-private files are refused, so such rows are never indexed. */
+  private fun resolveIncomingPdf(source: Uri): Map<String, Any?> {
+    val uri = UriGuard(context).requireAllowed(source)
     if (uri.scheme == "file") {
       // Throws ERR_VOLUME_UNAVAILABLE for a file on an unmounted volume.
       RenderSupport.statOrThrow(context, uri)
       val file = File(uri.path ?: throw FileNotFoundCodedException())
       return PdfFileInfos.ofFile(file, Volumes.mounted(context))
     }
+    // Make room first, so taking this grant never makes the system prune a folder (tree) grant.
+    trimIncomingGrants(keep = IncomingGrants.MAX_DOCUMENT_GRANTS - 1)
     try {
       // Keeps access across restarts when the sender granted a persistable permission; most do not.
       context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -338,6 +354,17 @@ class PdfNativeModule : Module() {
       // Not persistable: the grant lasts while this activity lives.
     }
     return PdfFileInfos.ofIncoming(uri, RenderSupport.statOrThrow(context, uri))
+  }
+
+  private fun trimIncomingGrants(keep: Int) {
+    val grants = context.contentResolver.persistedUriPermissions.map { PersistedGrant(it.uri.toString(), it.persistedTime) }
+    for (uri in IncomingGrants.toRelease(grants, keep)) releaseGrant(Uri.parse(uri))
+  }
+
+  /** Releases the persisted grant of an incoming document; folder (tree) grants are left alone. */
+  private fun releaseIncomingGrant(uri: String) {
+    if (IncomingGrants.isTree(uri)) return
+    releaseGrant(Uri.parse(uri))
   }
 
   private fun streamOf(intent: Intent): String? {

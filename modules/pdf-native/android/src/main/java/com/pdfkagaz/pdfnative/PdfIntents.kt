@@ -1,6 +1,7 @@
 package com.pdfkagaz.pdfnative
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ComponentName
 import android.content.Context
@@ -17,17 +18,14 @@ class PdfIntents(private val context: Context) {
   /**
    * Stats [uri] on IO (missing → ERR_FILE_NOT_FOUND / ERR_VOLUME_UNAVAILABLE, no grant →
    * ERR_PERMISSION_DENIED) and returns the URI other apps can read: content:// as is, file://
-   * through the provider. App-private files other than reader cache copies are refused.
+   * through the provider. Our own providers and app-private files are refused ([UriGuard]).
    */
   suspend fun shareUriOf(uri: String): Uri = RenderSupport.mapErrors {
     withContext(Dispatchers.IO) {
-      val parsed = Uri.parse(uri)
+      val parsed = UriGuard(context).requireAllowed(Uri.parse(uri))
       RenderSupport.statOrThrow(context, parsed)
       if (parsed.scheme != "file") return@withContext parsed
-      val file = File(parsed.path ?: throw FileNotFoundCodedException()).canonicalFile
-      val dataDir = File(context.applicationInfo.dataDir).canonicalPath
-      val readerDir = File(context.cacheDir, ReaderFiles.DIR).canonicalPath
-      if (!ShareablePaths.isShareable(file.path, dataDir, readerDir)) throw PermissionDeniedException()
+      val file = File(parsed.path ?: throw FileNotFoundCodedException())
       try {
         FileProvider.getUriForFile(context, "${context.packageName}$AUTHORITY_SUFFIX", file)
       } catch (e: IllegalArgumentException) {
@@ -60,7 +58,14 @@ class PdfIntents(private val context: Context) {
 
   /** Starts [intent] from the current activity; call on the main thread. */
   fun start(activity: Activity?, intent: Intent) {
-    (activity ?: throw NoActivityException()).startActivity(intent)
+    try {
+      (activity ?: throw NoActivityException()).startActivity(intent)
+    } catch (e: ActivityNotFoundException) {
+      throw NoActivityException(cause = e)
+    } catch (e: SecurityException) {
+      // Its message may contain the URI.
+      throw PermissionDeniedException(cause = e)
+    }
   }
 
   /** The chooser hides this app itself (sharing a PDF back to us makes no sense). */

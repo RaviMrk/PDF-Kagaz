@@ -110,6 +110,11 @@ describe('pdfNative', () => {
     expect(mockedModule.resolveIncomingPdf).toHaveBeenCalledWith('content://x/a.pdf');
   });
 
+  it('forwards releaseIncomingGrant', async () => {
+    await expect(pdfNative.releaseIncomingGrant('content://x/1')).resolves.toBeUndefined();
+    expect(mockedModule.releaseIncomingGrant).toHaveBeenCalledWith('content://x/1');
+  });
+
   it('recognises native errors by code', () => {
     expect(isPdfNativeError(nativeError('ERR_PDF_ENCRYPTED'), 'ERR_PDF_ENCRYPTED')).toBe(true);
     expect(isPdfNativeError(nativeError('ERR_PDF_ENCRYPTED'), 'ERR_PDF_INVALID')).toBe(false);
