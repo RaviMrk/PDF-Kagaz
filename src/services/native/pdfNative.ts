@@ -2,6 +2,7 @@ import PdfNative from '../../../modules/pdf-native';
 import type {
   FolderChange,
   FolderStamp,
+  IncomingPdfEvent,
   PdfFileInfo,
   PickedFolder,
   ReaderFile,
@@ -12,6 +13,7 @@ import type {
 export type {
   FolderChange,
   FolderStamp,
+  IncomingPdfEvent,
   PdfFileInfo,
   PickedFolder,
   ReaderFile,
@@ -39,7 +41,19 @@ export interface PdfNativeApi {
   pickFolder(): Promise<PickedFolder | null>;
   releaseFolder(uri: string): Promise<void>;
   getPersistedFolderUris(): Promise<string[]>;
+  /** Share sheet for a PDF (file:// through the app's FileProvider, content:// as is); this app is excluded. */
+  sharePdf(uri: string, chooserTitle: string): Promise<void>;
+  /** "Open with" chooser (ACTION_VIEW) for a PDF; this app is excluded. */
+  openPdfWith(uri: string, chooserTitle: string): Promise<void>;
+  /** Hands the PDF to the Android print service. */
+  printPdf(uri: string, jobName: string): Promise<void>;
+  /** The PDF shared to the app at launch (ACTION_SEND), consumed so it is returned once; else null. */
+  takeIncomingPdf(): Promise<string | null>;
+  /** File info for a shared/opened PDF; content:// rows get folder "" and parentUri "". */
+  resolveIncomingPdf(uri: string): Promise<PdfFileInfo>;
   addScanProgressListener(cb: (e: ScanProgressEvent) => void): { remove(): void };
+  /** PDFs shared to the app while it is running (ACTION_VIEW is left to Linking). */
+  addIncomingPdfListener(cb: (e: IncomingPdfEvent) => void): { remove(): void };
 }
 
 export const PDF_NATIVE_ERROR_CODES = [
@@ -92,5 +106,11 @@ export const pdfNative: PdfNativeApi = {
   pickFolder: () => PdfNative.pickFolder(),
   releaseFolder: (uri) => PdfNative.releaseFolder(uri),
   getPersistedFolderUris: () => PdfNative.getPersistedFolderUris(),
+  sharePdf: (uri, chooserTitle) => PdfNative.sharePdf(uri, chooserTitle),
+  openPdfWith: (uri, chooserTitle) => PdfNative.openPdfWith(uri, chooserTitle),
+  printPdf: (uri, jobName) => PdfNative.printPdf(uri, jobName),
+  takeIncomingPdf: () => PdfNative.takeIncomingPdf(),
+  resolveIncomingPdf: (uri) => PdfNative.resolveIncomingPdf(uri),
   addScanProgressListener: (cb) => PdfNative.addListener('onScanProgress', cb),
+  addIncomingPdfListener: (cb) => PdfNative.addListener('onIncomingPdf', cb),
 };

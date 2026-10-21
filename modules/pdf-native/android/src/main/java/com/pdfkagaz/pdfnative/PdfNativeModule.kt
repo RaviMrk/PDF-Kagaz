@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.SystemClock
+import android.print.PrintManager
 import android.provider.DocumentsContract
 import android.provider.Settings
 import expo.modules.kotlin.activityresult.AppContextActivityResultLauncher
@@ -31,7 +32,13 @@ class PdfNativeModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("PdfNative")
 
-    Events(SCAN_PROGRESS_EVENT)
+    Events(SCAN_PROGRESS_EVENT, INCOMING_PDF_EVENT)
+
+    // ACTION_VIEW is left to Linking; only PDFs shared with ACTION_SEND are reported here.
+    OnNewIntent { intent ->
+      val uri = IncomingPdf.streamUriOf(intent.action, intent.type, streamOf(intent)) ?: return@OnNewIntent
+      sendEvent(INCOMING_PDF_EVENT, mapOf("uri" to uri))
+    }
 
     AsyncFunction("scanPdfs") Coroutine { roots: List<String>? ->
       withContext(Dispatchers.IO) { scanPdfs(roots) }
@@ -87,6 +94,29 @@ class PdfNativeModule : Module() {
       withContext(Dispatchers.IO) { fileOps.moveToAppFolder(uri) }
     }
 
+    AsyncFunction("sharePdf") Coroutine { uri: String, chooserTitle: String ->
+      val shareUri = intents.shareUriOf(uri)
+      withContext(Dispatchers.Main) { intents.start(appContext.currentActivity, intents.sendChooser(shareUri, chooserTitle)) }
+    }
+
+    AsyncFunction("openPdfWith") Coroutine { uri: String, chooserTitle: String ->
+      val shareUri = intents.shareUriOf(uri)
+      withContext(Dispatchers.Main) { intents.start(appContext.currentActivity, intents.viewChooser(shareUri, chooserTitle)) }
+    }
+
+    AsyncFunction("printPdf") Coroutine { uri: String, jobName: String ->
+      RenderSupport.mapErrors { withContext(Dispatchers.IO) { RenderSupport.statOrThrow(context, Uri.parse(uri)) } }
+      withContext(Dispatchers.Main) { printPdf(Uri.parse(uri), jobName) }
+    }
+
+    AsyncFunction("takeIncomingPdf") {
+      takeIncomingPdf()
+    }.runOnQueue(Queues.MAIN)
+
+    AsyncFunction("resolveIncomingPdf") Coroutine { uri: String ->
+      RenderSupport.mapErrors { withContext(Dispatchers.IO) { resolveIncomingPdf(Uri.parse(uri)) } }
+    }
+
     lateinit var folderPicker: AppContextActivityResultLauncher<FolderPickerInput, Uri?>
 
     RegisterActivityContracts {
@@ -117,6 +147,8 @@ class PdfNativeModule : Module() {
   private val readerFiles by lazy { ReaderFiles(context) }
 
   private val readerThumbnails by lazy { ReaderThumbnails(context) }
+
+  private val intents by lazy { PdfIntents(context) }
 
   private val fileOps by lazy { FileOps(context, ::hasAllFilesAccess) }
 
@@ -275,8 +307,54 @@ class PdfNativeModule : Module() {
 
   // endregion
 
+  // region share / print / incoming
+
+  private fun printPdf(uri: Uri, jobName: String) {
+    val activity = appContext.currentActivity ?: throw NoActivityException()
+    val printManager = activity.getSystemService(Context.PRINT_SERVICE) as? PrintManager ?: throw IoCodedException()
+    printManager.print(jobName, PdfPrintAdapter(context, uri, jobName), null)
+  }
+
+  /** The PDF the current activity was started with (ACTION_SEND), consumed so a recreate does not reopen it. */
+  private fun takeIncomingPdf(): String? {
+    val activity = appContext.currentActivity ?: return null
+    val intent = activity.intent ?: return null
+    val uri = IncomingPdf.streamUriOf(intent.action, intent.type, streamOf(intent)) ?: return null
+    activity.intent = Intent(intent).setAction(Intent.ACTION_MAIN).apply { removeExtra(Intent.EXTRA_STREAM) }
+    return uri
+  }
+
+  private fun resolveIncomingPdf(uri: Uri): Map<String, Any?> {
+    if (uri.scheme == "file") {
+      // Throws ERR_VOLUME_UNAVAILABLE for a file on an unmounted volume.
+      RenderSupport.statOrThrow(context, uri)
+      val file = File(uri.path ?: throw FileNotFoundCodedException())
+      return PdfFileInfos.ofFile(file, Volumes.mounted(context))
+    }
+    try {
+      // Keeps access across restarts when the sender granted a persistable permission; most do not.
+      context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    } catch (e: SecurityException) {
+      // Not persistable: the grant lasts while this activity lives.
+    }
+    return PdfFileInfos.ofIncoming(uri, RenderSupport.statOrThrow(context, uri))
+  }
+
+  private fun streamOf(intent: Intent): String? {
+    val stream: Uri? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+    } else {
+      @Suppress("DEPRECATION")
+      intent.getParcelableExtra(Intent.EXTRA_STREAM)
+    }
+    return stream?.toString()
+  }
+
+  // endregion
+
   private companion object {
     const val SCAN_PROGRESS_EVENT = "onScanProgress"
+    const val INCOMING_PDF_EVENT = "onIncomingPdf"
     const val PROGRESS_INTERVAL_MS = 200L
 
     /** Folders listed concurrently by a full scan (readdir on shared storage is latency-bound). */

@@ -38,6 +38,12 @@ object PdfFileInfos {
     return info(uri.toString(), stat.name, folder, Volumes.uriOf(dir), dir.lastModified(), stat.sizeBytes, stat.modifiedAt)
   }
 
+  /** A PDF shared or opened from another app: no known folder; unnamed providers get "document.pdf". */
+  fun ofIncoming(uri: Uri, stat: UriStat): Map<String, Any?> =
+    info(uri.toString(), stat.name.ifEmpty { INCOMING_FALLBACK_NAME }, "", "", 0L, stat.sizeBytes, stat.modifiedAt)
+
+  const val INCOMING_FALLBACK_NAME = "document.pdf"
+
   private fun info(uri: String, name: String, folder: String, parentUri: String, parentModifiedAt: Long, size: Long, modified: Long) =
     mapOf(
       "uri" to uri,

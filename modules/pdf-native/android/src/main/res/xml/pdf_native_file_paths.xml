@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PdfNativeFileProvider paths. root-path covers PDFs anywhere on shared storage and SD cards (scanned
+  file:// rows); cache-path covers reader cache copies (cacheDir/reader). The provider is not
+  exported: other apps only reach a URI this app granted, and PdfIntents refuses app-private files
+  outside cacheDir/reader (ShareablePaths).
+-->
+<paths>
+  <root-path name="root" path="." />
+  <cache-path name="cache" path="." />
+</paths>

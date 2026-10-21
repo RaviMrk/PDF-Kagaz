@@ -1,11 +1,12 @@
 import type {
+  IncomingPdfEvent,
   PdfFileInfo,
   PdfNativeApi,
   PdfNativeErrorCode,
   ScanProgressEvent,
 } from '../services/native/pdfNative';
 
-type NativeFns = Omit<PdfNativeApi, 'addScanProgressListener'>;
+type NativeFns = Omit<PdfNativeApi, 'addScanProgressListener' | 'addIncomingPdfListener'>;
 
 function infoFromUri(uri: string, name?: string): PdfFileInfo {
   const slash = uri.lastIndexOf('/');
@@ -47,6 +48,11 @@ function createNativeFns(): jest.Mocked<NativeFns> {
     pickFolder: jest.fn().mockResolvedValue(null),
     releaseFolder: jest.fn().mockResolvedValue(undefined),
     getPersistedFolderUris: jest.fn().mockResolvedValue([]),
+    sharePdf: jest.fn().mockResolvedValue(undefined),
+    openPdfWith: jest.fn().mockResolvedValue(undefined),
+    printPdf: jest.fn().mockResolvedValue(undefined),
+    takeIncomingPdf: jest.fn().mockResolvedValue(null),
+    resolveIncomingPdf: jest.fn((uri: string) => Promise.resolve(infoFromUri(uri))),
   };
 }
 
@@ -57,6 +63,9 @@ export function createFakePdfNative(
   const fake: jest.Mocked<PdfNativeApi> = {
     ...createNativeFns(),
     addScanProgressListener: jest.fn((_cb: (e: ScanProgressEvent) => void) => ({
+      remove: jest.fn(),
+    })),
+    addIncomingPdfListener: jest.fn((_cb: (e: IncomingPdfEvent) => void) => ({
       remove: jest.fn(),
     })),
   };

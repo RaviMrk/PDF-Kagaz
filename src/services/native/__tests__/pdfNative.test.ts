@@ -85,6 +85,31 @@ describe('pdfNative', () => {
     expect(typeof sub.remove).toBe('function');
   });
 
+  it('subscribes to incoming PDFs through the module event emitter', () => {
+    const cb = jest.fn();
+    const sub = pdfNative.addIncomingPdfListener(cb);
+    expect(mockedModule.addListener).toHaveBeenCalledWith('onIncomingPdf', cb);
+    expect(typeof sub.remove).toBe('function');
+  });
+
+  it('forwards printPdf uri and job name', async () => {
+    await expect(pdfNative.printPdf('file:///a.pdf', 'a')).resolves.toBeUndefined();
+    expect(mockedModule.printPdf).toHaveBeenCalledWith('file:///a.pdf', 'a');
+  });
+
+  it('forwards share, open-with, take and resolve of incoming PDFs', async () => {
+    await pdfNative.sharePdf('content://x/1', 'Share');
+    expect(mockedModule.sharePdf).toHaveBeenCalledWith('content://x/1', 'Share');
+    await pdfNative.openPdfWith('file:///a.pdf', 'Open with');
+    expect(mockedModule.openPdfWith).toHaveBeenCalledWith('file:///a.pdf', 'Open with');
+    await expect(pdfNative.takeIncomingPdf()).resolves.toBeNull();
+    await expect(pdfNative.resolveIncomingPdf('content://x/a.pdf')).resolves.toMatchObject({
+      uri: 'content://x/a.pdf',
+      name: 'a.pdf',
+    });
+    expect(mockedModule.resolveIncomingPdf).toHaveBeenCalledWith('content://x/a.pdf');
+  });
+
   it('recognises native errors by code', () => {
     expect(isPdfNativeError(nativeError('ERR_PDF_ENCRYPTED'), 'ERR_PDF_ENCRYPTED')).toBe(true);
     expect(isPdfNativeError(nativeError('ERR_PDF_ENCRYPTED'), 'ERR_PDF_INVALID')).toBe(false);

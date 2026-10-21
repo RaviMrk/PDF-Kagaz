@@ -34,6 +34,10 @@ export type ReaderFile = { uri: string; copied: boolean; sizeBytes: number };
 
 export type PickedFolder = { uri: string; label: string };
 
+/** A PDF shared to the app (ACTION_SEND) while it is running; `uri` is the shared stream. */
+export type IncomingPdfEvent = { uri: string };
+
 export type PdfNativeModuleEvents = {
   onScanProgress: (event: ScanProgressEvent) => void;
+  onIncomingPdf: (event: IncomingPdfEvent) => void;
 };
