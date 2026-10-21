@@ -31,8 +31,12 @@ describe('applyStoragePermissions', () => {
     const m = applyStoragePermissions(makeManifest(), { allFilesAccess: true });
     expect(find(m, 'READ_EXTERNAL_STORAGE')?.$['android:maxSdkVersion']).toBe('32');
     expect(find(m, 'WRITE_EXTERNAL_STORAGE')?.$['android:maxSdkVersion']).toBe('29');
-    expect(find(m, 'READ_EXTERNAL_STORAGE')?.$['tools:replace']).toBe('android:maxSdkVersion');
-    expect(find(m, 'WRITE_EXTERNAL_STORAGE')?.$['tools:replace']).toBe('android:maxSdkVersion');
+    // A library declaring READ/WRITE without maxSdkVersion (react-native-blob-util) makes the
+    // manifest merger drop the cap despite tools:replace; replacing the whole element keeps it.
+    expect(find(m, 'READ_EXTERNAL_STORAGE')?.$['tools:node']).toBe('replace');
+    expect(find(m, 'WRITE_EXTERNAL_STORAGE')?.$['tools:node']).toBe('replace');
+    expect(find(m, 'READ_EXTERNAL_STORAGE')?.$['tools:replace']).toBeUndefined();
+    expect(find(m, 'WRITE_EXTERNAL_STORAGE')?.$['tools:replace']).toBeUndefined();
     expect(find(m, 'MANAGE_EXTERNAL_STORAGE')?.$['tools:ignore']).toBe('ScopedStorage');
     expect(m.manifest.application[0].$['android:requestLegacyExternalStorage']).toBe('true');
     expect(m.manifest.$['xmlns:tools']).toBeDefined();

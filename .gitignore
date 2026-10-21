@@ -47,3 +47,6 @@ example
 
 # pdf-native gradle output
 modules/pdf-native/android/build/
+
+# 50 MB reader fixture (npm run fixtures:large)
+__fixtures__/large/

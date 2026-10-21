@@ -3,7 +3,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { PDFDocument, StandardFonts, degrees } from '@cantoo/pdf-lib';
+import {
+  PDFArray,
+  PDFDocument,
+  PDFHexString,
+  PDFName,
+  PDFNull,
+  StandardFonts,
+  degrees,
+} from '@cantoo/pdf-lib';
 
 const outDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '__fixtures__');
 fs.mkdirSync(outDir, { recursive: true });
@@ -61,5 +69,59 @@ const mr = await newDoc();
 addTextPage(mr.doc, mr.font, 'Report page 1');
 addTextPage(mr.doc, mr.font, 'Report page 2');
 write('अहवाल.pdf', await mr.doc.save());
+
+// outline.pdf: 10 pages with a two-level outline (bookmarks), built from low-level objects
+// because pdf-lib has no outline API. Each item jumps with /Dest [pageRef /XYZ null null null].
+const outlined = await newDoc();
+for (let i = 1; i <= 10; i++) addTextPage(outlined.doc, outlined.font, `Outline page ${i}`);
+addOutline(outlined.doc, [
+  {
+    title: 'Chapter 1',
+    page: 1,
+    children: [
+      { title: 'Section 1.1', page: 2 },
+      { title: 'Section 1.2', page: 3 },
+    ],
+  },
+  { title: 'Chapter 2', page: 5 },
+  { title: 'Chapter 3', page: 9 },
+]);
+write('outline.pdf', await outlined.doc.save());
+
+/** Adds `items` ({ title, page (1-based), children? }) as the document outline. */
+function addOutline(doc, items) {
+  const { context } = doc;
+  const pages = doc.getPages();
+  const root = context.obj({ Type: 'Outlines' });
+  const rootRef = context.register(root);
+  linkItems(root, rootRef, items);
+  doc.catalog.set(PDFName.of('Outlines'), rootRef);
+
+  function linkItems(parent, parentRef, list) {
+    const refs = list.map(() => context.nextRef());
+    let visible = list.length;
+    list.forEach((item, i) => {
+      const dest = PDFArray.withContext(context);
+      dest.push(pages[item.page - 1].ref);
+      dest.push(PDFName.of('XYZ'));
+      dest.push(PDFNull);
+      dest.push(PDFNull);
+      dest.push(PDFNull);
+      const dict = context.obj({});
+      dict.set(PDFName.of('Title'), PDFHexString.fromText(item.title));
+      dict.set(PDFName.of('Parent'), parentRef);
+      dict.set(PDFName.of('Dest'), dest);
+      if (i > 0) dict.set(PDFName.of('Prev'), refs[i - 1]);
+      if (i < list.length - 1) dict.set(PDFName.of('Next'), refs[i + 1]);
+      if (item.children?.length) visible += linkItems(dict, refs[i], item.children);
+      context.assign(refs[i], dict);
+    });
+    parent.set(PDFName.of('First'), refs[0]);
+    parent.set(PDFName.of('Last'), refs[refs.length - 1]);
+    // /Count = visible descendants (all items open)
+    parent.set(PDFName.of('Count'), context.obj(visible));
+    return visible;
+  }
+}
 
 console.log(`Fixtures written to ${outDir}`);

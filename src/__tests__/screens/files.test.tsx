@@ -126,12 +126,12 @@ describe('Files tab', () => {
     await fireEvent.press(screen.getByRole('tab', { name: 'Folders' }));
     await fireEvent.press(screen.getByText('Download'));
     await fireEvent.press(screen.getByText('Zebra.pdf'));
-    // toHavePathname is unavailable under RNTL v14; the reader placeholder tells where we are.
-    expect(screen.getByText('Coming soon')).toBeTruthy();
+    // toHavePathname is unavailable under RNTL v14; the reader's viewer tells where we are.
+    expect(screen.getByTestId('pdf-native')).toBeTruthy();
     await act(async () => {
       pressBack();
     });
-    expect(screen.queryByText('Coming soon')).toBeNull();
+    expect(screen.queryByTestId('pdf-native')).toBeNull();
     expect(screen.getByText('Zebra.pdf')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Back to folders' })).toBeTruthy();
     jest.restoreAllMocks();

@@ -2,7 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { PDFDocument } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFString } from '@cantoo/pdf-lib';
 
 const dir = path.join(__dirname, '..', '..', '__fixtures__');
 const read = (name: string) => fs.readFileSync(path.join(dir, name));
@@ -44,5 +44,17 @@ describe('PDF fixtures', () => {
 
   it('stores the Marathi filename as NFC', () => {
     expect(fs.readdirSync(dir)).toContain('अहवाल.pdf'.normalize('NFC'));
+  });
+
+  it('outline.pdf has 10 pages and a Chapter 1 / Chapter 2 outline', async () => {
+    const doc = await PDFDocument.load(read('outline.pdf'));
+    expect(doc.getPageCount()).toBe(10);
+    const outlines = doc.catalog.lookup(PDFName.of('Outlines'), PDFDict);
+    expect(outlines).toBeDefined();
+    const title = (item: PDFDict) =>
+      item.lookup(PDFName.of('Title'), PDFString, PDFHexString).decodeText();
+    const first = outlines.lookup(PDFName.of('First'), PDFDict);
+    expect(title(first)).toBe('Chapter 1');
+    expect(title(first.lookup(PDFName.of('Next'), PDFDict))).toBe('Chapter 2');
   });
 });

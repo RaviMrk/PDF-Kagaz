@@ -7,6 +7,7 @@ function upsertPermission(manifest, name, attrs) {
   const fullName = `${PREFIX}${name}`;
   const existing = list.find((p) => p.$['android:name'] === fullName);
   if (existing) {
+    delete existing.$['tools:replace'];
     Object.assign(existing.$, attrs);
     return;
   }
@@ -21,13 +22,15 @@ function upsertPermission(manifest, name, attrs) {
 function applyStoragePermissions(manifest, { allFilesAccess }) {
   AndroidConfig.Manifest.ensureToolsAvailable(manifest);
 
+  // tools:node="replace", not tools:replace: when a library declares the permission without
+  // maxSdkVersion (react-native-blob-util), the merger drops the cap unless the element is replaced.
   upsertPermission(manifest, 'READ_EXTERNAL_STORAGE', {
     'android:maxSdkVersion': '32',
-    'tools:replace': 'android:maxSdkVersion',
+    'tools:node': 'replace',
   });
   upsertPermission(manifest, 'WRITE_EXTERNAL_STORAGE', {
     'android:maxSdkVersion': '29',
-    'tools:replace': 'android:maxSdkVersion',
+    'tools:node': 'replace',
   });
   if (allFilesAccess) {
     upsertPermission(manifest, 'MANAGE_EXTERNAL_STORAGE', { 'tools:ignore': 'ScopedStorage' });

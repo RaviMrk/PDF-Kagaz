@@ -20,3 +20,6 @@ jest.mock('@shopify/flash-list/dist/recyclerview/utils/measureLayout', () => ({
   measureFirstChildLayout: jest.fn(() => ({ x: 0, y: 0, width: 400, height: 900 })),
   measureItemLayout: jest.fn(() => ({ x: 0, y: 0, width: 100, height: 100 })),
 }));
+
+// react-native-pdf is a native Fabric view; tests drive its callbacks through the fake's recorded props.
+jest.mock('react-native-pdf', () => require('./src/test-utils/fakePdf'));
