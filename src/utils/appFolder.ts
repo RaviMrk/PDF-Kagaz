@@ -27,7 +27,9 @@ export function isDirectlyInPrimaryAppFolder(file: {
   uri: string;
   folder?: string | null;
 }): boolean {
-  if (file.folder === APP_FOLDER_DISPLAY) return true;
+  // Only MediaStore uris carry no path, so only they may be judged by the display folder; a
+  // file:// or SAF uri names its volume, and the display folder cannot tell primary from SD.
+  if (file.uri.startsWith('content://media/')) return file.folder === APP_FOLDER_DISPLAY;
   try {
     return DIRECT_PRIMARY_APP_FOLDER.test(decodeURIComponent(file.uri));
   } catch {

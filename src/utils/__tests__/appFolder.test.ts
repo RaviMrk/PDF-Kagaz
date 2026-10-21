@@ -33,4 +33,25 @@ describe('isDirectlyInPrimaryAppFolder', () => {
       }),
     ).toBe(true);
   });
+
+  it('decides from the uri alone for file:// and SAF, ignoring the display folder', () => {
+    expect(
+      isDirectlyInPrimaryAppFolder({
+        uri: 'file:///storage/1A2B-3C4D/Documents/PDFToolkit/x.pdf',
+        folder: 'Documents/PDFToolkit',
+      }),
+    ).toBe(false);
+    expect(
+      isDirectlyInPrimaryAppFolder({
+        uri: 'content://com.android.externalstorage.documents/tree/1A2B-3C4D%3ADocuments/document/1A2B-3C4D%3ADocuments%2FPDFToolkit%2Fx.pdf',
+        folder: 'Documents/PDFToolkit',
+      }),
+    ).toBe(false);
+    expect(
+      isDirectlyInPrimaryAppFolder({
+        uri: 'file:///storage/emulated/0/Documents/PDFToolkit/sub/x.pdf',
+        folder: 'Documents/PDFToolkit',
+      }),
+    ).toBe(false);
+  });
 });

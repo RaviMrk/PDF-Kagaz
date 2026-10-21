@@ -621,7 +621,10 @@ describe('app-folder output rows are adopted by scans (one row per moved file)',
       scan(
         [
           {
-            ...info('Documents/PDFToolkit/x.pdf', { modifiedAt: 1_700_000_000_000 }),
+            ...info('Documents/PDFToolkit/x.pdf', {
+              modifiedAt: 1_700_000_000_000,
+              folder: 'Documents/PDFToolkit',
+            }),
             uri: `${sd}/Documents/PDFToolkit/x.pdf`,
             parentUri: `${sd}/Documents/PDFToolkit`,
           },

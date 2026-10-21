@@ -244,9 +244,10 @@ const contentKey = (r: { name: string; sizeBytes: number; modifiedAt: number }) 
  * One row per moved file. Without full access, "Move to PDFToolkit folder" records the moved file
  * as an 'output' row with a MediaStore uri; a later scan that can see the app folder (a picked
  * Documents tree, or full access after a mode switch) lists the same file under another uri.
- * Rule: a scanned file directly in the primary app folder with the same name, size and modification second as an
- * MediaStore output row (one the scan did not reach directly) is that file — the scanned row takes over the output row's favourite,
- * last page, last opened time and bookmarks (replaceFile semantics) and the output row is dropped.
+ * Rule: a scanned file directly in the primary app folder with the same name, size and
+ * modification second as a MediaStore output row (one the scan did not reach directly) is that
+ * file — the scanned row takes over the output row's favourite, last page, last opened time and
+ * bookmarks (replaceFile semantics) and the output row is dropped.
  * The surviving row keeps source 'output' (scans never demote) under the uri this mode can reach.
  * Returns the number of output rows dropped.
  */
