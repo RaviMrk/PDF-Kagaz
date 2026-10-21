@@ -17,4 +17,9 @@ describe('app.config', () => {
       expect.arrayContaining(appJson.expo.android.blockedPermissions),
     );
   });
+
+  it('removes the overlay permission from release builds (debug manifests keep theirs)', () => {
+    const android = appConfig({ config: appJson.expo }).android!;
+    expect(android.blockedPermissions).toContain('android.permission.SYSTEM_ALERT_WINDOW');
+  });
 });

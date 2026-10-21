@@ -19,7 +19,8 @@
       "blockedPermissions": [
         "android.permission.CAMERA",
         "android.permission.ACCESS_WIFI_STATE",
-        "android.permission.DOWNLOAD_WITHOUT_NOTIFICATION"
+        "android.permission.DOWNLOAD_WITHOUT_NOTIFICATION",
+        "android.permission.SYSTEM_ALERT_WINDOW"
       ],
       "predictiveBackGestureEnabled": false
     },
