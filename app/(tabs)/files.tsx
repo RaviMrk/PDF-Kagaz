@@ -1,7 +1,7 @@
 import { FlashList } from '@shopify/flash-list';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { EmptyState } from '@/components/EmptyState';
@@ -59,6 +59,16 @@ function FilesList() {
     return () => clearTimeout(timer);
   }, [notice]);
 
+  // Android back inside a folder returns to the folder list instead of leaving the tab.
+  useEffect(() => {
+    if (!folder) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setFolder(null);
+      return true;
+    });
+    return () => sub.remove();
+  }, [folder]);
+
   const fileRows = useMemo(
     () =>
       segment === 'folders' && !folder
@@ -93,6 +103,8 @@ function FilesList() {
     if (search.trim() !== '') return t('files.emptySearch', { query: search });
     if (segment === 'favorites') return t('files.emptyFavorites');
     if (segment === 'recent') return t('files.emptyRecent');
+    // The first scan is still running: "No PDFs found yet" would be premature.
+    if (status === 'scanning') return t('files.emptyScanning');
     return t('files.emptyAll');
   })();
   const empty = <EmptyState icon="file-pdf-box" title={emptyTitle} />;

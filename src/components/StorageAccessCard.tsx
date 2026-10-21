@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { useFiles } from '@/stores/filesStore';
@@ -16,11 +16,12 @@ export function StorageAccessCard({ onDone }: Props) {
   const { colors } = useTheme();
   const canRequestFullAccess = useStorage((s) => s.canRequestFullAccess);
   const [failed, setFailed] = useState(false);
-  const [busy, setBusy] = useState(false);
+  // Which button is waiting (the Settings round trip can take up to 120 s).
+  const [busy, setBusy] = useState<'full' | 'folders' | null>(null);
 
-  const run = async (action: () => Promise<boolean>) => {
+  const run = async (key: 'full' | 'folders', action: () => Promise<boolean>) => {
     if (busy) return;
-    setBusy(true);
+    setBusy(key);
     setFailed(false);
     try {
       const granted = await action();
@@ -30,7 +31,7 @@ export function StorageAccessCard({ onDone }: Props) {
       // Friendly message only: errors may carry uris/paths. The app stays usable.
       setFailed(true);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -41,8 +42,9 @@ export function StorageAccessCard({ onDone }: Props) {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t('storage.grantAll')}
-          disabled={busy}
-          onPress={() => void run(() => useStorage.getState().requestFullAccess())}
+          accessibilityState={{ disabled: busy !== null, busy: busy === 'full' }}
+          disabled={busy !== null}
+          onPress={() => void run('full', () => useStorage.getState().requestFullAccess())}
           style={[styles.button, { backgroundColor: colors.primary }]}
         >
           <Text style={[styles.buttonText, { color: colors.onPrimary }]}>
@@ -53,14 +55,22 @@ export function StorageAccessCard({ onDone }: Props) {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={t('storage.pickFolders')}
-        disabled={busy}
-        onPress={() => void run(() => useStorage.getState().addFolder())}
+        accessibilityState={{ disabled: busy !== null, busy: busy === 'folders' }}
+        disabled={busy !== null}
+        onPress={() => void run('folders', () => useStorage.getState().addFolder())}
         style={[styles.button, { borderColor: colors.primary, borderWidth: 1 }]}
       >
         <Text style={[styles.buttonText, { color: colors.primary }]}>
           {t('storage.pickFolders')}
         </Text>
       </Pressable>
+      {busy ? (
+        <ActivityIndicator
+          accessibilityLabel={t('storage.waiting')}
+          accessibilityLiveRegion="polite"
+          color={colors.primary}
+        />
+      ) : null}
       <Text style={[styles.hint, { color: colors.textMuted }]}>{t('storage.pickHint')}</Text>
       {failed ? (
         <Text accessibilityRole="alert" style={[styles.hint, { color: colors.danger }]}>

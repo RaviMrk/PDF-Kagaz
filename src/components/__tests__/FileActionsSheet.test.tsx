@@ -90,6 +90,31 @@ describe('FileActionsSheet', () => {
     expect(screen.queryByLabelText('Move to PDFToolkit folder')).toBeNull();
   });
 
+  it('hides Move for app-folder files without a path: output rows and SAF documents (F2)', async () => {
+    const moved = makeRow({
+      name: 'B.pdf',
+      uri: 'content://media/external/file/42',
+      folder: 'Documents/PDFToolkit',
+      source: 'output',
+    });
+    const view = await renderSheet(moved);
+    expect(screen.queryByLabelText('Move to PDFToolkit folder')).toBeNull();
+    await view.unmount();
+    const safDoc = makeRow({
+      name: 'C.pdf',
+      uri: 'content://com.android.externalstorage.documents/tree/primary%3ADocuments/document/primary%3ADocuments%2FPDFToolkit%2FC.pdf',
+      folder: 'Documents/PDFToolkit',
+      source: 'saf',
+    });
+    await renderSheet(safDoc);
+    expect(screen.queryByLabelText('Move to PDFToolkit folder')).toBeNull();
+  });
+
+  it('still offers Move for files elsewhere', async () => {
+    await renderSheet();
+    expect(screen.getByLabelText('Move to PDFToolkit folder')).toBeTruthy();
+  });
+
   it('ignores dismissal while an action is pending, then closes when it finishes', async () => {
     let resolve!: (v: null) => void;
     const duplicate = jest.fn(() => new Promise<null>((r) => (resolve = r)));

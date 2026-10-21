@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { Alert } from 'react-native';
 import { I18nextProvider } from 'react-i18next';
 
 import { ScannedFoldersSection } from '@/components/ScannedFoldersSection';
@@ -45,11 +46,30 @@ describe('ScannedFoldersSection', () => {
     expect(screen.getByText('Documents')).toBeTruthy();
   });
 
-  it('removes a folder and reloads the cached list', async () => {
+  it('asks before removing a folder; only the destructive button removes it and reloads (F5)', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     await renderSection();
     await fireEvent.press(screen.getByLabelText('Remove Documents'));
+    expect(removeFolder).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenCalledWith(
+      'Remove this folder?',
+      'PDFs from "Documents" will disappear from the app, along with their favourites and bookmarks. The files stay on your phone.',
+      expect.any(Array),
+    );
+    const buttons = alert.mock.calls[0]![2]!;
+    const cancel = buttons.find((b) => b.text === 'Cancel')!;
+    const confirm = buttons.find((b) => b.text === 'Remove')!;
+    expect(confirm.style).toBe('destructive');
+    await act(async () => {
+      cancel.onPress?.();
+    });
+    expect(removeFolder).not.toHaveBeenCalled();
+    await act(async () => {
+      confirm.onPress?.();
+    });
     expect(removeFolder).toHaveBeenCalledWith(DOCS);
     expect(loadFromCache).toHaveBeenCalled();
+    alert.mockRestore();
   });
 
   it('adds a folder and triggers a full refresh', async () => {

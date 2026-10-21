@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { useFiles } from '@/stores/filesStore';
@@ -33,6 +33,13 @@ export function ScannedFoldersSection() {
     }
   };
 
+  // Removing a folder drops its rows with their favourites and bookmarks: confirm first.
+  const confirmRemove = (uri: string, label: string) =>
+    Alert.alert(t('settings.removeFolderTitle'), t('settings.removeFolderBody', { label }), [
+      { text: t('settings.cancel'), style: 'cancel' },
+      { text: t('settings.remove'), style: 'destructive', onPress: () => void remove(uri) },
+    ]);
+
   return (
     <View>
       <Text accessibilityRole="header" style={[styles.heading, { color: colors.text }]}>
@@ -54,7 +61,7 @@ export function ScannedFoldersSection() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t('settings.removeFolder', { label: root.label })}
-              onPress={() => void remove(root.uri)}
+              onPress={() => confirmRemove(root.uri, root.label)}
               style={styles.iconButton}
             >
               <Text style={[styles.label, { color: colors.primary }]}>✕</Text>

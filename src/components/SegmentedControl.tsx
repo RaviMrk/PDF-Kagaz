@@ -23,8 +23,9 @@ export function SegmentedControl<K extends string>({ options, value, onChange }:
             onPress={() => onChange(o.key)}
             style={[styles.segment, selected && { backgroundColor: colors.primary }]}
           >
+            {/* Two lines: "Favourites" must not be cut off at large font scales. */}
             <Text
-              numberOfLines={1}
+              numberOfLines={2}
               style={[styles.label, { color: selected ? colors.onPrimary : colors.text }]}
             >
               {o.label}
@@ -46,5 +47,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 4,
   },
-  label: { fontSize: 14, fontWeight: '600' },
+  label: { fontSize: 14, fontWeight: '600', textAlign: 'center' },
 });

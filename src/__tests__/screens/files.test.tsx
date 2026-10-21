@@ -1,4 +1,5 @@
-import { fireEvent } from '@testing-library/react-native';
+import { act, fireEvent } from '@testing-library/react-native';
+import { BackHandler } from 'react-native';
 import { renderRouter, screen } from 'expo-router/testing-library';
 import path from 'path';
 
@@ -86,6 +87,37 @@ describe('Files tab', () => {
     expect(screen.queryByText('Fav.pdf')).toBeNull();
     await fireEvent.press(screen.getByText('Back to folders'));
     expect(screen.getByText('Documents')).toBeTruthy();
+  });
+
+  it('hardware back leaves a folder for the folder list (F8)', async () => {
+    type BackListener = Parameters<typeof BackHandler.addEventListener>[1];
+    const handlers = new Set<BackListener>();
+    jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_event, handler) => {
+      handlers.add(handler);
+      return { remove: () => handlers.delete(handler) };
+    });
+    // Like Android: the newest handler runs first; true stops the event.
+    const pressBack = () =>
+      [...handlers].reverse().some((h) => h({} as Parameters<BackListener>[0]) === true);
+    await renderFiles();
+    await fireEvent.press(screen.getByRole('tab', { name: 'Folders' }));
+    await fireEvent.press(screen.getByText('Download'));
+    expect(screen.getByText('Zebra.pdf')).toBeTruthy();
+    let handled = false;
+    await act(async () => {
+      handled = pressBack();
+    });
+    expect(handled).toBe(true);
+    expect(screen.getByText('Documents')).toBeTruthy();
+    expect(screen.queryByText('Zebra.pdf')).toBeNull();
+    jest.restoreAllMocks();
+  });
+
+  it('shows the scanning text, not "No PDFs found yet", during the first scan (F10)', async () => {
+    useFiles.setState({ files: [], status: 'scanning', progress: null });
+    await renderFiles();
+    expect(screen.getByText('Looking for PDFs…')).toBeTruthy();
+    expect(screen.queryByText('No PDFs found yet')).toBeNull();
   });
 
   it('sorts by name ascending and persists the choice', async () => {

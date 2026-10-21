@@ -8,18 +8,16 @@ import { RenameDialog } from '@/components/RenameDialog';
 import type { FileRow } from '@/db/schema';
 import { useFiles, type FileActionError } from '@/stores/filesStore';
 import { useTheme } from '@/theme/useTheme';
+import { isInAppFolder } from '@/utils/appFolder';
 import { fileActionErrorKey } from '@/utils/fileActionError';
 
 type Props = { file: FileRow | null; onClose: () => void };
 type Panel = 'actions' | 'rename' | 'info';
 type Icon = keyof typeof MaterialCommunityIcons.glyphMap;
 
+/** Output rows (moved or created by the app) and files already in the app folder. */
 function inAppFolder(file: FileRow): boolean {
-  try {
-    return decodeURIComponent(file.uri).includes('/Documents/PDFToolkit/');
-  } catch {
-    return false;
-  }
+  return file.source === 'output' || isInAppFolder(file);
 }
 
 export function FileActionsSheet({ file, onClose }: Props) {

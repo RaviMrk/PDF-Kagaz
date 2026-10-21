@@ -17,12 +17,23 @@ function PdfThumbnailImpl({ file, width, height }: Props) {
     // Re-request only when the row's content (not its identity) changes.
   }, [file]);
 
-  const box = [styles.box, { width, height, backgroundColor: colors.surface }];
+  const box = [
+    styles.box,
+    { width, height, backgroundColor: colors.surface, borderColor: colors.border },
+  ];
   if (file.thumbPath) {
     const uri = file.thumbPath.startsWith('/') ? `file://${file.thumbPath}` : file.thumbPath;
     return (
-      <View style={box}>
-        <Image source={{ uri }} style={{ width, height }} contentFit="cover" accessible={false} />
+      <View testID="pdf-thumbnail" style={box}>
+        <Image
+          testID="pdf-thumbnail-image"
+          source={{ uri }}
+          style={{ width, height }}
+          contentFit="cover"
+          accessible={false}
+          // The cached JPEG was cleared (Clear cache / OS trim): regenerate it.
+          onError={() => useFiles.getState().thumbMissing(file.id)}
+        />
       </View>
     );
   }
@@ -32,7 +43,7 @@ function PdfThumbnailImpl({ file, width, height }: Props) {
       ? 'file-alert-outline'
       : 'file-pdf-box';
   return (
-    <View style={box}>
+    <View testID="pdf-thumbnail" style={box}>
       <MaterialCommunityIcons
         name={icon}
         size={Math.min(width, height) * 0.6}
@@ -45,5 +56,12 @@ function PdfThumbnailImpl({ file, width, height }: Props) {
 export const PdfThumbnail = memo(PdfThumbnailImpl);
 
 const styles = StyleSheet.create({
-  box: { borderRadius: 6, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  // Hairline border: a white first page must stand out on a white background.
+  box: {
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
 });
