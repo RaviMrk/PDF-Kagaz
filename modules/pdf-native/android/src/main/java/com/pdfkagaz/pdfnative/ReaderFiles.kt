@@ -34,8 +34,12 @@ class ReaderFiles(private val context: Context) {
     return readerFile(file, copied = false, sizeBytes = stat.sizeBytes)
   }
 
-  /** Runs under [copyLock]: the eviction below deletes stray .part files, never one being written. */
-  private fun CoroutineScope.prepareContent(uri: String, parsed: Uri): Map<String, Any?> {
+  /**
+   * Runs under [copyLock]: the eviction below deletes stray .part files, never one being written.
+   * Our own providers are refused ([UriGuard]) before anything is read.
+   */
+  private fun CoroutineScope.prepareContent(uri: String, source: Uri): Map<String, Any?> {
+    val parsed = UriGuard(context).requireAllowed(source)
     val stat = RenderSupport.statOrThrow(context, parsed)
     val dir = File(context.cacheDir, DIR).apply { mkdirs() }
     val target = File(dir, ReaderCache.fileNameFor(uri, stat.sizeBytes, stat.modifiedAt))
