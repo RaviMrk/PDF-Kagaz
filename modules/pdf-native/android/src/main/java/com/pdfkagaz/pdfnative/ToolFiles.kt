@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import java.io.File
 import java.io.FileInputStream
@@ -24,7 +25,8 @@ import kotlinx.coroutines.withContext
 /**
  * The private tool workspace (cacheDir/tools/<jobId>/, never exposed by the FileProvider): inputs
  * are staged into it through [UriGuard] under a size cap, outputs are published from it to
- * Documents/PDFToolkit without ever overwriting a file. Errors are coded and carry no names or paths.
+ * Documents/PDFToolkit without ever overwriting a file, and copied out to a document the user
+ * chose (Save as). Errors are coded and carry no names or paths.
  */
 class ToolFiles(private val context: Context) {
   private val toolsRoot: File get() = File(context.cacheDir, ToolPaths.DIR)
@@ -79,7 +81,7 @@ class ToolFiles(private val context: Context) {
   /** Publishes a workspace file as [fileName] (or a free variant) in Documents/PDFToolkit. */
   suspend fun publish(tempUri: String, fileName: String): Map<String, Any?> = RenderSupport.mapErrors {
     withContext(Dispatchers.IO) {
-      val temp = workspaceFile(Uri.parse(tempUri))
+      val temp = workspaceFile(context, Uri.parse(tempUri))
       // Room for " (999)" and the part file: a long (e.g. Devanagari) name must not fail the rename.
       val name = ToolPaths.fitName(ToolPaths.cleanOutputName(fileName))
       if (!FileNames.isValidName(name) || !name.endsWith(PDF_SUFFIX)) throw InvalidNameException()
@@ -123,6 +125,68 @@ class ToolFiles(private val context: Context) {
       count
     }
   }
+
+  /**
+   * Checks, before a target is chosen, that [uri] can be copied out: a workspace file that exists,
+   * or a source [UriGuard] allows that exists (ERR_PERMISSION_DENIED / ERR_FILE_NOT_FOUND …).
+   */
+  suspend fun checkCopySource(uri: String): Unit = RenderSupport.mapErrors {
+    withContext(Dispatchers.IO) {
+      val parsed = Uri.parse(uri)
+      val workspace = workspaceFileOrNull(parsed)
+      if (workspace != null) {
+        if (!workspace.isFile) throw FileNotFoundCodedException()
+      } else {
+        RenderSupport.statOrThrow(context, UriGuard(context).requireAllowed(parsed))
+      }
+    }
+  }
+
+  /**
+   * Streams [uri] (workspace file or guarded source, read-only) into the user-chosen document
+   * [target]; cancellable. On any failure or cancellation the target is deleted (best effort).
+   * A missing source is ERR_FILE_NOT_FOUND, anything else ERR_IO.
+   */
+  suspend fun saveCopy(uri: String, target: Uri): Unit = RenderSupport.mapErrors {
+    withContext(Dispatchers.IO) {
+      try {
+        openCopySource(Uri.parse(uri)).use { input ->
+          val output = try {
+            context.contentResolver.openOutputStream(target, "w")
+          } catch (e: java.io.FileNotFoundException) {
+            throw IoCodedException(cause = e)
+          } catch (e: SecurityException) {
+            throw IoCodedException(cause = e)
+          } ?: throw IoCodedException()
+          output.use { copyChunks(input, it, Long.MAX_VALUE) }
+        }
+      } catch (e: Throwable) {
+        try {
+          DocumentsContract.deleteDocument(context.contentResolver, target)
+        } catch (_: Exception) {
+          // Not deletable or already gone: nothing more to do.
+        }
+        throw if (e is IOException) IoCodedException(cause = e) else e
+      }
+      Unit
+    }
+  }
+
+  private fun openCopySource(uri: Uri): InputStream {
+    val workspace = workspaceFileOrNull(uri) ?: return openGuarded(uri)
+    return try {
+      FileInputStream(workspace)
+    } catch (e: java.io.FileNotFoundException) {
+      throw FileNotFoundCodedException(cause = e)
+    }
+  }
+
+  private fun workspaceFileOrNull(uri: Uri): File? =
+    try {
+      workspaceFile(context, uri)
+    } catch (_: PermissionDeniedException) {
+      null
+    }
 
   // region publish
 
@@ -213,13 +277,6 @@ class ToolFiles(private val context: Context) {
   /** cacheDir/tools/<jobId>, or null for an invalid id. */
   private fun jobDir(jobId: String): File? = if (ToolPaths.isValidJobId(jobId)) File(toolsRoot, jobId) else null
 
-  /** The file a file:// URI names, only when it canonically lies inside a job workspace. */
-  private fun workspaceFile(uri: Uri): File {
-    val path = if (uri.scheme == "file") uri.path else null
-    val canonical = path?.let { File(it).canonicalPath } ?: throw PermissionDeniedException()
-    if (!ToolPaths.isWorkspaceFile(toolsRoot.canonicalPath, canonical)) throw PermissionDeniedException()
-    return File(canonical)
-  }
 
   /** file:// opened then verified, content:// own providers refused ([UriGuard]); read-only. */
   private fun openGuarded(uri: Uri): InputStream =
@@ -260,8 +317,21 @@ class ToolFiles(private val context: Context) {
   private fun appFolder(): File =
     File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), MediaStoreFiles.APP_FOLDER)
 
-  private companion object {
+  companion object {
+    /** Copy chunk size of staging, publishing and saving a copy. */
     const val BUFFER_BYTES = 256 * 1024
-    const val PDF_SUFFIX = ".pdf"
+    private const val PDF_SUFFIX = ".pdf"
+
+    /**
+     * The file a file:// URI names, only when it canonically lies inside a job workspace; else
+     * ERR_PERMISSION_DENIED. Blocking (canonicalises the path).
+     */
+    fun workspaceFile(context: Context, uri: Uri): File {
+      val path = if (uri.scheme == "file") uri.path else null
+      val canonical = path?.let { File(it).canonicalPath } ?: throw PermissionDeniedException()
+      val toolsRoot = File(context.cacheDir, ToolPaths.DIR).canonicalPath
+      if (!ToolPaths.isWorkspaceFile(toolsRoot, canonical)) throw PermissionDeniedException()
+      return File(canonical)
+    }
   }
 }

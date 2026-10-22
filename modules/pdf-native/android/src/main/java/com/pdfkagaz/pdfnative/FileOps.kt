@@ -84,9 +84,13 @@ class FileOps(private val context: Context, private val hasAllFilesAccess: () ->
     if (newName != file.name) {
       val target = File(dir, newName)
       val caseOnly = newName.equals(file.name, ignoreCase = true)
-      if (!caseOnly && target.exists()) throw FileExistsException()
-      val renamed = if (caseOnly) renameViaTemp(file, target) else file.renameTo(target)
-      if (!renamed) throw PermissionDeniedException("Could not rename file")
+      // Under the lock, with in-flight part files counted: a tool publish, move or duplicate
+      // committing to the same name cannot be replaced by this rename (or replace it).
+      AppFolderLock.withLock {
+        if (!caseOnly && PartClaim.isTaken(dir, newName)) throw FileExistsException()
+        val renamed = if (caseOnly) renameViaTemp(file, target) else file.renameTo(target)
+        if (!renamed) throw PermissionDeniedException("Could not rename file")
+      }
       return PdfFileInfos.ofFile(target, volumes())
     }
     return PdfFileInfos.ofFile(file, volumes())

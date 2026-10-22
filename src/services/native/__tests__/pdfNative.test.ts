@@ -143,6 +143,34 @@ describe('pdfNative', () => {
     expect(mockedModule.cleanupToolLeftovers).toHaveBeenCalledWith(123);
   });
 
+  it('forwards the tool thumbnail lane, page count and release', async () => {
+    const fileUri = 'file:///data/cache/tools/p/in-0.pdf';
+    mockedModule.renderToolThumbnail.mockResolvedValueOnce('file:///tt.jpg');
+
+    await expect(pdfNative.renderToolThumbnail(fileUri, 2, 160)).resolves.toBe('file:///tt.jpg');
+    expect(mockedModule.renderToolThumbnail).toHaveBeenCalledWith(fileUri, 2, 160);
+    await expect(pdfNative.getToolPageCount(fileUri)).resolves.toBe(3);
+    expect(mockedModule.getToolPageCount).toHaveBeenCalledWith(fileUri);
+    await expect(pdfNative.releaseToolDocument()).resolves.toBeUndefined();
+    expect(mockedModule.releaseToolDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves saveCopyAs with the module value (false when the picker was cancelled)', async () => {
+    const u = 'file:///storage/emulated/0/Documents/PDFToolkit/a.pdf';
+    await expect(pdfNative.saveCopyAs(u, 'a.pdf')).resolves.toBe(true);
+    expect(mockedModule.saveCopyAs).toHaveBeenCalledWith(u, 'a.pdf');
+    mockedModule.saveCopyAs.mockResolvedValueOnce(false);
+    await expect(pdfNative.saveCopyAs(u, 'a.pdf')).resolves.toBe(false);
+  });
+
+  it('forwards pickPdfDocuments and returns the picked uris', async () => {
+    await expect(pdfNative.pickPdfDocuments(true)).resolves.toEqual([]);
+    expect(mockedModule.pickPdfDocuments).toHaveBeenCalledWith(true);
+    mockedModule.pickPdfDocuments.mockResolvedValueOnce(['content://b/1']);
+    await expect(pdfNative.pickPdfDocuments(false)).resolves.toEqual(['content://b/1']);
+    expect(mockedModule.pickPdfDocuments).toHaveBeenLastCalledWith(false);
+  });
+
   it('recognises native errors by code', () => {
     expect(isPdfNativeError(nativeError('ERR_PDF_ENCRYPTED'), 'ERR_PDF_ENCRYPTED')).toBe(true);
     expect(isPdfNativeError(nativeError('ERR_PDF_ENCRYPTED'), 'ERR_PDF_INVALID')).toBe(false);

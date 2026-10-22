@@ -142,10 +142,42 @@ class PdfNativeModule : Module() {
       toolFiles.cleanupLeftovers(olderThanMs)
     }
 
+    AsyncFunction("renderToolThumbnail") Coroutine { fileUri: String, page: Int, width: Int ->
+      toolThumbnails.render(fileUri, page, width)
+    }
+
+    AsyncFunction("getToolPageCount") Coroutine { fileUri: String ->
+      toolThumbnails.pageCount(fileUri)
+    }
+
+    AsyncFunction("releaseToolDocument") Coroutine { ->
+      toolThumbnails.release()
+    }
+
     lateinit var folderPicker: AppContextActivityResultLauncher<FolderPickerInput, Uri?>
+    lateinit var createDocument: AppContextActivityResultLauncher<CreateDocumentInput, Uri?>
+    lateinit var openDocuments: AppContextActivityResultLauncher<OpenDocumentsInput, List<String>>
 
     RegisterActivityContracts {
       folderPicker = registerForActivityResult(FolderPickerContract(this@PdfNativeModule))
+      createDocument = registerForActivityResult(CreateDocumentContract())
+      openDocuments = registerForActivityResult(OpenDocumentsContract())
+    }
+
+    AsyncFunction("saveCopyAs") Coroutine { uri: String, suggestedName: String ->
+      // A source that cannot be copied fails before the user picks a target.
+      toolFiles.checkCopySource(uri)
+      val target = launchPicker {
+        createDocument.launch(CreateDocumentInput(ToolPaths.cleanOutputName(suggestedName)))
+      } ?: return@Coroutine false
+      toolFiles.saveCopy(uri, target)
+      true
+    }
+
+    AsyncFunction("pickPdfDocuments") Coroutine { multiple: Boolean ->
+      val picked = launchPicker { openDocuments.launch(OpenDocumentsInput(multiple)) }
+      if (picked.isEmpty()) return@Coroutine emptyList<String>()
+      RenderSupport.mapErrors { withContext(Dispatchers.IO) { allowedPicks(picked) } }
     }
 
     AsyncFunction("pickFolder") Coroutine { ->
@@ -189,6 +221,8 @@ class PdfNativeModule : Module() {
   private val fileOps by lazy { FileOps(context, ::hasAllFilesAccess) }
 
   private val toolFiles by lazy { ToolFiles(context) }
+
+  private val toolThumbnails by lazy { ToolThumbnails(context) }
 
   // region scan
 
@@ -319,6 +353,39 @@ class PdfNativeModule : Module() {
     } catch (e: SecurityException) {
       // Already released.
     }
+  }
+
+  // endregion
+
+  // region document pickers
+
+  /** Launches a system picker from the main thread; no activity (or no picker app) → ERR_NO_ACTIVITY. */
+  private suspend fun <T> launchPicker(launch: suspend () -> T): T = withContext(Dispatchers.Main) {
+    if (appContext.currentActivity == null) throw NoActivityException()
+    try {
+      launch()
+    } catch (e: ActivityNotFoundException) {
+      throw NoActivityException(cause = e)
+    }
+  }
+
+  /**
+   * Picked documents are foreign input: those [UriGuard] refuses (this app's own providers…) are
+   * dropped; ERR_PERMISSION_DENIED when nothing is left. No persistable grant is taken, so folder
+   * grants are never pruned for them.
+   */
+  private fun allowedPicks(picked: List<String>): List<String> {
+    val guard = UriGuard(context)
+    val allowed = picked.filter { uri ->
+      try {
+        guard.requireAllowed(Uri.parse(uri))
+        true
+      } catch (e: PermissionDeniedException) {
+        false
+      }
+    }
+    if (allowed.isEmpty()) throw PermissionDeniedException()
+    return allowed
   }
 
   // endregion

@@ -17,7 +17,7 @@ class PartClaim private constructor(private val dir: File, private val pick: ((S
   var part: File = dir
     private set
 
-  private fun taken(n: String) = n in skipped || File(dir, n).exists() || File(dir, ToolPaths.partName(n)).exists()
+  private fun taken(n: String) = n in skipped || isTaken(dir, n)
 
   /**
    * Renames the part to [name], or to the next free name when another app created [name]
@@ -41,6 +41,9 @@ class PartClaim private constructor(private val dir: File, private val pick: ((S
   }
 
   companion object {
+    /** [name] exists in [dir] or its part file is being written there (a publish, move or duplicate in flight). */
+    fun isTaken(dir: File, name: String): Boolean = File(dir, name).exists() || File(dir, ToolPaths.partName(name)).exists()
+
     /** [pick] gets the "taken" predicate and returns a candidate name (e.g. [ToolPaths.uniqueTarget]). */
     fun claim(dir: File, pick: ((String) -> Boolean) -> String): PartClaim =
       PartClaim(dir, pick).apply {

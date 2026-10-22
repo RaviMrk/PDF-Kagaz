@@ -55,4 +55,23 @@ class PartClaimTest {
     assertFalse(claim.part.exists())
     assertEquals(0, dir.listFiles()!!.size)
   }
+
+  @Test
+  fun isTakenCountsExistingNamesAndInFlightParts() {
+    val dir = tmp.newFolder()
+    File(dir, "a.pdf").writeText("x")
+    File(dir, ".b.pdf.part").writeText("being published")
+    assertTrue(PartClaim.isTaken(dir, "a.pdf"))
+    assertTrue(PartClaim.isTaken(dir, "b.pdf"))
+    assertFalse(PartClaim.isTaken(dir, "c.pdf"))
+  }
+
+  @Test
+  fun aClaimedNameIsTakenUntilReleased() {
+    val dir = tmp.newFolder()
+    val claim = PartClaim.claim(dir, unique("a.pdf"))
+    assertTrue(PartClaim.isTaken(dir, "a.pdf"))
+    claim.release()
+    assertFalse(PartClaim.isTaken(dir, "a.pdf"))
+  }
 }

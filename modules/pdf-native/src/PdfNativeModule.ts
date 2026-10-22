@@ -40,6 +40,14 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
   publishToolOutput(tempUri: string, fileName: string): Promise<PdfFileInfo>;
   cleanToolWorkspace(jobId: string): Promise<void>;
   cleanupToolLeftovers(olderThanMs: number): Promise<number>;
+  /** Workspace files only; 1-based page, width clamped to 1..512; own lane (not reader / Files list). */
+  renderToolThumbnail(fileUri: string, page: number, width: number): Promise<string>;
+  getToolPageCount(fileUri: string): Promise<number>;
+  releaseToolDocument(): Promise<void>;
+  /** ACTION_CREATE_DOCUMENT then a streamed copy; false when the picker was cancelled. */
+  saveCopyAs(uri: string, suggestedName: string): Promise<boolean>;
+  /** ACTION_OPEN_DOCUMENT for PDFs; [] when cancelled. */
+  pickPdfDocuments(multiple: boolean): Promise<string[]>;
 }
 
 export default requireNativeModule<PdfNativeModule>('PdfNative');

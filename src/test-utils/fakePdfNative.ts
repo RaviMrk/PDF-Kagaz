@@ -71,6 +71,11 @@ function createNativeFns(): jest.Mocked<NativeFns> {
     ),
     cleanToolWorkspace: jest.fn().mockResolvedValue(undefined),
     cleanupToolLeftovers: jest.fn().mockResolvedValue(0),
+    renderToolThumbnail: jest.fn().mockResolvedValue('file:///tool-thumb.jpg'),
+    getToolPageCount: jest.fn().mockResolvedValue(3),
+    releaseToolDocument: jest.fn().mockResolvedValue(undefined),
+    saveCopyAs: jest.fn().mockResolvedValue(true),
+    pickPdfDocuments: jest.fn().mockResolvedValue([]),
   };
 }
 

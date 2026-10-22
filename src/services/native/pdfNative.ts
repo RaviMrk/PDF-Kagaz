@@ -68,6 +68,22 @@ export interface PdfNativeApi {
   cleanToolWorkspace(jobId: string): Promise<void>;
   /** Deletes tool leftovers older than `olderThanMs` (epoch ms); returns how many. */
   cleanupToolLeftovers(olderThanMs: number): Promise<number>;
+  /**
+   * Page thumbnail of a tool workspace file (anything else: ERR_PERMISSION_DENIED), on its own
+   * lane apart from the reader and Files list; 1-based page, width clamped to 1..512.
+   */
+  renderToolThumbnail(fileUri: string, page: number, width: number): Promise<string>;
+  /** Page count of a tool workspace file, on the tool thumbnail lane. */
+  getToolPageCount(fileUri: string): Promise<number>;
+  /** Closes the document kept open for tool thumbnails (call when the organiser closes); idempotent. */
+  releaseToolDocument(): Promise<void>;
+  /**
+   * "Save as": the user picks a new document (system picker, `suggestedName` prefilled) and the
+   * PDF is copied into it; the original is untouched. Resolves false when the picker was cancelled.
+   */
+  saveCopyAs(uri: string, suggestedName: string): Promise<boolean>;
+  /** System PDF picker (content:// URIs, at most 50); resolves [] when cancelled. */
+  pickPdfDocuments(multiple: boolean): Promise<string[]>;
   addScanProgressListener(cb: (e: ScanProgressEvent) => void): { remove(): void };
   /** PDFs shared to the app while it is running (ACTION_VIEW is left to Linking). */
   addIncomingPdfListener(cb: (e: IncomingPdfEvent) => void): { remove(): void };
@@ -136,6 +152,12 @@ export const pdfNative: PdfNativeApi = {
   publishToolOutput: (tempUri, fileName) => PdfNative.publishToolOutput(tempUri, fileName),
   cleanToolWorkspace: (jobId) => PdfNative.cleanToolWorkspace(jobId),
   cleanupToolLeftovers: (olderThanMs) => PdfNative.cleanupToolLeftovers(olderThanMs),
+  renderToolThumbnail: (fileUri, page, width) =>
+    PdfNative.renderToolThumbnail(fileUri, page, width),
+  getToolPageCount: (fileUri) => PdfNative.getToolPageCount(fileUri),
+  releaseToolDocument: () => PdfNative.releaseToolDocument(),
+  saveCopyAs: (uri, suggestedName) => PdfNative.saveCopyAs(uri, suggestedName),
+  pickPdfDocuments: (multiple) => PdfNative.pickPdfDocuments(multiple),
   addScanProgressListener: (cb) => PdfNative.addListener('onScanProgress', cb),
   addIncomingPdfListener: (cb) => PdfNative.addListener('onIncomingPdf', cb),
 };
