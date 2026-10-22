@@ -26,7 +26,8 @@ export function outputBaseName(name: string): string {
     .replace(/\.pdf$/i, '')
     .replace(/[/\\:*?"<>|]/g, '_')
     .trim()
-    .replace(/^\.+/, '');
+    .replace(/^\.+/, '')
+    .trim();
   const encoder = new TextEncoder();
   let bytes = 0;
   let out = '';

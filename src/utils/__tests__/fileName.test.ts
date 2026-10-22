@@ -54,6 +54,9 @@ describe('outputBaseName', () => {
   it('caps at 200 UTF-8 bytes on a code-point boundary', () => {
     expect(outputBaseName('अ'.repeat(100) + '.pdf')).toBe('अ'.repeat(66));
   });
+  it('trims again after stripping leading dots', () => {
+    expect(outputBaseName('.. x.pdf')).toBe('x');
+  });
   it('falls back to document', () => {
     expect(outputBaseName('.pdf')).toBe('document');
   });

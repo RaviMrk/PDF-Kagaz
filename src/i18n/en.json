@@ -118,7 +118,40 @@
     "scan": "Scan",
     "merge": "Merge",
     "compress": "Compress",
-    "imagesToPdf": "Images to PDF"
+    "imagesToPdf": "Images to PDF",
+    "split": "Split",
+    "organize": "Organise pages",
+    "pdfToImages": "PDF to images",
+    "ocr": "Make searchable (OCR)",
+    "protect": "Protect with password",
+    "unlock": "Remove password",
+    "watermark": "Add watermark",
+    "pageNumbers": "Add page numbers",
+    "sign": "Sign PDF",
+    "metadata": "Edit details",
+    "desc": {
+      "merge": "Combine PDFs into one",
+      "split": "Split by page ranges or every few pages",
+      "organize": "Reorder, rotate, delete or duplicate pages",
+      "imagesToPdf": "Turn photos into a PDF",
+      "scan": "Scan paper with the camera",
+      "pdfToImages": "Save pages as JPG or PNG",
+      "ocr": "Make scanned text searchable",
+      "compress": "Make PDFs smaller",
+      "protect": "Lock a PDF with a password",
+      "unlock": "Remove a PDF's password",
+      "watermark": "Stamp text or an image on pages",
+      "pageNumbers": "Number every page",
+      "sign": "Add your signature",
+      "metadata": "Title, author and keywords"
+    },
+    "group": {
+      "organise": "Organise",
+      "convert": "Convert",
+      "optimise": "Optimise",
+      "security": "Security",
+      "edit": "Edit"
+    }
   },
   "reader": {
     "close": "Close",
@@ -183,5 +216,13 @@
     "errorNotFound": "This file no longer exists",
     "errorUnknown": "Something went wrong",
     "goHome": "Go to Home"
+  },
+  "output": {
+    "merged": "{{name}} merged",
+    "pages": "{{name}} pages {{range}}",
+    "page": "{{name}} page {{page}}",
+    "part": "{{name}} part {{n}}",
+    "extracted": "{{name}} extracted",
+    "organised": "{{name}} organised"
   }
 }

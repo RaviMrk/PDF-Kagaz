@@ -1,0 +1,65 @@
+import en from '@/i18n/en.json';
+
+import { QUICK_TOOL_IDS, TOOLS, toolById, toolsByGroup } from '../toolRegistry';
+
+function lookup(key: string): unknown {
+  return key
+    .split('.')
+    .reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], en);
+}
+
+describe('toolRegistry', () => {
+  it('has 14 unique tools covering T-01..T-14', () => {
+    expect(TOOLS).toHaveLength(14);
+    expect(new Set(TOOLS.map((t) => t.id)).size).toBe(14);
+    const specs = TOOLS.map((t) => t.specId);
+    for (let i = 1; i <= 14; i++) expect(specs).toContain(`T-${String(i).padStart(2, '0')}`);
+  });
+  it('groups in order', () => {
+    const groups = toolsByGroup();
+    expect(groups.map((g) => g.group)).toEqual([
+      'organise',
+      'convert',
+      'optimise',
+      'security',
+      'edit',
+    ]);
+    expect(groups[0]?.tools.map((t) => t.id)).toEqual(['merge', 'split', 'organize']);
+    expect(groups[1]?.tools.map((t) => t.id)).toEqual([
+      'images-to-pdf',
+      'scan',
+      'pdf-to-images',
+      'ocr',
+    ]);
+  });
+  it('only merge, split and organize are available', () => {
+    expect(TOOLS.filter((t) => t.available).map((t) => t.id)).toEqual([
+      'merge',
+      'split',
+      'organize',
+    ]);
+  });
+  it('looks tools up by id', () => {
+    expect(toolById('merge')).toMatchObject({ minInputs: 2, maxInputs: 50 });
+    expect(toolById('split')).toMatchObject({ minInputs: 1, maxInputs: 1 });
+    expect(toolById('nope')).toBeNull();
+  });
+  it('routes scan to /scan and others to the tool screen', () => {
+    expect(toolById('scan')?.href).toBe('/scan');
+    expect(toolById('images-to-pdf')?.href).toEqual({
+      pathname: '/tool/[toolId]',
+      params: { toolId: 'images-to-pdf' },
+    });
+  });
+  it('has en.json strings for every label and description', () => {
+    for (const t of TOOLS) {
+      expect(typeof lookup(t.labelKey)).toBe('string');
+      expect(typeof lookup(t.descriptionKey)).toBe('string');
+    }
+    expect(toolById('images-to-pdf')?.labelKey).toBe('tools.imagesToPdf');
+    expect(toolById('page-numbers')?.descriptionKey).toBe('tools.desc.pageNumbers');
+  });
+  it('has quick tools', () => {
+    expect(QUICK_TOOL_IDS).toEqual(['scan', 'merge', 'compress', 'images-to-pdf']);
+  });
+});
