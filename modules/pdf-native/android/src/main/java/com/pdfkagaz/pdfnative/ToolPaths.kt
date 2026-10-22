@@ -39,4 +39,35 @@ object ToolPaths {
 
   /** Drops C0 control characters and DEL, so a stray one does not fail the name check. */
   fun cleanOutputName(name: String): String = name.replace(CONTROL_CHARS, "")
+
+  /** Bytes a counter (" (999)") and the part wrapping ('.' + ".part") may add to a name. */
+  private const val HEADROOM_BYTES = 6 + 6
+
+  /** Longest base (UTF-8 bytes) of a ".pdf" name that [fitName] keeps. */
+  const val MAX_BASE_BYTES = FileNames.MAX_NAME_BYTES - HEADROOM_BYTES - 4
+
+  /**
+   * [name] with its base cut (whole code points, extension kept) so that the name with a counter
+   * up to " (999)" and its part file still fit [FileNames.MAX_NAME_BYTES]; short names unchanged.
+   */
+  fun fitName(name: String): String {
+    val dot = name.lastIndexOf('.')
+    val (base, ext) = if (dot > 0) name.substring(0, dot) to name.substring(dot) else name to ""
+    val budget = FileNames.MAX_NAME_BYTES - HEADROOM_BYTES - utf8Size(ext)
+    if (utf8Size(base) <= budget) return name
+    val out = StringBuilder()
+    var used = 0
+    var i = 0
+    while (i < base.length) {
+      val end = i + Character.charCount(base.codePointAt(i))
+      val size = utf8Size(base.substring(i, end))
+      if (used + size > budget) break
+      out.append(base, i, end)
+      used += size
+      i = end
+    }
+    return out.toString().trimEnd() + ext
+  }
+
+  private fun utf8Size(s: String) = s.toByteArray(Charsets.UTF_8).size
 }

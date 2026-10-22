@@ -56,4 +56,24 @@ class ToolPathsTest {
     assertEquals("a b.pdf", ToolPaths.cleanOutputName("a\u0000 b\u001f\u007f.pdf"))
     assertEquals("अहवाल.pdf", ToolPaths.cleanOutputName("अहवाल.pdf"))
   }
+
+  @Test
+  fun longNamesLeaveRoomForACounterAndThePartName() {
+    val long = "अ".repeat(100) + ".pdf" // 304 bytes
+    val fitted = ToolPaths.fitName(long)
+    assertTrue(fitted.endsWith(".pdf"))
+    val base = fitted.removeSuffix(".pdf")
+    assertEquals("अ".repeat(base.length), base)
+    val worst = ToolPaths.partName("$base (999).pdf")
+    assertTrue(worst.toByteArray(Charsets.UTF_8).size <= FileNames.MAX_NAME_BYTES)
+    assertTrue(FileNames.isValidName(fitted))
+  }
+
+  @Test
+  fun shortNamesAreNotTouched() {
+    assertEquals("a merged.pdf", ToolPaths.fitName("a merged.pdf"))
+    val edge = "a".repeat(ToolPaths.MAX_BASE_BYTES) + ".pdf"
+    assertEquals(edge, ToolPaths.fitName(edge))
+    assertEquals("a".repeat(ToolPaths.MAX_BASE_BYTES) + ".pdf", ToolPaths.fitName("a".repeat(300) + ".pdf"))
+  }
 }

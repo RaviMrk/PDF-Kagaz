@@ -104,22 +104,20 @@ class FileOps(private val context: Context, private val hasAllFilesAccess: () ->
   private fun duplicateFile(file: File): Map<String, Any?> {
     if (!file.isFile) throw Volumes.missingFileError(file, volumes())
     val dir = file.parentFile ?: throw PermissionDeniedException()
-    val name = FileNames.duplicateName(file.name) { File(dir, it).exists() }
-    val target = File(dir, name)
-    copyThenRename(Uri.fromFile(file), File(dir, ".$name.part"), target)
+    val target = AppFolderLock.withLock {
+      copyClaimed(Uri.fromFile(file), PartClaim.claim(dir) { taken -> FileNames.duplicateName(file.name, taken) })
+    }
     return PdfFileInfos.ofFile(target, volumes())
   }
 
-  /** Copies [source] into [part] then renames it to [target]; [part] never survives a failure. */
-  private fun copyThenRename(source: Uri, part: File, target: File) {
+  /** Copies [source] into the claimed part then renames it into place; the part never survives a failure. */
+  private fun copyClaimed(source: Uri, claim: PartClaim): File =
     try {
-      copy(source) { FileOutputStream(part) }
-      if (!part.renameTo(target)) throw IoCodedException()
-    } catch (e: Throwable) {
-      part.delete()
-      throw e
+      copy(source) { FileOutputStream(claim.part) }
+      claim.commit() ?: throw IoCodedException()
+    } finally {
+      claim.release()
     }
-  }
 
   // endregion
 
@@ -213,16 +211,20 @@ class FileOps(private val context: Context, private val hasAllFilesAccess: () ->
     if (!dir.isDirectory && !dir.mkdirs()) throw PermissionDeniedException("Could not create the app folder")
     val sourceFile = if (source.scheme == "file") fileOf(source) else null
     if (sourceFile?.parentFile?.absolutePath == dir.absolutePath) return PdfFileInfos.ofFile(sourceFile, volumes())
-    val name = FileNames.uniqueName(stat.name) { File(dir, it).exists() }
-    val target = File(dir, name)
-    // Same volume: a plain rename is instant and atomic.
-    if (sourceFile != null && sourceFile.renameTo(target)) return PdfFileInfos.ofFile(target, volumes())
-    copyThenRename(source, File(dir, ".$name.part"), target)
-    try {
-      deleteSource(source)
-    } catch (e: Throwable) {
-      target.delete()
-      throw e
+    val target = AppFolderLock.withLock {
+      // In-flight part files (a tool publish, another move) count as taken.
+      val name = ToolPaths.uniqueTarget(stat.name) { File(dir, it).exists() }
+      val renamed = File(dir, name)
+      // Same volume: a plain rename is instant and atomic.
+      if (sourceFile != null && sourceFile.renameTo(renamed)) return@withLock renamed
+      val copied = copyClaimed(source, PartClaim.claim(dir) { taken -> ToolPaths.uniqueTarget(stat.name, taken) })
+      try {
+        deleteSource(source)
+      } catch (e: Throwable) {
+        copied.delete()
+        throw e
+      }
+      copied
     }
     return PdfFileInfos.ofFile(target, volumes())
   }

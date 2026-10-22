@@ -19,8 +19,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -50,8 +48,14 @@ class ToolFiles(private val context: Context) {
       if (index < 0) throw InvalidNameException()
       // NaN or negative caps admit nothing; the cap is never skipped.
       val cap = if (maxBytes.isNaN() || maxBytes < 0) -1L else maxBytes.toLong()
-      val source = Uri.parse(uri)
-      // Missing → ERR_FILE_NOT_FOUND / ERR_VOLUME_UNAVAILABLE / ERR_PERMISSION_DENIED (MissingFiles).
+      val parsed = Uri.parse(uri)
+      // A file on a removed SD card is unavailable, not refused: checked before the allowlist,
+      // which only knows mounted volumes. Says nothing about the file itself.
+      val file = if (parsed.scheme == "file") parsed.path?.let { File(it).canonicalFile } else null
+      if (file != null && Volumes.isOnUnavailableVolume(file, Volumes.mounted(context))) throw VolumeUnavailableException()
+      // Refused sources fail here, before their size (ERR_TOO_LARGE) or existence could leak.
+      val source = UriGuard(context).requireAllowed(parsed)
+      // Missing → ERR_FILE_NOT_FOUND, or ERR_PERMISSION_DENIED when it may only be hidden (MissingFiles).
       val stat = RenderSupport.statOrThrow(context, source)
       if (ToolLimits.exceedsKnownSize(stat.sizeBytes, cap)) throw TooLargeException()
       if (!dir.isDirectory && !dir.mkdirs()) throw IoCodedException()
@@ -76,10 +80,11 @@ class ToolFiles(private val context: Context) {
   suspend fun publish(tempUri: String, fileName: String): Map<String, Any?> = RenderSupport.mapErrors {
     withContext(Dispatchers.IO) {
       val temp = workspaceFile(Uri.parse(tempUri))
-      val name = ToolPaths.cleanOutputName(fileName)
+      // Room for " (999)" and the part file: a long (e.g. Devanagari) name must not fail the rename.
+      val name = ToolPaths.fitName(ToolPaths.cleanOutputName(fileName))
       if (!FileNames.isValidName(name) || !name.endsWith(PDF_SUFFIX)) throw InvalidNameException()
       if (!temp.isFile) throw FileNotFoundCodedException()
-      val info = publishLock.withLock {
+      val info = AppFolderLock.withLock {
         when {
           StorageAccess.has(context) -> publishToFolder(temp, name)
           Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> publishToMediaStore(temp, name)
@@ -110,8 +115,8 @@ class ToolFiles(private val context: Context) {
           if (entry.lastModified() < cutoff && entry.deleteRecursively()) count++
         }
       }
-      // Under the lock: never a part file or pending item of a publish in progress.
-      publishLock.withLock {
+      // Under the lock: never a part file or pending item of a publish or move in progress.
+      AppFolderLock.withLock {
         if (StorageAccess.has(context)) count += quietly { deleteLeftoverParts(cutoff) }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) count += quietly { deletePendingItems(cutoff) }
       }
@@ -124,36 +129,21 @@ class ToolFiles(private val context: Context) {
   private fun CoroutineScope.publishToFolder(temp: File, fileName: String): Map<String, Any?> {
     val dir = appFolder()
     if (!dir.isDirectory && !dir.mkdirs()) throw PermissionDeniedException("Could not create the app folder")
-    val skipped = HashSet<String>()
-    fun next() = ToolPaths.uniqueTarget(fileName) { it in skipped || File(dir, it).exists() }
-    var name = next()
-    var part = File(dir, ToolPaths.partName(name))
-    // createNewFile is atomic: an existing file is never opened for writing.
-    while (!part.createNewFile()) {
-      skipped.add(name)
-      name = next()
-      part = File(dir, ToolPaths.partName(name))
-    }
+    val claim = PartClaim.claim(dir) { taken -> ToolPaths.uniqueTarget(fileName, taken) }
     try {
       FileInputStream(temp).use { input ->
-        FileOutputStream(part).use { output ->
+        FileOutputStream(claim.part).use { output ->
           copyChunks(input, output, Long.MAX_VALUE)
           output.fd.sync()
         }
       }
-      // Another app may have taken the name meanwhile: then the next free one (our part is skipped too).
-      if (File(dir, name).exists()) {
-        skipped.add(name)
-        name = next()
-      }
-      val target = File(dir, name)
-      if (!part.renameTo(target)) throw IoCodedException()
+      val target = claim.commit() ?: throw IoCodedException()
       MediaScannerConnection.scanFile(context, arrayOf(target.path), arrayOf(MediaStoreFiles.PDF_MIME), null)
       return PdfFileInfos.ofFile(target, Volumes.mounted(context))
     } catch (e: IOException) {
       throw IoCodedException(cause = e)
     } finally {
-      if (part.exists()) part.delete()
+      claim.release()
     }
   }
 
@@ -167,7 +157,13 @@ class ToolFiles(private val context: Context) {
       mediaStore.delete(created)
       throw e
     }
-    return mediaStore.info(created)
+    // Published and visible: reporting a failure now would make a retry duplicate it.
+    return try {
+      mediaStore.info(created)
+    } catch (e: Exception) {
+      val dir = File(Environment.getExternalStorageDirectory(), MediaStoreFiles.APP_RELATIVE_PATH.trimEnd('/'))
+      PdfFileInfos.ofMediaStore(created, UriStat(fileName, temp.length(), System.currentTimeMillis()), dir, Volumes.mounted(context))
+    }
   }
 
   // endregion
@@ -267,8 +263,5 @@ class ToolFiles(private val context: Context) {
   private companion object {
     const val BUFFER_BYTES = 256 * 1024
     const val PDF_SUFFIX = ".pdf"
-
-    /** Process-wide: one publish (and no leftover cleanup) at a time, so names are decided once. */
-    val publishLock = Mutex()
   }
 }
