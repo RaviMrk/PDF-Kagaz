@@ -37,7 +37,15 @@ function FileRowImpl({ file, onPress, onMore, onLongPress, selectionMode, select
         accessibilityRole={selectionMode ? 'checkbox' : 'button'}
         accessibilityLabel={[shown, meta, ...flags].join(', ')}
         onPress={() => onPress(file)}
-        onLongPress={selectionMode ? undefined : () => onLongPress?.(file)}
+        // Always set: Pressability fires onPress on release unless a long-press handler is still
+        // present, so dropping it once selection starts would toggle the new selection off again.
+        onLongPress={
+          onLongPress
+            ? () => {
+                if (!selectionMode) onLongPress(file);
+              }
+            : undefined
+        }
         accessibilityState={
           selectionMode ? { selected: !!selected, checked: !!selected } : undefined
         }
