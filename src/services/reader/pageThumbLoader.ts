@@ -2,16 +2,18 @@ import { isPdfNativeError, pdfNative, type PdfNativeApi } from '@/services/nativ
 
 type Done = (uri: string | null) => void;
 
+export type PageThumbLoader = {
+  get(page: number): string | null | undefined;
+  request(page: number, onDone: Done): void;
+  cancelPending(): void;
+};
+
 export function createPageThumbLoader(deps: {
   fileUri: string;
   width: number;
   concurrency?: number;
   native?: Pick<PdfNativeApi, 'renderReaderThumbnail'>;
-}): {
-  get(page: number): string | null | undefined;
-  request(page: number, onDone: Done): void;
-  cancelPending(): void;
-} {
+}): PageThumbLoader {
   const { fileUri, width, concurrency = 2, native = pdfNative } = deps;
   const cache = new Map<number, string | null>();
   const waiters = new Map<number, Done[]>();
