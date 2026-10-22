@@ -22,6 +22,13 @@
       "when": 1792516515542,
       "tag": "0002_messy_scarlet_witch",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1792637899858,
+      "tag": "0003_jazzy_scourge",
+      "breakpoints": true
     }
   ]
 }

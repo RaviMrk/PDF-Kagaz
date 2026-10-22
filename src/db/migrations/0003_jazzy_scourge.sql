@@ -1,0 +1,1 @@
+ALTER TABLE `tool_jobs` ADD `output_ids` text DEFAULT '[]' NOT NULL;

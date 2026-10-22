@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 export const files = sqliteTable(
@@ -60,6 +61,10 @@ export const toolJobs = sqliteTable('tool_jobs', {
   status: text({
     enum: ['queued', 'running', 'succeeded', 'failed', 'cancelled'],
   }).notNull(),
+  outputIds: text('output_ids', { mode: 'json' })
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'[]'`),
   outputUri: text('output_uri'),
   error: text(),
   startedAt: integer('started_at').notNull(),

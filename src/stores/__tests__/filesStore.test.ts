@@ -840,4 +840,100 @@ describe('filesStore: reader actions', () => {
     breakDb();
     expect(store.getState().registerIncoming(content())).toBeNull();
   });
+
+  describe('tool outputs and picked documents', () => {
+    it('registerOutputs indexes rows as output and lists them', async () => {
+      const { store, db } = setup();
+      const rows = await store
+        .getState()
+        .registerOutputs([info('Documents/PDFToolkit/a merged.pdf')]);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.source).toBe('output');
+      expect(store.getState().files.map((f) => f.id)).toEqual([rows[0]?.id]);
+      expect(getFile(db, idOf('Documents/PDFToolkit/a merged.pdf'))?.source).toBe('output');
+    });
+
+    it('registerOutputs waits for an in-flight scan and survives its applyScan', async () => {
+      let finish: (r: ScanResult) => void = () => {};
+      const provider = fakeProvider({
+        fullScan: jest.fn(
+          () =>
+            new Promise<ScanResult>((res) => {
+              finish = res;
+            }),
+        ),
+      });
+      const { store, db } = setup({ provider });
+      const scanning = store.getState().refresh('full');
+      let registered = false;
+      const reg = store
+        .getState()
+        .registerOutputs([info('Documents/PDFToolkit/out.pdf')])
+        .then((r) => {
+          registered = true;
+          return r;
+        });
+      await flush();
+      expect(registered).toBe(false);
+      expect(getFile(db, idOf('Documents/PDFToolkit/out.pdf'))).toBeUndefined();
+      finish(result([info('A/a.pdf')]));
+      await scanning;
+      const rows = await reg;
+      expect(registered).toBe(true);
+      expect(rows[0]?.source).toBe('output');
+      expect(names(store.getState().files)).toEqual(['a.pdf', 'out.pdf']);
+      expect(getFile(db, idOf('Documents/PDFToolkit/out.pdf'))?.source).toBe('output');
+    });
+
+    it('registerOutputs returns [] when the DB fails', async () => {
+      const { store, breakDb } = setup();
+      breakDb();
+      expect(await store.getState().registerOutputs([info('A/o.pdf')])).toEqual([]);
+    });
+
+    it('addPickedDocuments indexes intent rows, counts failures, never throws', async () => {
+      const { store, native } = setup();
+      native.resolveIncomingPdf.mockImplementation((uri: string) =>
+        uri.endsWith('/2')
+          ? Promise.reject(nativeError('ERR_PERMISSION_DENIED'))
+          : Promise.resolve({
+              uri,
+              name: 'p.pdf',
+              folder: '',
+              parentUri: 'content://p',
+              parentModifiedAt: 0,
+              sizeBytes: 1,
+              modifiedAt: 1,
+            }),
+      );
+      const out = await store.getState().addPickedDocuments(['content://p/1', 'content://p/2']);
+      expect(out.failed).toBe(1);
+      expect(out.rows).toHaveLength(1);
+      expect(out.rows[0]).toMatchObject({ source: 'intent', folder: '', lastOpenedAt: null });
+      expect(store.getState().files).toHaveLength(1);
+    });
+
+    it('addPickedDocuments reuses an existing row unchanged', async () => {
+      const { store, native } = setup({ seed: [info('A/a.pdf')] });
+      const uri = `${ROOT}/A/a.pdf`;
+      store.getState().loadFromCache();
+      native.resolveIncomingPdf.mockResolvedValue(info('A/a.pdf', { sizeBytes: 999 }));
+      const out = await store.getState().addPickedDocuments([uri]);
+      expect(out.rows[0]).toMatchObject({ source: 'scan', sizeBytes: 100 });
+      expect(native.resolveIncomingPdf).toHaveBeenCalledTimes(1);
+    });
+
+    it('getRows preserves order and skips missing ids', () => {
+      const { store } = setup({ seed: [info('A/a.pdf'), info('A/b.pdf')] });
+      store.getState().loadFromCache();
+      const a = idOf('A/a.pdf');
+      const b = idOf('A/b.pdf');
+      expect(
+        store
+          .getState()
+          .getRows([b, 'nope', a])
+          .map((r) => r.id),
+      ).toEqual([b, a]);
+    });
+  });
 });

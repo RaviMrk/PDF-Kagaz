@@ -64,6 +64,15 @@ export type FilesState = {
   dropMissing: (id: string) => void;
   /** Registers a PDF handed to the app (share/open-with): reuses an indexed row, else adds an 'intent' row. */
   registerIncoming: (info: PdfFileInfo) => FileRow | null;
+  /** Indexes finished tool outputs as 'output' rows (under the writer lock). DB error: [] (next scan adopts them). */
+  registerOutputs: (infos: PdfFileInfo[]) => Promise<FileRow[]>;
+  /**
+   * Indexes documents chosen in the picker (foreign content:// URIs with only a transient grant,
+   * so callers must stage them immediately). Failures are counted, never thrown.
+   */
+  addPickedDocuments: (uris: string[]) => Promise<{ rows: FileRow[]; failed: number }>;
+  /** Rows for the given ids, in order; unknown ids are skipped. */
+  getRows: (ids: string[]) => FileRow[];
   requestThumb: (file: FileRow) => void;
   /** The stored thumbnail file could not be loaded (cache cleared): regenerate it once. */
   thumbMissing: (id: string) => void;
@@ -74,7 +83,10 @@ export type FilesState = {
 export type FilesStoreDeps = {
   getDb: () => IndexDb;
   getProvider: () => StorageProvider | null;
-  native: Pick<PdfNativeApi, 'generateThumbnail' | 'getPageCount' | 'releaseIncomingGrant'>;
+  native: Pick<
+    PdfNativeApi,
+    'generateThumbnail' | 'getPageCount' | 'releaseIncomingGrant' | 'resolveIncomingPdf'
+  >;
   thumbWidth: number;
   now: () => number;
   /**
@@ -396,6 +408,56 @@ export function createFilesStore(deps: FilesStoreDeps) {
             : [...list, fresh],
         });
         return fresh;
+      },
+
+      registerOutputs: (infos) =>
+        exclusive(async () => {
+          try {
+            const rows = deps
+              .getDb()
+              .transaction((tx) => infos.map((info) => upsertFile(tx, info, 'output')));
+            const byId = new Map(rows.map((r) => [r.id, r]));
+            const list = get().files;
+            set({
+              files: [
+                ...list.map((f) => byId.get(f.id) ?? f),
+                ...rows.filter((r) => !list.some((f) => f.id === r.id)),
+              ],
+            });
+            return rows;
+          } catch {
+            return [];
+          }
+        }),
+
+      async addPickedDocuments(uris) {
+        const rows: FileRow[] = [];
+        let failed = 0;
+        for (const uri of uris) {
+          try {
+            const db = deps.getDb();
+            const info = await deps.native.resolveIncomingPdf(uri);
+            rows.push(getFile(db, fileIdForUri(info.uri)) ?? upsertFile(db, info, 'intent'));
+          } catch {
+            failed += 1;
+          }
+        }
+        const list = get().files;
+        const have = new Set(list.map((f) => f.id));
+        const added = rows.filter(
+          (r, i) => !have.has(r.id) && rows.findIndex((x) => x.id === r.id) === i,
+        );
+        if (added.length > 0) set({ files: [...list, ...added] });
+        return { rows, failed };
+      },
+
+      getRows(ids) {
+        const out: FileRow[] = [];
+        for (const id of ids) {
+          const row = get().getRow(id);
+          if (row) out.push(row);
+        }
+        return out;
       },
 
       rename: (id, newName) =>

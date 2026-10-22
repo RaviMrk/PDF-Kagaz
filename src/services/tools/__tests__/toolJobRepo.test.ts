@@ -1,0 +1,92 @@
+/**
+ * @jest-environment node
+ */
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+
+import type { IndexDb } from '@/services/index/fileIndexRepo';
+
+import { createJob, failInterruptedJobs, finishJob, getJob, listJobs } from '../toolJobRepo';
+
+function makeDb(): IndexDb {
+  const sqlite = new Database(':memory:');
+  sqlite.pragma('foreign_keys = OFF');
+  const db = drizzle(sqlite);
+  migrate(db, { migrationsFolder: 'src/db/migrations' });
+  sqlite.pragma('foreign_keys = ON');
+  return db;
+}
+
+const input = (id: string, now: number) => ({
+  id,
+  toolId: 'merge' as const,
+  inputIds: ['x', 'y'],
+  options: { name: 'm', n: 2 },
+  now,
+});
+
+describe('toolJobRepo', () => {
+  it('createJob stores a running job whose JSON columns round-trip', () => {
+    const db = makeDb();
+    const row = createJob(db, input('j1', 5));
+    expect(row.status).toBe('running');
+    expect(row.startedAt).toBe(5);
+    const got = getJob(db, 'j1');
+    expect(got?.inputIds).toEqual(['x', 'y']);
+    expect(got?.options).toEqual({ name: 'm', n: 2 });
+    expect(got?.outputIds).toEqual([]);
+    expect(getJob(db, 'nope')).toBeUndefined();
+  });
+
+  it('finishJob records success outputs', () => {
+    const db = makeDb();
+    createJob(db, input('j1', 5));
+    finishJob(db, 'j1', {
+      status: 'succeeded',
+      outputIds: ['a', 'b'],
+      outputUri: 'file:///o',
+      now: 9,
+    });
+    const got = getJob(db, 'j1');
+    expect(got).toMatchObject({
+      status: 'succeeded',
+      outputIds: ['a', 'b'],
+      outputUri: 'file:///o',
+      finishedAt: 9,
+    });
+  });
+
+  it('finishJob records a failure code and a cancellation', () => {
+    const db = makeDb();
+    createJob(db, input('j1', 5));
+    createJob(db, input('j2', 6));
+    finishJob(db, 'j1', { status: 'failed', error: 'encrypted', outputIds: [], now: 8 });
+    finishJob(db, 'j2', { status: 'cancelled', outputIds: ['p'], now: 8 });
+    expect(getJob(db, 'j1')).toMatchObject({ status: 'failed', error: 'encrypted', finishedAt: 8 });
+    expect(getJob(db, 'j2')).toMatchObject({ status: 'cancelled', outputIds: ['p'] });
+  });
+
+  it('listJobs orders newest first and honours the limit', () => {
+    const db = makeDb();
+    createJob(db, input('old', 1));
+    createJob(db, input('new', 3));
+    createJob(db, input('mid', 2));
+    expect(listJobs(db).map((j) => j.id)).toEqual(['new', 'mid', 'old']);
+    expect(listJobs(db, 2).map((j) => j.id)).toEqual(['new', 'mid']);
+  });
+
+  it('failInterruptedJobs fails only queued/running jobs', () => {
+    const db = makeDb();
+    createJob(db, input('run', 1));
+    createJob(db, input('done', 2));
+    finishJob(db, 'done', { status: 'succeeded', outputIds: ['a'], outputUri: null, now: 3 });
+    expect(failInterruptedJobs(db, 9)).toBe(1);
+    expect(getJob(db, 'run')).toMatchObject({
+      status: 'failed',
+      error: 'interrupted',
+      finishedAt: 9,
+    });
+    expect(getJob(db, 'done')).toMatchObject({ status: 'succeeded', finishedAt: 3, error: null });
+  });
+});

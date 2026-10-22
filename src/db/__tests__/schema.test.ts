@@ -83,6 +83,13 @@ describe('db schema', () => {
     expect(row?.options).toEqual({ ranges: '1-3' });
   });
 
+  it('adds tool_jobs.output_ids defaulting to an empty array', () => {
+    const sqlite = new Database(':memory:');
+    migrate(drizzle(sqlite), { migrationsFolder: 'src/db/migrations' });
+    const cols = sqlite.pragma('table_info(tool_jobs)') as { name: string; dflt_value: string }[];
+    expect(cols.find((c) => c.name === 'output_ids')?.dflt_value).toBe("'[]'");
+  });
+
   it('enforces bookmark foreign key', () => {
     const db = makeDb();
     expect(() =>
