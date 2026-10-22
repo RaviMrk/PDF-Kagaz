@@ -14,6 +14,15 @@ data class DocRef(val uri: String, val authority: String?, val documentId: Strin
 object SaveTargetPolicy {
   enum class Decision { WRITE, REFUSE }
 
+  /**
+   * Modes to open a verified empty target with, in order: truncating first; plain "w" (safe, the
+   * target is empty and not the source) for providers that reject "wt".
+   */
+  val WRITE_MODES = listOf("wt", "w")
+
+  /** How a provider rejects an open mode it does not support; any other failure is final. */
+  fun isModeUnsupported(e: Throwable): Boolean = e is IllegalArgumentException || e is UnsupportedOperationException
+
   /** [targetSize] null when the provider does not report it: not verifiably empty, so refused. */
   fun decide(targetSize: Long?, sameAsSource: Boolean): Decision =
     if (!sameAsSource && targetSize == 0L) Decision.WRITE else Decision.REFUSE

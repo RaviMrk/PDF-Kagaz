@@ -52,4 +52,18 @@ class SaveTargetPolicyTest {
     // Unknown ids / paths never match each other.
     assertFalse(SaveTargetPolicy.sameDocument(DocRef("content://x/1", "x", null, null), DocRef("content://x/2", "x", null, null)))
   }
+
+  @Test
+  fun opensTruncatingFirstThenPlainWrite() {
+    assertEquals(listOf("wt", "w"), SaveTargetPolicy.WRITE_MODES)
+  }
+
+  @Test
+  fun onlyAnUnsupportedModeFallsBackToTheNextMode() {
+    assertTrue(SaveTargetPolicy.isModeUnsupported(IllegalArgumentException("Bad mode")))
+    assertTrue(SaveTargetPolicy.isModeUnsupported(UnsupportedOperationException()))
+    assertFalse(SaveTargetPolicy.isModeUnsupported(java.io.FileNotFoundException()))
+    assertFalse(SaveTargetPolicy.isModeUnsupported(SecurityException()))
+    assertFalse(SaveTargetPolicy.isModeUnsupported(java.io.IOException()))
+  }
 }
