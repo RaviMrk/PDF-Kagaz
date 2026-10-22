@@ -1,8 +1,287 @@
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { EmptyState } from '@/components/EmptyState';
+import { MergeOptions } from '@/components/tools/MergeOptions';
+import { PickFilesList } from '@/components/tools/PickFilesList';
+import { ProgressSheet } from '@/components/tools/ProgressSheet';
+import { SplitOptions } from '@/components/tools/SplitOptions';
+import type { FileRow } from '@/db/schema';
+import { checkInputSizes } from '@/services/tools/limits';
+import { pickDocuments } from '@/services/tools/pickDocuments';
+import type { ToolRequest } from '@/services/tools/runTool';
+import { knownSize } from '@/services/tools/toolFailure';
+import {
+  canContinue,
+  initialFlow,
+  parseInputsParam,
+  toggleSelection,
+  type FlowState,
+} from '@/services/tools/toolFlow';
+import { toolById, type ToolDef } from '@/services/tools/toolRegistry';
+import { useFiles } from '@/stores/filesStore';
+import { useToolJobs } from '@/stores/toolJobStore';
+import { useTheme } from '@/theme/useTheme';
 
-export default function Placeholder() {
-  const { t } = useTranslation();
-  return <EmptyState title={t('placeholder.comingSoon')} />;
+/** Leaves the tool; a deep-linked tool with nothing under it falls back to the Tools tab. */
+function leave() {
+  if (router.canGoBack()) router.back();
+  else router.replace('/tools');
 }
+
+export default function ToolScreen() {
+  const { t } = useTranslation();
+  const { toolId, inputs } = useLocalSearchParams<{ toolId: string; inputs?: string }>();
+  const tool = toolById(toolId ?? '');
+  if (!tool || !tool.available) {
+    return <EmptyState icon="toolbox-outline" title={t('placeholder.comingSoon')} />;
+  }
+  return <ToolFlow key={tool.id} tool={tool} inputIds={parseInputsParam(inputs)} />;
+}
+
+function ToolFlow({ tool, inputIds }: { tool: ToolDef; inputIds: string[] }) {
+  const { t } = useTranslation();
+  const { colors } = useTheme();
+  const files = useFiles((s) => s.files);
+  const [flow, setFlow] = useState<FlowState>(() => {
+    // Only ids of known files are prefilled; a valid set that cannot run starts at pick.
+    const known = useFiles.getState().getRows(inputIds);
+    const first = initialFlow(
+      tool,
+      known.map((r) => r.id),
+    );
+    return first.step === 'options' && !canContinue(first, tool, known)
+      ? { ...first, step: 'pick' }
+      : first;
+  });
+  const [startedAtPick] = useState(() => flow.step === 'pick');
+  const [notice, setNotice] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const active = useToolJobs((s) => s.active);
+  const last = useToolJobs((s) => s.last);
+
+  const rows = useMemo(() => {
+    const byId = new Map(files.map((f) => [f.id, f]));
+    return flow.selectedIds.flatMap((id) => byId.get(id) ?? []);
+  }, [files, flow.selectedIds]);
+
+  // Organise has its own page editor; one picked file goes straight there.
+  const organizeId = tool.id === 'organize' && flow.step === 'options' ? rows[0]?.id : undefined;
+  useEffect(() => {
+    if (organizeId) router.replace({ pathname: '/tool/organize/[id]', params: { id: organizeId } });
+  }, [organizeId]);
+
+  // The job this screen started finished (done, failed or cancelled): show its result.
+  const finished = jobId !== null && last?.jobId === jobId;
+  useEffect(() => {
+    if (finished && jobId) router.replace({ pathname: '/result', params: { jobId } });
+  }, [finished, jobId]);
+
+  const backToPick = startedAtPick && flow.step === 'options';
+  useFocusEffect(
+    useCallback(() => {
+      if (!backToPick) return;
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        setFlow((f) => ({ ...f, step: 'pick' }));
+        return true;
+      });
+      return () => sub.remove();
+    }, [backToPick]),
+  );
+
+  const run = (request: ToolRequest) => {
+    if (jobId !== null) return;
+    setNotice(null);
+    const result = useToolJobs.getState().start(request, t);
+    if (result.ok) setJobId(result.jobId);
+    else setNotice(t(result.reason === 'busy' ? 'toolError.busy' : 'toolError.unknown'));
+  };
+
+  const back = () => {
+    setNotice(null);
+    if (backToPick) setFlow((f) => ({ ...f, step: 'pick' }));
+    else leave();
+  };
+
+  const running = jobId !== null && active?.jobId === jobId ? active : null;
+
+  return (
+    <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]}>
+      {flow.step === 'pick' ? (
+        <PickStep tool={tool} flow={flow} rows={rows} setFlow={setFlow} />
+      ) : (
+        <View style={styles.root}>
+          <View style={styles.header}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('tool.back')}
+              onPress={back}
+              style={styles.textButton}
+            >
+              <Text style={[styles.textButtonLabel, { color: colors.primary }]}>
+                {t('tool.back')}
+              </Text>
+            </Pressable>
+            <Text accessibilityRole="header" style={[styles.toolName, { color: colors.text }]}>
+              {t(tool.labelKey)}
+            </Text>
+          </View>
+          {notice ? (
+            <Text accessibilityLiveRegion="polite" style={{ color: colors.danger }}>
+              {notice}
+            </Text>
+          ) : null}
+          {tool.id === 'merge' ? (
+            <MergeOptions
+              rows={rows}
+              onChange={(ids) => setFlow((f) => ({ ...f, selectedIds: ids }))}
+              onRun={() => run({ toolId: 'merge', inputIds: rows.map((r) => r.id) })}
+            />
+          ) : null}
+          {tool.id === 'split' && rows[0] ? (
+            <SplitOptions
+              row={rows[0]}
+              onRun={(split) => run({ toolId: 'split', inputIds: [rows[0]!.id], split })}
+            />
+          ) : null}
+        </View>
+      )}
+      <ProgressSheet
+        visible={running !== null}
+        title={t(`progress.title.${tool.id}`)}
+        phase={running?.phase ?? 'preparing'}
+        fraction={running?.fraction ?? 0}
+        onCancel={() => useToolJobs.getState().cancel()}
+        onHide={leave}
+      />
+    </SafeAreaView>
+  );
+}
+
+type PickProps = {
+  tool: ToolDef;
+  flow: FlowState;
+  rows: FileRow[];
+  setFlow(update: (f: FlowState) => FlowState): void;
+};
+
+function PickStep({ tool, flow, rows, setFlow }: PickProps) {
+  const { t } = useTranslation();
+  const { colors } = useTheme();
+  const files = useFiles((s) => s.files);
+  const [browseFailed, setBrowseFailed] = useState(false);
+  const browsing = useRef(false);
+  const multi = tool.maxInputs > 1;
+  const ok = canContinue(flow, tool, rows);
+  const sizes = checkInputSizes(rows.map((r) => knownSize(r.sizeBytes)));
+  const overTotal = multi && !sizes.ok && sizes.reason === 'totalTooLarge';
+
+  const browse = async () => {
+    if (browsing.current) return;
+    browsing.current = true;
+    setBrowseFailed(false);
+    // Picked files carry a short-lived read grant: select them at once, on this screen.
+    const { ids, failed } = await pickDocuments(multi);
+    browsing.current = false;
+    setBrowseFailed(failed > 0);
+    setFlow((f) =>
+      ids.reduce((s, id) => (s.selectedIds.includes(id) ? s : toggleSelection(s, id, tool)), f),
+    );
+  };
+
+  const next = () => {
+    if (!ok) return;
+    setFlow((f) => ({ ...f, step: 'options' }));
+  };
+
+  return (
+    <View style={styles.root}>
+      <View style={styles.header}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('tool.back')}
+          onPress={leave}
+          style={styles.textButton}
+        >
+          <Text style={[styles.textButtonLabel, { color: colors.primary }]}>{t('tool.back')}</Text>
+        </Pressable>
+        <Text accessibilityRole="header" style={[styles.toolName, { color: colors.text }]}>
+          {t(multi ? 'tool.pickTitle' : 'tool.pickOne')}
+        </Text>
+      </View>
+      <Text style={{ color: colors.textMuted }}>
+        {multi ? t('tool.pickHintMerge') : t(tool.descriptionKey)}
+      </Text>
+      {/* Single-input tools replace the selection on tap, so no row is ever "full". */}
+      <PickFilesList
+        files={files}
+        selectedIds={flow.selectedIds}
+        max={multi ? tool.maxInputs : Number.POSITIVE_INFINITY}
+        onToggle={(id) => setFlow((f) => toggleSelection(f, id, tool))}
+      />
+      {browseFailed ? <Text style={{ color: colors.danger }}>{t('tool.browseFailed')}</Text> : null}
+      {overTotal ? (
+        <Text accessibilityLiveRegion="polite" style={{ color: colors.danger }}>
+          {t('toolError.totalTooLarge')}
+        </Text>
+      ) : null}
+      <View style={styles.footer}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('tool.browse')}
+          onPress={() => void browse()}
+          style={styles.textButton}
+        >
+          <Text style={[styles.textButtonLabel, { color: colors.primary }]}>
+            {t('tool.browse')}
+          </Text>
+        </Pressable>
+        {multi ? (
+          <Text
+            accessibilityLiveRegion="polite"
+            style={[styles.count, { color: colors.textMuted }]}
+          >
+            {t('tool.selectedCount', { count: flow.selectedIds.length })}
+          </Text>
+        ) : (
+          <View style={styles.count} />
+        )}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('tool.next')}
+          accessibilityState={{ disabled: !ok }}
+          disabled={!ok}
+          onPress={next}
+          style={[styles.next, { backgroundColor: colors.primary }, !ok && styles.dim]}
+        >
+          <Text style={[styles.textButtonLabel, { color: colors.onPrimary }]}>
+            {t('tool.next')}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, padding: 16 },
+  root: { flex: 1, gap: 8 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  toolName: { flex: 1, fontSize: 20, fontWeight: '600' },
+  footer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  count: { flex: 1, textAlign: 'center' },
+  textButton: { minHeight: 48, minWidth: 48, paddingHorizontal: 8, justifyContent: 'center' },
+  textButtonLabel: { fontSize: 16, fontWeight: '600' },
+  next: {
+    minHeight: 48,
+    minWidth: 96,
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dim: { opacity: 0.5 },
+});

@@ -1,6 +1,8 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import Sortable from 'react-native-sortables';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import type Animated from 'react-native-reanimated';
+import type { AnimatedRef } from 'react-native-reanimated';
+import Sortable from 'react-native-sortables';
 import { useTranslation } from 'react-i18next';
 
 import type { FileRow } from '@/db/schema';
@@ -12,9 +14,11 @@ type Props = {
   files: FileRow[];
   onReorder(ids: string[]): void;
   onRemove(id: string): void;
+  /** The scroll view around the list, for auto-scroll while dragging. */
+  scrollableRef?: AnimatedRef<Animated.ScrollView>;
 };
 
-export function ReorderFiles({ files, onReorder, onRemove }: Props) {
+export function ReorderFiles({ files, onReorder, onRemove, scrollableRef }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const ids = files.map((f) => f.id);
@@ -39,6 +43,7 @@ export function ReorderFiles({ files, onReorder, onRemove }: Props) {
       columns={1}
       data={files}
       rowGap={8}
+      scrollableRef={scrollableRef}
       keyExtractor={(f: FileRow) => f.id}
       onDragEnd={({ data }: { data: FileRow[] }) => onReorder(data.map((f) => f.id))}
       renderItem={({ item, index }: { item: FileRow; index: number }) => {

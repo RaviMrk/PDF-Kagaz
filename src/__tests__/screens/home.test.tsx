@@ -71,10 +71,21 @@ describe('Home tab', () => {
     log.mockRestore();
   });
 
-  it('opens the Merge placeholder', async () => {
+  it('shows the quick tools from the registry', async () => {
     await renderRouter(APP_DIR, { initialUrl: '/home' });
+    expect(screen.getByLabelText('Scan, coming soon')).toBeTruthy();
+    expect(screen.getByLabelText('Merge')).toBeTruthy();
+    expect(screen.getByLabelText('Compress, coming soon')).toBeTruthy();
+    expect(screen.getByLabelText('Images to PDF, coming soon')).toBeTruthy();
+    expect(screen.getAllByText('Coming soon')).toHaveLength(3);
+  });
+
+  it('opens Merge from the quick tools', async () => {
+    const pending = renderRouter(APP_DIR, { initialUrl: '/home' });
+    await pending;
     await fireEvent.press(screen.getByLabelText('Merge'));
-    expect(screen.getByText('Coming soon')).toBeTruthy();
+    expect(pending.getPathname()).toBe('/tool/merge');
+    expect(screen.getByText('Choose PDFs')).toBeTruthy();
   });
 });
 

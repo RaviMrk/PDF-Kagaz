@@ -32,14 +32,15 @@ export function ToolCard({ tool, onPress }: Props) {
         <Text style={[styles.description, { color: colors.textMuted }]}>
           {t(tool.descriptionKey)}
         </Text>
+        {/* Under the text, not beside it: cards are half-width in the two-column grids. */}
+        {unavailable ? (
+          <View style={[styles.badge, { borderColor: colors.border }]}>
+            <Text style={[styles.badgeText, { color: colors.textMuted }]}>
+              {t('tools.comingSoon')}
+            </Text>
+          </View>
+        ) : null}
       </View>
-      {unavailable ? (
-        <View style={[styles.badge, { borderColor: colors.border }]}>
-          <Text style={[styles.badgeText, { color: colors.textMuted }]}>
-            {t('tools.comingSoon')}
-          </Text>
-        </View>
-      ) : null}
     </Pressable>
   );
 }
@@ -57,6 +58,13 @@ const styles = StyleSheet.create({
   text: { flex: 1, gap: 2 },
   label: { fontSize: 16, fontWeight: '600' },
   description: { fontSize: 13 },
-  badge: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 },
+  badge: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
   badgeText: { fontSize: 12, fontWeight: '600' },
 });

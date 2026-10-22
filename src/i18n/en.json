@@ -233,7 +233,12 @@
     "saving": "Saving…",
     "percent": "{{percent}}%",
     "cancel": "Cancel",
-    "hide": "Continue in background"
+    "hide": "Continue in background",
+    "title": {
+      "merge": "Merging PDFs",
+      "split": "Splitting PDF",
+      "organize": "Saving pages"
+    }
   },
   "pages": {
     "rangeLabel": "Pages",
@@ -254,11 +259,58 @@
     "noFiles": "No PDFs to choose from. Use Browse files to pick one.",
     "search": "Search PDFs",
     "selectFile": "Select {{name}}",
-    "noMatches": "No PDFs match your search"
+    "noMatches": "No PDFs match your search",
+    "pickTitle": "Choose PDFs",
+    "pickOne": "Choose a PDF",
+    "pickHintMerge": "Pick 2 to 50 files",
+    "selectedCount": "{{count}} selected",
+    "browse": "Browse files…",
+    "browseFailed": "Some files couldn't be added",
+    "next": "Next",
+    "back": "Back",
+    "loadingPages": "Reading pages…"
   },
   "merge": {
     "moveUp": "Move {{name}} up",
     "moveDown": "Move {{name}} down",
-    "remove": "Remove {{name}}"
+    "remove": "Remove {{name}}",
+    "orderTitle": "Arrange files",
+    "orderHint": "Drag to reorder, or use the arrows",
+    "run": "Merge {{count}} PDFs"
+  },
+  "split": {
+    "modeRanges": "Page ranges",
+    "modeEvery": "Every N pages",
+    "modeExtract": "Extract pages",
+    "rangesLabel": "Ranges (one file each)",
+    "everyLabel": "Pages per file",
+    "everyError": "Enter a number from 1 to {{max}}",
+    "makesFiles": "Makes {{count}} files",
+    "makesFiles_one": "Makes {{count}} file",
+    "extractHint": "Selected pages go into one new PDF",
+    "pageCount": "{{count}} pages",
+    "run": "Split"
+  },
+  "toolError": {
+    "busy": "Another tool is still running. Wait for it to finish.",
+    "notFound": "A file you picked no longer exists",
+    "notFoundNamed": "\"{{name}}\" no longer exists",
+    "unavailable": "A file is on storage that isn't available right now",
+    "unavailableNamed": "\"{{name}}\" is on storage that isn't available right now",
+    "permission": "PDF Toolkit can't save to Documents/PDFToolkit. Check storage access in Settings.",
+    "permissionNamed": "PDF Toolkit can't read \"{{name}}\" anymore. Open it again from the app you got it from.",
+    "encrypted": "This PDF is password-protected. Tools can't open protected PDFs yet.",
+    "encryptedNamed": "\"{{name}}\" is password-protected. Tools can't open protected PDFs yet.",
+    "invalid": "This PDF is damaged or isn't a PDF",
+    "invalidNamed": "\"{{name}}\" is damaged or isn't a PDF",
+    "tooLarge": "This file is larger than 30 MB, the most tools can handle for now",
+    "tooLargeNamed": "\"{{name}}\" is larger than 30 MB, the most tools can handle for now",
+    "totalTooLarge": "These files are over 100 MB together. Merge fewer files at a time.",
+    "tooManyPages": "Organise works with up to 300 pages. Split the PDF first.",
+    "badPages": "Those pages aren't in this PDF",
+    "io": "Couldn't save the file. Check free space and try again.",
+    "cancelled": "Cancelled. Nothing more was saved.",
+    "interrupted": "The app was closed before this finished. Nothing was saved.",
+    "unknown": "Something went wrong"
   }
 }

@@ -4,10 +4,11 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { PermissionGate } from '@/components/PermissionGate';
-import { QuickToolsGrid, type QuickTool } from '@/components/QuickToolsGrid';
+import { QuickToolsGrid } from '@/components/QuickToolsGrid';
 import { RecentSection } from '@/components/RecentSection';
 import { SearchBar } from '@/components/SearchBar';
 import { recentFiles } from '@/services/files/fileQuery';
+import type { ToolDef } from '@/services/tools/toolRegistry';
 import { useFiles } from '@/stores/filesStore';
 import { useTheme } from '@/theme/useTheme';
 
@@ -21,7 +22,7 @@ function HomeContent() {
   const files = useFiles((s) => s.files);
   const recent = useMemo(() => recentFiles(files, 10), [files]);
 
-  const openTool = useCallback((tool: QuickTool) => router.push(tool.href), []);
+  const openTool = useCallback((tool: ToolDef) => router.push(tool.href), []);
 
   return (
     <ScrollView

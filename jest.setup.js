@@ -26,3 +26,7 @@ jest.mock('react-native-pdf', () => require('./src/test-utils/fakePdf'));
 
 // react-native-sortables needs Reanimated worklets and gesture handling that do not run under Jest.
 jest.mock('react-native-sortables', () => require('./src/test-utils/fakeSortables'));
+
+// Reanimated and Worklets need their native runtime; under Jest both use the packages' own mocks.
+jest.mock('react-native-worklets', () => require('react-native-worklets/src/mock'));
+jest.mock('react-native-reanimated', () => require('react-native-reanimated/mock'));
