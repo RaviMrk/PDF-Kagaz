@@ -1,7 +1,5 @@
 /** @jest-environment node */
-import { PDFDocument } from '@cantoo/pdf-lib';
-
-import { readFixture } from '@/test-utils/pdfFixtures';
+import { inspectPages, readFixture } from '@/test-utils/pdfFixtures';
 
 import { organizePdf } from '../organize';
 
@@ -12,16 +10,14 @@ describe('organizePdf', () => {
       { source: 1, rotate: 0 },
       { source: 1, rotate: 270 },
     ]);
-    const doc = await PDFDocument.load(out);
-    expect(doc.getPageCount()).toBe(3);
-    expect(doc.getPages().map((p) => p.getRotation().angle)).toEqual([180, 0, 270]);
-    expect(
-      doc.getPages().map((p) => [Math.round(p.getWidth()), Math.round(p.getHeight())]),
-    ).toEqual([
+    const pages = await inspectPages(out);
+    expect(pages.map((p) => p.rotation)).toEqual([180, 0, 270]);
+    expect(pages.map((p) => p.size)).toEqual([
       [595, 842],
       [595, 842],
       [595, 842],
     ]);
+    expect(pages.map((p) => p.text)).toEqual(['A4 rotated 90', 'A4 portrait', 'A4 portrait']);
   });
 
   it('rejects an empty page list', async () => {
@@ -39,12 +35,29 @@ describe('organizePdf', () => {
   it('reverses an outline document', async () => {
     const pages = Array.from({ length: 10 }, (_, i) => ({ source: 10 - i, rotate: 0 as const }));
     const out = await organizePdf(readFixture('outline.pdf'), pages);
-    expect((await PDFDocument.load(out)).getPageCount()).toBe(10);
+    const texts = (await inspectPages(out)).map((p) => p.text);
+    expect(texts).toEqual(Array.from({ length: 10 }, (_, i) => `Outline page ${10 - i}`));
   });
 
   it('refuses encrypted input', async () => {
     await expect(
       organizePdf(readFixture('protected.pdf'), [{ source: 1, rotate: 0 }]),
     ).rejects.toMatchObject({ kind: 'encrypted' });
+  });
+
+  it('rejects a rotation that is not a right angle', async () => {
+    await expect(
+      organizePdf(readFixture('one-page.pdf'), [{ source: 1, rotate: 45 as unknown as 90 }]),
+    ).rejects.toMatchObject({ kind: 'badPages' });
+  });
+
+  it('cancels when aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      organizePdf(readFixture('one-page.pdf'), [{ source: 1, rotate: 0 }], {
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ kind: 'cancelled' });
   });
 });

@@ -5,42 +5,48 @@ const prettierConfig = require('eslint-config-prettier');
 
 const SOURCE_FILES = ['**/*.{ts,tsx,js,jsx,mjs,cjs}'];
 
-// Import restrictions: [package, where it IS allowed, why]. Flat config lets a later block replace
-// an earlier block's `no-restricted-imports`, so each allowed zone restates the other restrictions.
-const RESTRICTIONS = [
-  {
-    name: '@cantoo/pdf-lib',
-    allowed: ['src/services/pdf/**', 'scripts/**', '**/__tests__/**', 'src/test-utils/**'],
-    message: 'Screens and components must use src/services/pdf/*, not pdf-lib directly.',
-  },
-  {
-    name: 'expo-file-system',
-    allowed: ['src/services/tools/toolFs.ts'],
-    message: 'Tool file access goes through src/services/tools/toolFs.ts.',
-  },
-  {
-    name: 'react-native-sortables',
-    allowed: ['src/components/**', 'src/test-utils/**'],
-    message: 'react-native-sortables may only be used inside src/components.',
-  },
+// Import restrictions: package, where it IS allowed, why. Flat config lets a later block replace
+// an earlier block's options for the same rule, so each package is enforced by its own rule key
+// and zones that overlap (e.g. src/test-utils/**) automatically get the union of their allowances.
+const PDF_LIB = {
+  name: '@cantoo/pdf-lib',
+  allowed: ['src/services/pdf/**', 'scripts/**', '**/__tests__/**', 'src/test-utils/**'],
+  message: 'Screens and components must use src/services/pdf/*, not pdf-lib directly.',
+};
+const FILE_SYSTEM = {
+  name: 'expo-file-system',
+  allowed: ['src/services/tools/toolFs.ts'],
+  message: 'Tool file access goes through src/services/tools/toolFs.ts.',
+};
+const SORTABLES = {
+  name: 'react-native-sortables',
+  allowed: ['src/components/**', 'src/test-utils/**'],
+  message: 'react-native-sortables may only be used inside src/components.',
+};
+
+const importRule = ({ name, message }) => ['error', { paths: [{ name, message }] }];
+const syntaxRule = ({ name, message }) => [
+  'error',
+  { selector: `ImportDeclaration[source.value='${name}']`, message },
 ];
 
-const rule = (restricted) => ({
-  'no-restricted-imports': [
-    'error',
-    { paths: restricted.map(({ name, message }) => ({ name, message })) },
-  ],
-});
-
-function restrictionBlocks() {
-  return [
-    { files: SOURCE_FILES, rules: rule(RESTRICTIONS) },
-    ...RESTRICTIONS.map((allowedHere) => ({
-      files: allowedHere.allowed,
-      rules: rule(RESTRICTIONS.filter((r) => r !== allowedHere)),
-    })),
-  ];
-}
+const restrictionBlocks = () => [
+  {
+    files: SOURCE_FILES,
+    rules: {
+      'no-restricted-imports': importRule(PDF_LIB),
+      'no-restricted-syntax': syntaxRule(SORTABLES),
+    },
+  },
+  {
+    // The @typescript-eslint plugin is only registered for TypeScript files.
+    files: ['**/*.{ts,tsx}'],
+    rules: { '@typescript-eslint/no-restricted-imports': importRule(FILE_SYSTEM) },
+  },
+  { files: PDF_LIB.allowed, rules: { 'no-restricted-imports': 'off' } },
+  { files: FILE_SYSTEM.allowed, rules: { '@typescript-eslint/no-restricted-imports': 'off' } },
+  { files: SORTABLES.allowed, rules: { 'no-restricted-syntax': 'off' } },
+];
 
 module.exports = defineConfig([
   expoConfig,

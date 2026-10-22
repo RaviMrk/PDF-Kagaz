@@ -17,6 +17,7 @@ export async function organizePdf(
   throwIfCancelled(signal);
   const source = await loadPdf(bytes);
   const pageCount = source.getPageCount();
+  if (pages.some((p) => ![0, 90, 180, 270].includes(p.rotate))) throw new PdfToolError('badPages');
   if (pages.some((p) => !Number.isInteger(p.source) || p.source < 1 || p.source > pageCount)) {
     throw new PdfToolError('badPages');
   }

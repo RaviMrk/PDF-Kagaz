@@ -1,9 +1,7 @@
 /** @jest-environment node */
 import fs from 'node:fs';
 
-import { PDFDocument } from '@cantoo/pdf-lib';
-
-import { readFixture } from '@/test-utils/pdfFixtures';
+import { inspectPages, readFixture } from '@/test-utils/pdfFixtures';
 
 import { splitPdf } from '../split';
 
@@ -27,24 +25,27 @@ describe('splitPdf', () => {
     const n = await splitPdf(readFixture('two-hundred-pages.pdf'), [[1, 2, 3], [5], [8, 9, 10]], c);
     expect(n).toBe(3);
     expect(c.indices).toEqual([0, 1, 2]);
-    const counts = await Promise.all(
-      c.parts.map(async (p) => (await PDFDocument.load(p)).getPageCount()),
+    const texts = await Promise.all(
+      c.parts.map(async (p) => (await inspectPages(p)).map((x) => x.text)),
     );
-    expect(counts).toEqual([3, 1, 3]);
+    expect(texts).toEqual([
+      ['Page 1', 'Page 2', 'Page 3'],
+      ['Page 5'],
+      ['Page 8', 'Page 9', 'Page 10'],
+    ]);
   });
 
   it('keeps order, size and rotation', async () => {
     const c = collect();
     await splitPdf(readFixture('mixed-sizes.pdf'), [[3, 1]], c);
     expect(c.parts).toHaveLength(1);
-    const doc = await PDFDocument.load(c.parts[0]!);
-    expect(
-      doc.getPages().map((p) => [Math.round(p.getWidth()), Math.round(p.getHeight())]),
-    ).toEqual([
+    const pages = await inspectPages(c.parts[0]!);
+    expect(pages.map((p) => p.size)).toEqual([
       [595, 842],
       [595, 842],
     ]);
-    expect(doc.getPages().map((p) => p.getRotation().angle)).toEqual([90, 0]);
+    expect(pages.map((p) => p.rotation)).toEqual([90, 0]);
+    expect(pages.map((p) => p.text)).toEqual(['A4 rotated 90', 'A4 portrait']);
   });
 
   it('splits every 50 pages into 4 parts', async () => {
@@ -54,7 +55,12 @@ describe('splitPdf', () => {
     );
     const n = await splitPdf(readFixture('two-hundred-pages.pdf'), groups, c);
     expect(n).toBe(4);
-    for (const p of c.parts) expect((await PDFDocument.load(p)).getPageCount()).toBe(50);
+    for (const [g, p] of c.parts.entries()) {
+      const texts = (await inspectPages(p)).map((x) => x.text);
+      expect(texts).toHaveLength(50);
+      expect(texts[0]).toBe(`Page ${g * 50 + 1}`);
+      expect(texts[49]).toBe(`Page ${g * 50 + 50}`);
+    }
   });
 
   it.each([[[[0]]], [[[201]]], [[[]]]])('rejects bad groups %j before writing', async (groups) => {
@@ -75,6 +81,32 @@ describe('splitPdf', () => {
     await expect(splitPdf(readFixture('protected.pdf'), [[1]], collect())).rejects.toMatchObject({
       kind: 'encrypted',
     });
+  });
+
+  it('cancels before loading when already aborted', async () => {
+    const c = collect();
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      splitPdf(readFixture('outline.pdf'), [[1]], { ...c, signal: controller.signal }),
+    ).rejects.toMatchObject({ kind: 'cancelled' });
+    expect(c.indices).toEqual([]);
+  });
+
+  it('stops between parts when aborted', async () => {
+    const controller = new AbortController();
+    const indices: number[] = [];
+    await expect(
+      splitPdf(readFixture('outline.pdf'), [[1], [2], [3]], {
+        signal: controller.signal,
+        onPart: (i) => {
+          indices.push(i);
+          controller.abort();
+          return Promise.resolve();
+        },
+      }),
+    ).rejects.toMatchObject({ kind: 'cancelled' });
+    expect(indices).toEqual([0]);
   });
 
   it('reports progress per part', async () => {

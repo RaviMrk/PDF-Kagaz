@@ -1,20 +1,19 @@
 /** @jest-environment node */
 import fs from 'node:fs';
 
-import { PDFDocument } from '@cantoo/pdf-lib';
-
-import { readFixture } from '@/test-utils/pdfFixtures';
+import { inspectPages, readFixture } from '@/test-utils/pdfFixtures';
 
 import { mergePdfs } from '../merge';
 
 const src = (name: string) => () => Promise.resolve(readFixture(name));
 
 async function describePages(bytes: Uint8Array) {
-  const doc = await PDFDocument.load(bytes);
+  const pages = await inspectPages(bytes);
   return {
-    count: doc.getPageCount(),
-    sizes: doc.getPages().map((p) => [Math.round(p.getWidth()), Math.round(p.getHeight())]),
-    rotations: doc.getPages().map((p) => p.getRotation().angle),
+    count: pages.length,
+    sizes: pages.map((p) => p.size),
+    rotations: pages.map((p) => p.rotation),
+    texts: pages.map((p) => p.text),
   };
 }
 
@@ -32,6 +31,14 @@ describe('mergePdfs', () => {
       [595, 842],
     ]);
     expect(result.rotations).toEqual([0, 0, 0, 90, 0, 0]);
+    expect(result.texts).toEqual([
+      'Hello PDF Toolkit',
+      'A4 portrait',
+      'Letter landscape',
+      'A4 rotated 90',
+      'Report page 1',
+      'Report page 2',
+    ]);
   });
 
   it('merges large page counts', async () => {

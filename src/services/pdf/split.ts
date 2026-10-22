@@ -11,6 +11,7 @@ export async function splitPdf(
 ): Promise<number> {
   if (groups.length === 0) throw new PdfToolError('empty');
   const { onProgress, onPart, signal } = control;
+  throwIfCancelled(signal);
   const source = await loadPdf(bytes);
   const pageCount = source.getPageCount();
   for (const group of groups) {
