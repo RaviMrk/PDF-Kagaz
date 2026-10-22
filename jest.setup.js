@@ -23,3 +23,6 @@ jest.mock('@shopify/flash-list/dist/recyclerview/utils/measureLayout', () => ({
 
 // react-native-pdf is a native Fabric view; tests drive its callbacks through the fake's recorded props.
 jest.mock('react-native-pdf', () => require('./src/test-utils/fakePdf'));
+
+// react-native-sortables needs Reanimated worklets and gesture handling that do not run under Jest.
+jest.mock('react-native-sortables', () => require('./src/test-utils/fakeSortables'));

@@ -151,7 +151,9 @@
       "optimise": "Optimise",
       "security": "Security",
       "edit": "Edit"
-    }
+    },
+    "comingSoon": "Coming soon",
+    "comingSoonA11y": "{{name}}, coming soon"
   },
   "reader": {
     "close": "Close",
@@ -224,5 +226,38 @@
     "part": "{{name}} part {{n}}",
     "extracted": "{{name}} extracted",
     "organised": "{{name}} organised"
+  },
+  "progress": {
+    "preparing": "Reading files…",
+    "processing": "Working…",
+    "saving": "Saving…",
+    "percent": "{{percent}}%",
+    "cancel": "Cancel",
+    "hide": "Continue in background"
+  },
+  "pages": {
+    "rangeLabel": "Pages",
+    "rangePlaceholder": "e.g. 1-3, 5, 8-10",
+    "errorEmpty": "Enter at least one page",
+    "errorSyntax": "Use page numbers, ranges like 1-3, and commas",
+    "errorOutOfRange": "Pages must be from 1 to {{count}}",
+    "errorReversed": "Write ranges from the lower page to the higher one",
+    "selectAll": "Select all",
+    "clear": "Clear",
+    "page": "Page {{page}}",
+    "selectedCount": "{{count}} pages selected",
+    "selectedCount_one": "{{count}} page selected"
+  },
+  "tool": {
+    "fromOtherApp": "Opened from another app",
+    "tooLargeFile": "Too large for this tool (max 30 MB)",
+    "noFiles": "No PDFs to choose from. Use Browse files to pick one.",
+    "search": "Search PDFs",
+    "selectFile": "Select {{name}}"
+  },
+  "merge": {
+    "moveUp": "Move {{name}} up",
+    "moveDown": "Move {{name}} down",
+    "remove": "Remove {{name}}"
   }
 }

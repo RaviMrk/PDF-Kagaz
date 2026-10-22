@@ -25,9 +25,18 @@ const SORTABLES = {
 };
 
 const importRule = ({ name, message }) => ['error', { paths: [{ name, message }] }];
+// Every way a module can be pulled in: import, re-export, export-all, import(), require() and
+// `import x = require()`.
 const syntaxRule = ({ name, message }) => [
   'error',
-  { selector: `ImportDeclaration[source.value='${name}']`, message },
+  ...[
+    `ImportDeclaration[source.value='${name}']`,
+    `ExportNamedDeclaration[source.value='${name}']`,
+    `ExportAllDeclaration[source.value='${name}']`,
+    `ImportExpression[source.value='${name}']`,
+    `CallExpression[callee.name='require'][arguments.0.value='${name}']`,
+    `TSExternalModuleReference[expression.value='${name}']`,
+  ].map((selector) => ({ selector, message })),
 ];
 
 const restrictionBlocks = () => [
