@@ -112,7 +112,11 @@
   "home": {
     "recent": "Recent",
     "tools": "Quick tools",
-    "searchHint": "Search your PDFs"
+    "searchHint": "Search your PDFs",
+    "jobRunning": "{{tool}}: {{percent}}%",
+    "jobDone": "{{tool}} finished",
+    "jobFailed": "{{tool}} couldn't finish",
+    "viewResult": "View"
   },
   "tools": {
     "scan": "Scan",
@@ -312,5 +316,23 @@
     "cancelled": "Cancelled. Nothing more was saved.",
     "interrupted": "The app was closed before this finished. Nothing was saved.",
     "unknown": "Something went wrong"
+  },
+  "result": {
+    "successTitle": "Done",
+    "savedTo": "Saved to Documents/PDFToolkit",
+    "open": "Open",
+    "openA11y": "Open {{name}}",
+    "share": "Share",
+    "shareA11y": "Share {{name}}",
+    "saveAs": "Save as…",
+    "saveAsA11y": "Save a copy of {{name}}",
+    "saved": "Saved a copy",
+    "shareTitle": "Share PDF",
+    "done": "Done",
+    "close": "Close",
+    "retry": "Try again",
+    "failedTitle": "Couldn't finish",
+    "partial": "These files were saved before the problem:",
+    "notFoundJob": "This result is no longer available"
   }
 }

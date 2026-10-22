@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import { PermissionGate } from '@/components/PermissionGate';
 import { QuickToolsGrid } from '@/components/QuickToolsGrid';
+import { ActiveJobCard } from '@/components/tools/ActiveJobCard';
 import { RecentSection } from '@/components/RecentSection';
 import { SearchBar } from '@/components/SearchBar';
 import { recentFiles } from '@/services/files/fileQuery';
@@ -33,6 +34,7 @@ function HomeContent() {
         placeholder={t('home.searchHint')}
         onPress={() => router.navigate({ pathname: '/files', params: { focus: nextFocusNonce() } })}
       />
+      <ActiveJobCard />
       <RecentSection files={recent} />
       <View style={styles.section}>
         <Text accessibilityRole="header" style={[styles.heading, { color: colors.text }]}>
@@ -57,7 +59,12 @@ function OpenedWithoutAccess() {
       ),
     [files],
   );
-  return <RecentSection files={opened} />;
+  return (
+    <View style={styles.content}>
+      <ActiveJobCard />
+      <RecentSection files={opened} />
+    </View>
+  );
 }
 
 export default function Screen() {
