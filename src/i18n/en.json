@@ -52,6 +52,13 @@
   },
   "files": {
     "searchPlaceholder": "Search PDFs",
+    "select": "Select",
+    "selectedCount": "{{count}} selected",
+    "exitSelection": "Cancel selection",
+    "selectAll": "Select all",
+    "mergeSelected": "Merge",
+    "splitSelected": "Split",
+    "organizeSelected": "Organise",
     "segmentAll": "All",
     "segmentRecent": "Recent",
     "segmentFavorites": "Favourites",

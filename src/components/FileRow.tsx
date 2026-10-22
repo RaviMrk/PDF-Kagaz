@@ -14,9 +14,12 @@ type Props = {
   file: FileRowData;
   onPress: (file: FileRowData) => void;
   onMore: (file: FileRowData) => void;
+  onLongPress?: (file: FileRowData) => void;
+  selectionMode?: boolean;
+  selected?: boolean;
 };
 
-function FileRowImpl({ file, onPress, onMore }: Props) {
+function FileRowImpl({ file, onPress, onMore, onLongPress, selectionMode, selected }: Props) {
   const { t, i18n } = useTranslation();
   const shown = displayName(file.name);
   const { colors } = useTheme();
@@ -34,6 +37,16 @@ function FileRowImpl({ file, onPress, onMore }: Props) {
         accessibilityRole="button"
         accessibilityLabel={[shown, meta, ...flags].join(', ')}
         onPress={() => onPress(file)}
+        onLongPress={selectionMode ? undefined : () => onLongPress?.(file)}
+        accessibilityState={selectionMode ? { selected: !!selected } : undefined}
+        accessibilityActions={
+          selectionMode || !onLongPress
+            ? undefined
+            : [{ name: 'longpress', label: t('files.select') }]
+        }
+        onAccessibilityAction={(e) => {
+          if (e.nativeEvent.actionName === 'longpress') onLongPress?.(file);
+        }}
         style={styles.main}
       >
         <PdfThumbnail file={file} width={48} height={64} />
@@ -58,14 +71,24 @@ function FileRowImpl({ file, onPress, onMore }: Props) {
           />
         ) : null}
       </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={t('files.moreActions', { name: shown })}
-        onPress={() => onMore(file)}
-        style={styles.more}
-      >
-        <MaterialCommunityIcons name="dots-vertical" size={24} color={colors.text} />
-      </Pressable>
+      {selectionMode ? (
+        <View style={styles.more} importantForAccessibility="no-hide-descendants">
+          <MaterialCommunityIcons
+            name={selected ? 'checkbox-marked' : 'checkbox-blank-outline'}
+            size={24}
+            color={selected ? colors.primary : colors.text}
+          />
+        </View>
+      ) : (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('files.moreActions', { name: shown })}
+          onPress={() => onMore(file)}
+          style={styles.more}
+        >
+          <MaterialCommunityIcons name="dots-vertical" size={24} color={colors.text} />
+        </Pressable>
+      )}
     </View>
   );
 }

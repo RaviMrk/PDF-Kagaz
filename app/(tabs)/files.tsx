@@ -10,6 +10,7 @@ import { FileRow } from '@/components/FileRow';
 import { FolderRow } from '@/components/FolderRow';
 import { PermissionGate } from '@/components/PermissionGate';
 import { ScanProgressBanner } from '@/components/ScanProgressBanner';
+import { SelectionBar } from '@/components/SelectionBar';
 import { SearchBar } from '@/components/SearchBar';
 import { SegmentedControl } from '@/components/SegmentedControl';
 import { SortMenu } from '@/components/SortMenu';
@@ -20,6 +21,7 @@ import {
   type FileSegment,
   type FolderGroup,
 } from '@/services/files/fileQuery';
+import { pruneSelection, selectionActions, toggleId } from '@/services/files/selection';
 import { useFiles } from '@/stores/filesStore';
 import { useSettings } from '@/stores/settingsStore';
 import { useTheme } from '@/theme/useTheme';
@@ -52,6 +54,10 @@ function FilesList() {
   const [search, setSearch] = useState('');
   const [folder, setFolder] = useState<FolderGroup | null>(null);
   const [actionFile, setActionFile] = useState<FileRowData | null>(null);
+  const [pickedIds, setSelectedIds] = useState<string[]>([]);
+  // Rows can vanish (delete, rescan); the selection only keeps ids still present in `files`.
+  const selectedIds = useMemo(() => pruneSelection(pickedIds, files), [pickedIds, files]);
+  const selecting = selectedIds.length > 0;
 
   useEffect(() => {
     if (!notice) return;
@@ -70,6 +76,18 @@ function FilesList() {
       });
       return () => sub.remove();
     }, [folder]),
+  );
+
+  // Registered after the folder handler so it runs first: back ends selection before leaving a folder.
+  useFocusEffect(
+    useCallback(() => {
+      if (!selecting) return;
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        setSelectedIds([]);
+        return true;
+      });
+      return () => sub.remove();
+    }, [selecting]),
   );
 
   const fileRows = useMemo(
@@ -93,6 +111,36 @@ function FilesList() {
   const openFile = useCallback((f: FileRowData) => {
     router.push({ pathname: '/reader/[id]', params: { id: f.id } });
   }, []);
+  const toggleFile = useCallback(
+    (f: FileRowData) => setSelectedIds(toggleId(selectedIds, f.id)),
+    [selectedIds],
+  );
+  const startSelection = useCallback((f: FileRowData) => setSelectedIds([f.id]), []);
+  const exitSelection = useCallback(() => setSelectedIds([]), []);
+  const selectAll = useCallback(() => setSelectedIds(fileRows.map((r) => r.id)), [fileRows]);
+  const selectedRows = useMemo(
+    () =>
+      selectedIds.flatMap((id) => {
+        const row = files.find((r) => r.id === id);
+        return row ? [row] : [];
+      }),
+    [selectedIds, files],
+  );
+  const actions = useMemo(() => selectionActions(selectedRows), [selectedRows]);
+  const launchTool = useCallback(
+    (toolId: 'merge' | 'split') => {
+      const inputs = selectedIds.join(',');
+      setSelectedIds([]);
+      router.push({ pathname: '/tool/[toolId]', params: { toolId, inputs } });
+    },
+    [selectedIds],
+  );
+  const launchOrganize = useCallback(() => {
+    const id = selectedIds[0];
+    if (!id) return;
+    setSelectedIds([]);
+    router.push({ pathname: '/tool/organize/[id]', params: { id } });
+  }, [selectedIds]);
   const openMore = useCallback((f: FileRowData) => setActionFile(f), []);
   const closeMore = useCallback(() => setActionFile(null), []);
   const openFolder = useCallback((g: FolderGroup) => setFolder(g), []);
@@ -114,38 +162,52 @@ function FilesList() {
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={styles.header}>
-        <SearchBar
-          placeholder={t('files.searchPlaceholder')}
-          value={search}
-          onChangeText={setSearch}
-          autoFocus={!!focus}
-          focusSignal={focus}
-        />
-        <View style={styles.controls}>
-          <SegmentedControl
-            value={segment}
-            onChange={(s) => {
-              setSegment(s);
-              setFolder(null);
-            }}
-            options={SEGMENTS.map((s) => ({ key: s.key, label: t(s.label) }))}
+        {selecting ? (
+          <SelectionBar
+            count={selectedIds.length}
+            actions={actions}
+            onMerge={() => launchTool('merge')}
+            onSplit={() => launchTool('split')}
+            onOrganize={launchOrganize}
+            onSelectAll={selectAll}
+            onExit={exitSelection}
           />
-          <SortMenu
-            sortKey={sortKey}
-            sortDir={sortDir}
-            onChange={(k, d) => useSettings.getState().setFilesSort(k, d)}
-          />
-        </View>
-        {segment === 'folders' && folder ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t('files.back')}
-            onPress={() => setFolder(null)}
-            style={[styles.chip, { backgroundColor: colors.surface }]}
-          >
-            <Text style={{ color: colors.text }}>{t('files.back')}</Text>
-          </Pressable>
-        ) : null}
+        ) : (
+          <>
+            <SearchBar
+              placeholder={t('files.searchPlaceholder')}
+              value={search}
+              onChangeText={setSearch}
+              autoFocus={!!focus}
+              focusSignal={focus}
+            />
+            <View style={styles.controls}>
+              <SegmentedControl
+                value={segment}
+                onChange={(s) => {
+                  setSegment(s);
+                  setFolder(null);
+                }}
+                options={SEGMENTS.map((s) => ({ key: s.key, label: t(s.label) }))}
+              />
+              <SortMenu
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onChange={(k, d) => useSettings.getState().setFilesSort(k, d)}
+              />
+            </View>
+            {segment === 'folders' && folder ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('files.back')}
+                onPress={() => setFolder(null)}
+                style={[styles.chip, { backgroundColor: colors.surface }]}
+              >
+                <Text style={{ color: colors.text }}>{t('files.back')}</Text>
+              </Pressable>
+            ) : null}
+          </>
+        )}
       </View>
 
       {status === 'scanning' ? (
@@ -185,7 +247,17 @@ function FilesList() {
           testID="files-list"
           data={fileRows}
           keyExtractor={keyOfFile}
-          renderItem={({ item }) => <FileRow file={item} onPress={openFile} onMore={openMore} />}
+          renderItem={({ item }) => (
+            <FileRow
+              file={item}
+              onPress={selecting ? toggleFile : openFile}
+              onMore={openMore}
+              onLongPress={startSelection}
+              selectionMode={selecting}
+              selected={selectedIds.includes(item.id)}
+            />
+          )}
+          extraData={selectedIds}
           refreshing={refreshing}
           onRefresh={refresh}
           ListEmptyComponent={empty}
