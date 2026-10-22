@@ -23,6 +23,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { EmptyState } from '@/components/EmptyState';
+import { OrganizeActionBar } from '@/components/tools/OrganizeActionBar';
 import { OrganizeGrid } from '@/components/tools/OrganizeGrid';
 import { ProgressSheet } from '@/components/tools/ProgressSheet';
 import type { FileRow } from '@/db/schema';
@@ -150,6 +151,15 @@ function Editor({ row, fileUri, pageCount }: EditorProps) {
     initialOrganize(n),
   );
   const unchanged = isUnchanged(state, pageCount);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const onToggle = useCallback(
+    (key: string) => setSelectedKey((k) => (k === key ? null : key)),
+    [],
+  );
+  const onReorder = useCallback((keys: string[]) => dispatch({ type: 'reorder', keys }), []);
+  // Selection follows the page's key; a deleted page clears it.
+  const selectedAt = state.pages.findIndex((p) => p.key === selectedKey);
+  const selected = selectedAt >= 0 ? state.pages[selectedAt]! : null;
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
 
   const loader = useMemo<PageThumbLoader>(
@@ -171,16 +181,24 @@ function Editor({ row, fileUri, pageCount }: EditorProps) {
 
   // Leaving with unsaved edits asks first; a running job is left to its sheet.
   const guard = jobId === null && !unchanged;
+  const discarding = useRef(false);
   const confirmLeave = useCallback(
     (proceed: () => void) => {
       Alert.alert(t('organize.discardTitle'), t('organize.discardBody'), [
         { text: t('organize.keep'), style: 'cancel' },
-        { text: t('organize.discard'), style: 'destructive', onPress: proceed },
+        {
+          text: t('organize.discard'),
+          style: 'destructive',
+          // The leave below must pass the beforeRemove guard without a second prompt.
+          onPress: () => {
+            discarding.current = true;
+            proceed();
+          },
+        },
       ]);
     },
     [t],
   );
-  const discarding = useRef(false);
   useFocusEffect(
     useCallback(() => {
       if (!guard) return;
@@ -197,10 +215,7 @@ function Editor({ row, fileUri, pageCount }: EditorProps) {
     return navigation.addListener('beforeRemove', (e) => {
       if (discarding.current) return;
       e.preventDefault();
-      confirmLeave(() => {
-        discarding.current = true;
-        navigation.dispatch(e.data.action);
-      });
+      confirmLeave(() => navigation.dispatch(e.data.action));
     });
   }, [guard, navigation, confirmLeave]);
 
@@ -252,6 +267,7 @@ function Editor({ row, fileUri, pageCount }: EditorProps) {
         </Pressable>
       </View>
       <Text style={{ color: colors.textMuted }}>{t('organize.hint')}</Text>
+      <Text style={{ color: colors.textMuted }}>{t('organize.selectHint')}</Text>
       {notice ? (
         <Text accessibilityLiveRegion="polite" style={{ color: colors.danger }}>
           {notice}
@@ -266,10 +282,18 @@ function Editor({ row, fileUri, pageCount }: EditorProps) {
         <OrganizeGrid
           pages={state.pages}
           loader={loader}
-          dispatch={dispatch}
+          selectedKey={selected?.key ?? null}
+          onToggle={onToggle}
+          onReorder={onReorder}
           scrollableRef={scrollRef}
         />
       </Animated.ScrollView>
+      <OrganizeActionBar
+        page={selected}
+        position={selectedAt + 1}
+        count={state.pages.length}
+        dispatch={dispatch}
+      />
       <ProgressSheet
         visible={running !== null}
         title={t('progress.title.organize')}

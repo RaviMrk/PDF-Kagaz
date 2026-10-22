@@ -279,6 +279,7 @@
     "hint": "Long-press a page and drag to move it",
     "page": "Page {{page}}",
     "pageA11y": "Page {{page}}, position {{position}}",
+    "selectHint": "Tap a page to rotate, duplicate, delete or move it",
     "rotate": "Rotate page {{page}}",
     "duplicate": "Duplicate page {{page}}",
     "delete": "Delete page {{page}}",

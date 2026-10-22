@@ -1,4 +1,5 @@
 import { act, fireEvent } from '@testing-library/react-native';
+import { router } from 'expo-router';
 import { renderRouter, screen } from 'expo-router/testing-library';
 import { Alert, BackHandler } from 'react-native';
 import path from 'path';
@@ -31,13 +32,19 @@ let close: jest.Mock;
 const mockPreview = (pageCount: number) =>
   preview.mockResolvedValue({ ok: true, preview: { fileUri: FILE_URI, pageCount, close } });
 
+// Navigation commits on a timer.
+const flush = () =>
+  act(async () => {
+    jest.runOnlyPendingTimers();
+  });
 async function open(url = '/tool/organize/id-a.pdf') {
   const pending = renderRouter(APP_DIR, { initialUrl: url });
   await pending;
   await act(async () => {});
   return { pathname: () => pending.getPathname() };
 }
-const press = async (label: string) => {
+const select = (page: number) => press(new RegExp(`^Page ${page}, position`));
+const press = async (label: string | RegExp) => {
   await fireEvent.press(screen.getByLabelText(label));
   await act(async () => {});
 };
@@ -72,8 +79,11 @@ describe('organise screen', () => {
 
   it('saves the edited pages and follows the job to the result', async () => {
     const r = await open();
+    await select(2);
     await press('Rotate page 2');
+    await select(3);
     await press('Delete page 3');
+    await select(1);
     await press('Duplicate page 1');
     await press('Save as new PDF');
     expect(start).toHaveBeenCalledWith(
@@ -121,14 +131,49 @@ describe('organise screen', () => {
     );
   });
 
-  it('refuses to delete the last page', async () => {
+  it('keeps the last page: delete is disabled with a hint', async () => {
     await open();
+    await select(1);
     await press('Delete page 1');
-    expect(screen.queryByText('A PDF needs at least one page')).toBeNull();
-    await press('Delete page 1');
-    await press('Delete page 1');
+    await select(2);
+    await press('Delete page 2');
     expect(screen.getByText('A PDF needs at least one page')).toBeTruthy();
-    expect(screen.getByText('Page 1')).toBeTruthy();
+    await select(3);
+    expect(screen.getByLabelText('Delete page 3')).toBeDisabled();
+  });
+
+  it('acts only on a selected page and disables moves at the ends', async () => {
+    await open();
+    expect(screen.getByText('Tap a page to rotate, duplicate, delete or move it')).toBeTruthy();
+    expect(screen.getByLabelText(/^Rotate page/)).toBeDisabled();
+    await select(1);
+    expect(screen.getByLabelText('Move page 1 earlier')).toBeDisabled();
+    expect(screen.getByLabelText('Move page 1 later')).not.toBeDisabled();
+    await press('Move page 1 later');
+    // Selection follows the moved page; it now reads Page 1, position 2.
+    expect(screen.getByLabelText('Move page 1 earlier')).not.toBeDisabled();
+    await press(/^Page 1, position 2/);
+    expect(screen.getByLabelText(/^Rotate page/)).toBeDisabled();
+  });
+
+  it('names a moved page by its source number', async () => {
+    await open();
+    const p = (key: string, source: number) => ({ key, source, rotate: 0 });
+    await act(async () => {
+      fakeSortables.lastProps().onDragEnd({ data: [p('p3', 3), p('p1', 1), p('p2', 2)] });
+    });
+    expect(screen.getByLabelText('Page 3, position 1')).toBeTruthy();
+  });
+
+  it('contains a rotated thumbnail in a square box', async () => {
+    await open();
+    await select(1);
+    await press('Rotate page 1');
+    const box = screen.getAllByTestId('page-thumb')[0]!;
+    expect(box).toHaveStyle({ aspectRatio: 1, overflow: 'hidden' });
+    expect(screen.getAllByTestId('page-image')[0]).toHaveStyle({
+      transform: [{ rotate: '90deg' }],
+    });
   });
 
   it('explains an encrypted file without offering Save', async () => {
@@ -152,21 +197,78 @@ describe('organise screen', () => {
     });
     expect(close).toHaveBeenCalled();
   });
+});
 
-  it('asks before discarding changes on hardware back', async () => {
-    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-    const handlers: (() => boolean)[] = [];
+describe('leaving with edits', () => {
+  let alert: jest.SpyInstance;
+  let handlers: (() => boolean)[];
+  const discard = async () => {
+    const buttons = alert.mock.calls[0]![2] as { text: string; onPress?: () => void }[];
+    await act(async () => buttons.find((b) => b.text === 'Discard')!.onPress!());
+  };
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fakeSortables.reset();
+    useSettings.setState({ onboardingDone: true });
+    useStorage.setState({ mode: 'full', roots: [], canRequestFullAccess: true });
+    useFiles.setState({ files: [a], status: 'idle', requestThumb: jest.fn() });
+    start = jest.fn((): StartResult => ({ ok: true, jobId: 'j1' }));
+    useToolJobs.setState({ active: null, last: null, start, cancel: jest.fn() });
+    close = jest.fn();
+    mockPreview(3);
+    jest.spyOn(pdfNative, 'renderToolThumbnail').mockResolvedValue('file:///t.jpg');
+    alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    handlers = [];
     jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_e, h) => {
       handlers.push(h as () => boolean);
       return { remove: jest.fn() };
     });
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('prompts once for hardware back, then leaves on Discard', async () => {
+    const replace = jest.spyOn(router, 'replace').mockImplementation(() => {});
     await open();
+    await select(1);
     await press('Rotate page 1');
     expect(handlers.at(-1)!()).toBe(true);
-    expect(alert).toHaveBeenCalledWith(
-      'Discard changes?',
-      "Your page changes haven't been saved.",
-      expect.any(Array),
-    );
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(alert).toHaveBeenCalledTimes(1);
+    await discard();
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith('/tools');
+  });
+
+  it('does not prompt when a saved job finishes', async () => {
+    const r = await open();
+    await select(1);
+    await press('Rotate page 1');
+    await press('Save as new PDF');
+    await act(async () => {
+      useToolJobs.setState({
+        active: null,
+        last: {
+          jobId: 'j1',
+          toolId: 'organize',
+          inputIds: [],
+          outcome: { ok: true, outputs: [] },
+          seen: false,
+        },
+      });
+    });
+    expect(r.pathname()).toBe('/result');
+    expect(alert).not.toHaveBeenCalled();
+  });
+  it('prompts once for header Back, then leaves on Discard', async () => {
+    const r = await open();
+    await select(1);
+    await press('Rotate page 1');
+    await press('Back');
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(alert.mock.calls[0]![0]).toBe('Discard changes?');
+    await discard();
+    await flush();
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(r.pathname()).toBe('/tools');
   });
 });

@@ -1,10 +1,9 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { memo, useEffect, useState, type Dispatch } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
-import type { OrganizeAction, OrganizePage } from '@/services/tools/organizeState';
+import type { OrganizePage } from '@/services/tools/organizeState';
 import type { PageThumbLoader } from '@/services/reader/pageThumbLoader';
 import { useTheme } from '@/theme/useTheme';
 
@@ -12,17 +11,17 @@ type Props = {
   page: OrganizePage;
   /** 1-based position in the edited document. */
   position: number;
+  selected: boolean;
   loader: PageThumbLoader;
-  dispatch: Dispatch<OrganizeAction>;
+  onToggle(key: string): void;
 };
-
-type Icon = keyof typeof MaterialCommunityIcons.glyphMap;
 
 export const OrganizePageTile = memo(function OrganizePageTile({
   page,
   position,
+  selected,
   loader,
-  dispatch,
+  onToggle,
 }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
@@ -40,51 +39,43 @@ export const OrganizePageTile = memo(function OrganizePageTile({
     };
   }, [loader, source]);
 
-  const label = (name: string) => t(`organize.${name}`, { page: position });
-  const button = (name: string, icon: Icon, action: OrganizeAction) => (
+  return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label(name)}
-      onPress={() => dispatch(action)}
-      style={styles.button}
+      accessibilityLabel={t('organize.pageA11y', { page: source, position })}
+      accessibilityState={{ selected }}
+      onPress={() => onToggle(key)}
+      style={[
+        styles.tile,
+        { backgroundColor: colors.surface, borderColor: selected ? colors.primary : 'transparent' },
+      ]}
     >
-      <MaterialCommunityIcons name={icon} size={22} color={colors.text} />
-    </Pressable>
-  );
-
-  return (
-    <View style={[styles.tile, { backgroundColor: colors.surface }]}>
-      <View
-        accessible
-        accessibilityLabel={t('organize.pageA11y', { page: position, position })}
-        style={styles.thumb}
-      >
+      {/* Square box: a page turned 90 or 270 degrees stays inside it. */}
+      <View testID="page-thumb" style={styles.thumb}>
         {uri ? (
           <Image
+            testID="page-image"
             source={{ uri }}
             style={[styles.image, { transform: [{ rotate: `${rotate}deg` }] }]}
             contentFit="contain"
           />
         ) : (
-          <View style={[styles.image, { backgroundColor: colors.border }]} />
+          <View
+            testID="page-image"
+            style={[
+              styles.image,
+              { backgroundColor: colors.border, transform: [{ rotate: `${rotate}deg` }] },
+            ]}
+          />
         )}
       </View>
-      <Text style={{ color: colors.text }}>{label('page')}</Text>
-      <View style={styles.actions}>
-        {button('rotate', 'rotate-right', { type: 'rotate', key })}
-        {button('duplicate', 'content-copy', { type: 'duplicate', key })}
-        {button('delete', 'delete-outline', { type: 'delete', key })}
-        {button('moveEarlier', 'arrow-left', { type: 'move', key, delta: -1 })}
-        {button('moveLater', 'arrow-right', { type: 'move', key, delta: 1 })}
-      </View>
-    </View>
+      <Text style={{ color: colors.text }}>{t('organize.page', { page: source })}</Text>
+    </Pressable>
   );
 });
 
 const styles = StyleSheet.create({
-  tile: { borderRadius: 8, padding: 4, alignItems: 'center', gap: 2 },
-  thumb: { width: '100%', aspectRatio: 0.75, alignItems: 'center', justifyContent: 'center' },
+  tile: { borderRadius: 8, borderWidth: 2, padding: 4, alignItems: 'center', gap: 2 },
+  thumb: { width: '100%', aspectRatio: 1, overflow: 'hidden' },
   image: { width: '100%', height: '100%' },
-  actions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
-  button: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
 });
