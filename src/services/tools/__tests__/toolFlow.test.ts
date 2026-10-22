@@ -2,7 +2,13 @@
 import { makeRow } from '@/test-utils/fileRows';
 
 import { toolById, type ToolDef } from '../toolRegistry';
-import { canContinue, initialFlow, parseInputsParam, toggleSelection } from '../toolFlow';
+import {
+  canContinue,
+  initialFlow,
+  parseInputsParam,
+  pruneFlow,
+  toggleSelection,
+} from '../toolFlow';
 
 const merge = toolById('merge') as ToolDef;
 const split = toolById('split') as ToolDef;
@@ -69,5 +75,26 @@ describe('canContinue', () => {
   });
   it('rejects a selected id with no row', () => {
     expect(canContinue({ step: 'pick', selectedIds: [ids[0]!, A] }, merge, rows)).toBe(false);
+  });
+});
+
+describe('pruneFlow', () => {
+  const a = makeRow({ name: 'a.pdf' });
+  const b = makeRow({ name: 'b.pdf' });
+  it('drops ids with no row and keeps the order', () => {
+    expect(pruneFlow({ step: 'pick', selectedIds: [b.id, 'gone', a.id] }, [a, b])).toEqual({
+      step: 'pick',
+      selectedIds: [b.id, a.id],
+    });
+  });
+  it('falls back to pick when nothing selected is left', () => {
+    expect(pruneFlow({ step: 'options', selectedIds: ['gone'] }, [a])).toEqual({
+      step: 'pick',
+      selectedIds: [],
+    });
+  });
+  it('returns the same state when nothing changed', () => {
+    const state = { step: 'options' as const, selectedIds: [a.id] };
+    expect(pruneFlow(state, [a, b])).toBe(state);
   });
 });

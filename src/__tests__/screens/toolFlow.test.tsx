@@ -52,6 +52,10 @@ const press = async (label: string) => {
 };
 
 describe('tool flow', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     useSettings.setState({ onboardingDone: true });
@@ -180,7 +184,6 @@ describe('tool flow', () => {
     expect(handled).toBe(true);
     expect(screen.getByText('Choose PDFs')).toBeTruthy();
     expect(pressBack()).toBe(false);
-    jest.restoreAllMocks();
   });
 
   it('adds and selects browsed files', async () => {
@@ -308,6 +311,81 @@ describe('tool flow', () => {
     await open('/tool/compress');
     expect(screen.getByText('Coming soon')).toBeTruthy();
     expect(screen.queryByText('Choose PDFs')).toBeNull();
+  });
+
+  it('drops a selected file that leaves the library', async () => {
+    await open('/tool/merge');
+    await press('Select a.pdf');
+    await press('Select b.pdf');
+    await press('Select c.pdf');
+    expect(screen.getByText('3 selected')).toBeTruthy();
+    await act(async () => {
+      useFiles.setState((s) => ({ files: s.files.filter((f) => f.id !== c.id) }));
+    });
+    expect(screen.getByText('2 selected')).toBeTruthy();
+    expect(screen.getByLabelText('Next')).toBeEnabled();
+    await press('Next');
+    await press('Merge 2 PDFs');
+    expect(start).toHaveBeenCalledWith(
+      { toolId: 'merge', inputIds: ['id-a.pdf', 'id-b.pdf'] },
+      expect.any(Function),
+    );
+  });
+
+  it('a vanished selection does not block the selection limit or Next', async () => {
+    await open('/tool/split');
+    await press('Select a.pdf');
+    await act(async () => {
+      useFiles.setState((s) => ({ files: s.files.filter((f) => f.id !== a.id) }));
+    });
+    expect(screen.getByLabelText('Next')).toBeDisabled();
+    await press('Select b.pdf');
+    expect(screen.getByLabelText('Next')).toBeEnabled();
+  });
+
+  it('returns to pick when the split file vanishes at options', async () => {
+    await open(`/tool/split?inputs=${ID_A}`);
+    expect(screen.getByText('10 pages')).toBeTruthy();
+    await act(async () => {
+      useFiles.setState((s) => ({ files: s.files.filter((f) => f.id !== ID_A) }));
+    });
+    expect(screen.getByText('Choose a PDF')).toBeTruthy();
+    expect(screen.getByLabelText('Next')).toBeDisabled();
+  });
+
+  it('starts once when Run is tapped twice before a re-render', async () => {
+    await open(`/tool/merge?inputs=${ID_A},${ID_B}`);
+    const run = screen.getByLabelText('Merge 2 PDFs');
+    // Two accessibility clicks in one batch: neither sees the other's re-render.
+    const click = () => run.props.onClick({ nativeEvent: {}, persist() {} });
+    await act(async () => {
+      click();
+      click();
+    });
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not leave for a job it did not start', async () => {
+    const r = await open(`/tool/merge?inputs=${ID_A},${ID_B}`);
+    await press('Merge 2 PDFs');
+    await act(async () => {
+      useToolJobs.setState({
+        active: null,
+        last: { jobId: 'other', toolId: 'merge', outcome: { ok: true, outputs: [] }, seen: false },
+      });
+    });
+    expect(r.pathname()).toBe('/tool/merge');
+  });
+
+  it('offers no every-N mode for a one-page PDF', async () => {
+    preview.mockResolvedValue({
+      ok: true,
+      preview: { fileUri: 'file:///cache/p.pdf', pageCount: 1, close: jest.fn() },
+    });
+    await open(`/tool/split?inputs=${ID_A}`);
+    expect(screen.getByLabelText('Page ranges')).toBeTruthy();
+    expect(screen.getByLabelText('Extract pages')).toBeTruthy();
+    expect(screen.queryByLabelText('Every N pages')).toBeNull();
   });
 
   it('shows coming soon for an unknown tool', async () => {

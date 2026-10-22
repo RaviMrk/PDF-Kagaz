@@ -124,7 +124,8 @@ function SplitForm({ fileUri, pageCount, onRun }: FormProps) {
         <SegmentedControl<Mode>
           options={[
             { key: 'ranges', label: t('split.modeRanges') },
-            { key: 'everyN', label: t('split.modeEvery') },
+            // Every N needs a part boundary: a one-page PDF has none.
+            ...(pageCount >= 2 ? [{ key: 'everyN' as const, label: t('split.modeEvery') }] : []),
             { key: 'extract', label: t('split.modeExtract') },
           ]}
           value={mode}

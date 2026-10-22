@@ -18,6 +18,7 @@ import {
   canContinue,
   initialFlow,
   parseInputsParam,
+  pruneFlow,
   toggleSelection,
   type FlowState,
 } from '@/services/tools/toolFlow';
@@ -46,7 +47,7 @@ function ToolFlow({ tool, inputIds }: { tool: ToolDef; inputIds: string[] }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const files = useFiles((s) => s.files);
-  const [flow, setFlow] = useState<FlowState>(() => {
+  const [stored, setStored] = useState<FlowState>(() => {
     // Only ids of known files are prefilled; a valid set that cannot run starts at pick.
     const known = useFiles.getState().getRows(inputIds);
     const first = initialFlow(
@@ -57,7 +58,16 @@ function ToolFlow({ tool, inputIds }: { tool: ToolDef; inputIds: string[] }) {
       ? { ...first, step: 'pick' }
       : first;
   });
-  const [startedAtPick] = useState(() => flow.step === 'pick');
+  const [startedAtPick] = useState(() => stored.step === 'pick');
+  // Selected files can leave the library while the flow is open: read and update a pruned flow.
+  const flow = useMemo(() => pruneFlow(stored, files), [stored, files]);
+  const setFlow = useCallback(
+    (update: (f: FlowState) => FlowState) =>
+      setStored((prev) => update(pruneFlow(prev, useFiles.getState().files))),
+    [],
+  );
+  // One start per tap: a second press can land before the job id re-renders.
+  const starting = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const active = useToolJobs((s) => s.active);
@@ -89,15 +99,20 @@ function ToolFlow({ tool, inputIds }: { tool: ToolDef; inputIds: string[] }) {
         return true;
       });
       return () => sub.remove();
-    }, [backToPick]),
+    }, [backToPick, setFlow]),
   );
 
   const run = (request: ToolRequest) => {
-    if (jobId !== null) return;
+    if (starting.current) return;
+    starting.current = true;
     setNotice(null);
     const result = useToolJobs.getState().start(request, t);
-    if (result.ok) setJobId(result.jobId);
-    else setNotice(t(result.reason === 'busy' ? 'toolError.busy' : 'toolError.unknown'));
+    if (result.ok) {
+      setJobId(result.jobId);
+      return;
+    }
+    starting.current = false;
+    setNotice(t(result.reason === 'busy' ? 'toolError.busy' : 'toolError.unknown'));
   };
 
   const back = () => {

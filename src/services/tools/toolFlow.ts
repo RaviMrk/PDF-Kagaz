@@ -41,6 +41,17 @@ export function canContinue(state: FlowState, tool: ToolDef, rows: FileRow[]): b
   return checkInputSizes(sizes).ok;
 }
 
+/**
+ * Keeps only selected ids that still have a row (a file can be deleted or dropped as missing
+ * while the flow is open); options with nothing left falls back to pick.
+ */
+export function pruneFlow(state: FlowState, rows: readonly FileRow[]): FlowState {
+  const known = new Set(rows.map((r) => r.id));
+  const selectedIds = state.selectedIds.filter((id) => known.has(id));
+  if (selectedIds.length === state.selectedIds.length) return state;
+  return { step: selectedIds.length > 0 ? state.step : 'pick', selectedIds };
+}
+
 /** `inputs` route param: comma-separated file ids; anything else is dropped. */
 export function parseInputsParam(param: string | string[] | undefined): string[] {
   if (param === undefined) return [];

@@ -47,20 +47,24 @@ describe('Tools tab', () => {
     useFiles.setState({ files: [], status: 'idle', requestThumb: jest.fn() });
   });
 
-  it('lists the groups in order', async () => {
+  it('lists exactly the five groups, in order', async () => {
     await renderTools();
-    const groups = ['Organise', 'Convert', 'Optimise', 'Security', 'Edit'];
-    const headers = screen
-      .getAllByRole('header')
-      .map((h) => h.props.children)
-      .filter((c) => groups.includes(c));
-    expect(headers).toEqual(groups);
+    const headers = screen.getAllByTestId('tool-group-header');
+    expect(headers.map((h) => h.props.children)).toEqual([
+      'Organise',
+      'Convert',
+      'Optimise',
+      'Security',
+      'Edit',
+    ]);
+    for (const h of headers) expect(h).toHaveProp('accessibilityRole', 'header');
   });
 
-  it('shows all 14 tools', async () => {
+  it('renders exactly the 14 tool cards', async () => {
     await renderTools();
+    const cells = screen.getAllByTestId('tool-card');
+    expect(cells).toHaveLength(14);
     for (const label of CARDS) expect(screen.getByLabelText(label)).toBeTruthy();
-    expect(CARDS).toHaveLength(14);
   });
 
   it('opens an available tool', async () => {

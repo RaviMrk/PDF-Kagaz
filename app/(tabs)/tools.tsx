@@ -19,12 +19,16 @@ export default function Screen() {
     >
       {GROUPS.map(({ group, tools }) => (
         <View key={group} style={styles.section}>
-          <Text accessibilityRole="header" style={[styles.heading, { color: colors.text }]}>
+          <Text
+            testID="tool-group-header"
+            accessibilityRole="header"
+            style={[styles.heading, { color: colors.text }]}
+          >
             {t(`tools.group.${group}`)}
           </Text>
           <View style={styles.grid}>
             {tools.map((tool) => (
-              <View key={tool.id} style={styles.cell}>
+              <View key={tool.id} testID="tool-card" style={styles.cell}>
                 <ToolCard tool={tool} onPress={openTool} />
               </View>
             ))}
