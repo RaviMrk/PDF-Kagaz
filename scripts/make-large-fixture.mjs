@@ -1,5 +1,6 @@
-// Generates __fixtures__/large/scanned-50mb.pdf (gitignored, too big for git): 48 A4 pages, each
-// one full-page 600x600 RGB noise PNG, so the file is >= 50 MB like a large scan.
+// Generates the large fixtures in __fixtures__/large/ (gitignored, too big for git):
+//  - scanned-50mb.pdf: 48 A4 pages, each one full-page 600x600 RGB noise PNG (>= 50 MB scan)
+//  - fifty-pages-10mb.pdf: 50 A4 pages, each one 260x260 RGB noise PNG (>= 10 MB)
 // Run: npm run fixtures:large
 import { Buffer } from 'node:buffer';
 import fs from 'node:fs';
@@ -9,9 +10,6 @@ import { deflateSync } from 'node:zlib';
 
 import { PDFDocument } from '@cantoo/pdf-lib';
 
-const PAGES = 48;
-const SIDE = 600;
-const MIN_BYTES = 50_000_000;
 const A4 = [595.28, 841.89];
 
 const outDir = path.join(
@@ -21,8 +19,6 @@ const outDir = path.join(
   'large',
 );
 fs.mkdirSync(outDir, { recursive: true });
-const outFile = path.join(outDir, 'scanned-50mb.pdf');
-
 /** Deterministic PRNG so every run produces the same bytes. */
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -57,7 +53,7 @@ function chunk(type, data) {
 }
 
 /** A SIDE x SIDE 8-bit RGB PNG of random noise (incompressible, like a photo scan). */
-function noisePng(random) {
+function noisePng(random, SIDE) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(SIDE, 0);
   ihdr.writeUInt32BE(SIDE, 4);
@@ -77,19 +73,30 @@ function noisePng(random) {
   ]);
 }
 
-const doc = await PDFDocument.create({ updateMetadata: false });
-doc.setCreationDate(new Date(0));
-doc.setModificationDate(new Date(0));
-const random = mulberry32(0x5eed);
-for (let i = 0; i < PAGES; i++) {
-  const image = await doc.embedPng(noisePng(random));
-  const page = doc.addPage(A4);
-  page.drawImage(image, { x: 0, y: 0, width: page.getWidth(), height: page.getHeight() });
+async function generate(name, { pages, side, seed, minBytes }) {
+  const outFile = path.join(outDir, name);
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  doc.setCreationDate(new Date(0));
+  doc.setModificationDate(new Date(0));
+  const random = mulberry32(seed);
+  for (let i = 0; i < pages; i++) {
+    const image = await doc.embedPng(noisePng(random, side));
+    const page = doc.addPage(A4);
+    page.drawImage(image, { x: 0, y: 0, width: page.getWidth(), height: page.getHeight() });
+  }
+  const bytes = await doc.save();
+  fs.writeFileSync(outFile, bytes);
+  console.log(`${outFile}: ${bytes.length} bytes`);
+  if (bytes.length < minBytes) {
+    console.error(`Expected at least ${minBytes} bytes`);
+    process.exit(1);
+  }
 }
-const bytes = await doc.save();
-fs.writeFileSync(outFile, bytes);
-console.log(`${outFile}: ${bytes.length} bytes`);
-if (bytes.length < MIN_BYTES) {
-  console.error(`Expected at least ${MIN_BYTES} bytes`);
-  process.exit(1);
-}
+
+await generate('scanned-50mb.pdf', { pages: 48, side: 600, seed: 0x5eed, minBytes: 50_000_000 });
+await generate('fifty-pages-10mb.pdf', {
+  pages: 50,
+  side: 260,
+  seed: 0x105eed,
+  minBytes: 10_000_000,
+});
