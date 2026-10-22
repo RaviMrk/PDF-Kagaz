@@ -15,9 +15,10 @@ object KernelPaths {
   fun isShareable(path: String, rules: PathRules, realRoots: List<Pair<String, String>>): Boolean =
     candidates(path, realRoots).any { ShareablePaths.isShareable(it, rules) }
 
-  /** [path] itself plus its /storage equivalents; empty for paths with '.' or '..' segments. */
+  /** [path] itself plus its /storage equivalents; empty for paths with '.', '..' or empty segments. */
   fun candidates(path: String, realRoots: List<Pair<String, String>>): List<String> {
-    if (!path.startsWith("/") || path.split('/').any { it == "." || it == ".." }) return emptyList()
+    if (!path.startsWith("/")) return emptyList()
+    if (path.split('/').drop(1).any { it.isEmpty() || it == "." || it == ".." }) return emptyList()
     val out = linkedSetOf(path)
     for ((real, canonical) in realRoots) {
       val realRoot = real.trimEnd('/')

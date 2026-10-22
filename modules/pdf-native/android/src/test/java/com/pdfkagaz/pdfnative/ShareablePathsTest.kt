@@ -78,4 +78,13 @@ class ShareablePathsTest {
     assertFalse(ShareablePaths.isInside("$cache/reader", "$cache/reader"))
     assertFalse(ShareablePaths.isInside("$cache/readerx/a.pdf", "$cache/reader"))
   }
+
+  @Test
+  fun appDirsAreRefusedInAnyCase() {
+    assertFalse(shareable("/storage/emulated/0/android/DATA/$pkg/files/a.pdf"))
+    assertFalse(shareable("/storage/emulated/0/Android/Obb/$pkg/x.pdf"))
+    assertFalse(shareable("/storage/1A2B-3C4D/ANDROID/data/$pkg/a.pdf"))
+    assertFalse(shareable("/storage/emulated/0/ANDROID/DATA/${pkg.uppercase()}"))
+    assertTrue(shareable("/storage/emulated/0/Documents/android-data.pdf"))
+  }
 }

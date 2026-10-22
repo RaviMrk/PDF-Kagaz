@@ -168,6 +168,13 @@ describe('Files tab', () => {
     expect(names).toEqual(['Apple.pdf', 'Fav.pdf', 'Zebra.pdf', 'अहवाल.pdf']);
   });
 
+  it('renders a display-safe name for a row with bidi controls', async () => {
+    useFiles.setState({ files: [makeRow({ name: '\u202Efdp.exe.pdf' })] });
+    await renderFiles();
+    expect(screen.getByText('fdp.exe.pdf')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^fdp\.exe\.pdf,/ })).toBeTruthy();
+  });
+
   it('refreshes fully on pull-to-refresh', async () => {
     await renderFiles();
     await fireEvent(screen.getByTestId('files-list'), 'refresh');

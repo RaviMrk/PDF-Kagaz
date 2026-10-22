@@ -51,4 +51,37 @@ describe('incomingReaderRoutes', () => {
     const routes = [r('t', '(tabs)'), r('o1', 'open'), r('rb', 'reader/[id]', 'B')];
     expect(incomingReaderRoutes(routes, 'o1', 'A')).toEqual([r('t', '(tabs)'), reader('A')]);
   });
+
+  it('drops older pending opens below the one resolved', () => {
+    const routes = [r('t', '(tabs)'), r('o1', 'open'), r('o2', 'open')];
+    expect(incomingReaderRoutes(routes, 'o2', 'B')).toEqual([r('t', '(tabs)'), reader('B')]);
+  });
+
+  it('returns null when the open route is gone', () => {
+    const routes = [r('t', '(tabs)'), r('ra', 'reader/[id]', 'A')];
+    expect(incomingReaderRoutes(routes, 'o9', 'B')).toBeNull();
+  });
+
+  it('resolves in order o1 then o2', () => {
+    const first = incomingReaderRoutes(
+      [r('t', '(tabs)'), r('o1', 'open'), r('o2', 'open')],
+      'o1',
+      'A',
+    );
+    expect(first).toEqual([r('t', '(tabs)'), reader('A'), r('o2', 'open')]);
+    const next = [r('t', '(tabs)'), r('ra', 'reader/[id]', 'A'), r('o2', 'open')];
+    expect(incomingReaderRoutes(next, 'o2', 'B')).toEqual([r('t', '(tabs)'), reader('B')]);
+  });
+
+  it('resolves in order o2 then o1', () => {
+    const first = incomingReaderRoutes(
+      [r('t', '(tabs)'), r('o1', 'open'), r('o2', 'open')],
+      'o2',
+      'B',
+    );
+    expect(first).toEqual([r('t', '(tabs)'), reader('B')]);
+    expect(
+      incomingReaderRoutes([r('t', '(tabs)'), r('rb', 'reader/[id]', 'B')], 'o1', 'A'),
+    ).toBeNull();
+  });
 });

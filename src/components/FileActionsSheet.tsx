@@ -9,6 +9,7 @@ import type { FileRow } from '@/db/schema';
 import { useFiles, type FileActionError } from '@/stores/filesStore';
 import { useTheme } from '@/theme/useTheme';
 import { isInAppFolder } from '@/utils/appFolder';
+import { displayName } from '@/utils/displayName';
 import { fileActionErrorKey } from '@/utils/fileActionError';
 
 type Props = { file: FileRow | null; onClose: () => void };
@@ -70,7 +71,7 @@ function Sheet({ file, onClose }: { file: FileRow; onClose: () => void }) {
   };
 
   const confirmDelete = () =>
-    Alert.alert(t('files.deleteTitle'), t('files.deleteBody', { name: file.name }), [
+    Alert.alert(t('files.deleteTitle'), t('files.deleteBody', { name: displayName(file.name) }), [
       { text: t('files.cancel'), style: 'cancel' },
       {
         text: t('files.delete'),
@@ -114,7 +115,7 @@ function Sheet({ file, onClose }: { file: FileRow; onClose: () => void }) {
       <Pressable accessibilityLabel={t('files.close')} onPress={dismiss} style={styles.backdrop} />
       <View style={[styles.sheet, { backgroundColor: colors.background }]}>
         <Text numberOfLines={2} style={[styles.title, { color: colors.text }]}>
-          {file.name}
+          {displayName(file.name)}
         </Text>
         {errorKey ? (
           <Text accessibilityLiveRegion="polite" style={[styles.error, { color: colors.danger }]}>

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { FileRow } from '@/db/schema';
 import { useTheme } from '@/theme/useTheme';
 import { formatDate } from '@/utils/date';
+import { displayName } from '@/utils/displayName';
 import { formatBytes } from '@/utils/fileSize';
 
 function safeDecode(s: string): string {
@@ -25,7 +26,7 @@ export function FileInfoSheet({ file, onClose }: { file: FileRow; onClose: () =>
   const { t, i18n } = useTranslation();
   const { colors } = useTheme();
   const rows: [string, string][] = [
-    [t('files.infoName'), file.name],
+    [t('files.infoName'), displayName(file.name)],
     [t('files.infoFolder'), file.folder === '' ? t('files.rootFolder') : file.folder],
     [t('files.infoSize'), formatBytes(file.sizeBytes)],
     [t('files.infoModified'), formatDate(file.modifiedAt, i18n.language)],

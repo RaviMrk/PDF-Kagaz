@@ -6,6 +6,7 @@ import { PdfThumbnail } from '@/components/PdfThumbnail';
 import type { FileRow } from '@/db/schema';
 import { useTheme } from '@/theme/useTheme';
 import { formatDate } from '@/utils/date';
+import { displayName } from '@/utils/displayName';
 
 type Props = { file: FileRow; onPress: (file: FileRow) => void };
 
@@ -16,7 +17,7 @@ function RecentCardImpl({ file, onPress }: Props) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${file.name}, ${date}`}
+      accessibilityLabel={`${displayName(file.name)}, ${date}`}
       onPress={() => onPress(file)}
       style={styles.card}
     >
@@ -26,7 +27,7 @@ function RecentCardImpl({ file, onPress }: Props) {
         numberOfLines={2}
         style={[styles.name, { color: colors.text }]}
       >
-        {file.name}
+        {displayName(file.name)}
       </Text>
       <Text style={[styles.date, { color: colors.textMuted }]}>{date}</Text>
     </Pressable>

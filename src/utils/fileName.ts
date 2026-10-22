@@ -1,3 +1,5 @@
+import { displayName } from '@/utils/displayName';
+
 export type FileNameResult =
   { ok: true; name: string } | { ok: false; reason: 'empty' | 'invalidChars' | 'tooLong' };
 
@@ -14,4 +16,24 @@ export function validatePdfFileName(input: string): FileNameResult {
   if (new TextEncoder().encode(name).length > MAX_NAME_BYTES)
     return { ok: false, reason: 'tooLong' };
   return { ok: true, name };
+}
+
+const MAX_BASE_BYTES = 200;
+
+/** Base name for generated output files: display-safe, no .pdf, no path or reserved characters. */
+export function outputBaseName(name: string): string {
+  const base = displayName(name)
+    .replace(/\.pdf$/i, '')
+    .replace(/[/\\:*?"<>|]/g, '_')
+    .trim()
+    .replace(/^\.+/, '');
+  const encoder = new TextEncoder();
+  let bytes = 0;
+  let out = '';
+  for (const ch of base) {
+    bytes += encoder.encode(ch).length;
+    if (bytes > MAX_BASE_BYTES) break;
+    out += ch;
+  }
+  return out.trimEnd() || 'document';
 }

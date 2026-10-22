@@ -8,6 +8,7 @@ import type { FileRow as FileRowData } from '@/db/schema';
 import { useTheme } from '@/theme/useTheme';
 import { formatDate } from '@/utils/date';
 import { formatBytes } from '@/utils/fileSize';
+import { displayName } from '@/utils/displayName';
 
 type Props = {
   file: FileRowData;
@@ -17,6 +18,7 @@ type Props = {
 
 function FileRowImpl({ file, onPress, onMore }: Props) {
   const { t, i18n } = useTranslation();
+  const shown = displayName(file.name);
   const { colors } = useTheme();
   const parts = [formatBytes(file.sizeBytes), formatDate(file.modifiedAt, i18n.language)];
   if (file.pageCount != null) parts.push(t('files.pages', { count: file.pageCount }));
@@ -30,7 +32,7 @@ function FileRowImpl({ file, onPress, onMore }: Props) {
     <View style={styles.row}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={[file.name, meta, ...flags].join(', ')}
+        accessibilityLabel={[shown, meta, ...flags].join(', ')}
         onPress={() => onPress(file)}
         style={styles.main}
       >
@@ -41,7 +43,7 @@ function FileRowImpl({ file, onPress, onMore }: Props) {
             numberOfLines={2}
             style={[styles.name, { color: colors.text }]}
           >
-            {file.name}
+            {shown}
           </Text>
           <Text numberOfLines={1} style={[styles.meta, { color: colors.textMuted }]}>
             {meta}
@@ -58,7 +60,7 @@ function FileRowImpl({ file, onPress, onMore }: Props) {
       </Pressable>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={t('files.moreActions', { name: file.name })}
+        accessibilityLabel={t('files.moreActions', { name: shown })}
         onPress={() => onMore(file)}
         style={styles.more}
       >

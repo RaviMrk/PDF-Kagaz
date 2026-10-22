@@ -1,4 +1,4 @@
-import { validatePdfFileName } from '../fileName';
+import { outputBaseName, validatePdfFileName } from '../fileName';
 
 describe('validatePdfFileName', () => {
   it('trims and appends .pdf', () => {
@@ -37,5 +37,24 @@ describe('validatePdfFileName', () => {
       name: `${'a'.repeat(251)}.pdf`,
     });
     expect(validatePdfFileName('a'.repeat(252))).toEqual({ ok: false, reason: 'tooLong' });
+  });
+});
+
+describe('outputBaseName', () => {
+  it('drops a trailing .pdf in any case', () => {
+    expect(outputBaseName('Report.PDF')).toBe('Report');
+  });
+  it('replaces path and reserved characters', () => {
+    expect(outputBaseName('a/b:c?.pdf')).toBe('a_b_c_');
+  });
+  it('strips leading dots and bidi controls', () => {
+    expect(outputBaseName('..hidden.pdf')).toBe('hidden');
+    expect(outputBaseName('\u202Eevil.pdf')).toBe('evil');
+  });
+  it('caps at 200 UTF-8 bytes on a code-point boundary', () => {
+    expect(outputBaseName('अ'.repeat(100) + '.pdf')).toBe('अ'.repeat(66));
+  });
+  it('falls back to document', () => {
+    expect(outputBaseName('.pdf')).toBe('document');
   });
 });

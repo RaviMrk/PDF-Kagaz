@@ -49,8 +49,12 @@ export default function OpenScreen() {
         setResult({ nonce, failure: r.reason });
         return;
       }
+      // Already replaced by another incoming open: leave the stack alone.
+      const current = navigation.getState()?.routes ?? [];
+      if (incomingReaderRoutes(current, route.key, r.id) === null) return;
       navigation.dispatch((state) => {
         const routes = incomingReaderRoutes(state.routes, route.key, r.id);
+        if (routes === null) return CommonActions.reset(state);
         return CommonActions.reset({ ...state, routes, index: routes.length - 1 });
       });
     });

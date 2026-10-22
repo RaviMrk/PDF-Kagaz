@@ -5,13 +5,14 @@ import { useTranslation } from 'react-i18next';
 
 import type { FolderGroup } from '@/services/files/fileQuery';
 import { useTheme } from '@/theme/useTheme';
+import { displayName } from '@/utils/displayName';
 
 type Props = { group: FolderGroup; onPress: (group: FolderGroup) => void };
 
 function FolderRowImpl({ group, onPress }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const name = group.folder === '' ? t('files.rootFolder') : group.folder;
+  const name = group.folder === '' ? t('files.rootFolder') : displayName(group.folder);
   const count = t('files.fileCount', { count: group.count });
   return (
     <Pressable

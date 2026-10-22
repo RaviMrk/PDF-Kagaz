@@ -1,5 +1,6 @@
 package com.pdfkagaz.pdfnative
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -83,5 +84,14 @@ class KernelPathsTest {
     assertFalse(ok("/data/media/0"))
     assertFalse(ok("/mnt/runtime/default/emulated/0"))
     assertFalse(ok("/mnt/runtime/default/emulated/0/../../../../data/data/$pkg/databases/app.db"))
+  }
+
+  @Test
+  fun emptySegmentsAreRefused() {
+    assertTrue(KernelPaths.candidates("/storage/emulated/0//Android/data/$pkg/a.pdf", emptyList()).isEmpty())
+    assertTrue(KernelPaths.candidates("/mnt/user/0/emulated/0//Download/a.pdf", emptyList()).isEmpty())
+    assertTrue(KernelPaths.candidates("/storage/emulated/0/Download/", emptyList()).isEmpty())
+    val plain = "/storage/emulated/0/Download/a.pdf"
+    assertEquals(listOf(plain), KernelPaths.candidates(plain, emptyList()))
   }
 }

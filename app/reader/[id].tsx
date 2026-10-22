@@ -43,6 +43,7 @@ import { useBookmarks } from '@/services/reader/useBookmarks';
 import { useFiles } from '@/stores/filesStore';
 import { useSettings } from '@/stores/settingsStore';
 import { useTheme } from '@/theme/useTheme';
+import { displayName } from '@/utils/displayName';
 
 const FAILURE_KEYS: Record<ReaderFailure, string> = {
   notFound: 'reader.errorNotFound',
@@ -93,7 +94,7 @@ function useReaderKeepAwake(on: boolean) {
   }, [on]);
 }
 
-const printTitle = (name: string) => name.replace(/\.pdf$/i, '');
+const printTitle = (name: string) => displayName(name).replace(/\.pdf$/i, '');
 
 function startPage(row: FileRow): number {
   const p = row.lastPage;
@@ -316,7 +317,7 @@ function OpenReader({ row }: { row: FileRow }) {
         </View>
       ) : null}
       {barsVisible ? (
-        <ReaderTopBar title={row.name} onClose={leave}>
+        <ReaderTopBar title={displayName(row.name)} onClose={leave}>
           {ready ? (
             <>
               <BarButton
@@ -415,7 +416,7 @@ function OpenReader({ row }: { row: FileRow }) {
       />
       <PasswordDialog
         visible={phase.kind === 'needsPassword'}
-        fileName={row.name}
+        fileName={displayName(row.name)}
         wrong={phase.kind === 'needsPassword' && phase.wrong}
         onSubmit={(password) => {
           loadStartedAt.current = Date.now();
