@@ -274,6 +274,23 @@
     "back": "Back",
     "loadingPages": "Reading pages…"
   },
+  "organize": {
+    "title": "Organise pages",
+    "hint": "Long-press a page and drag to move it",
+    "page": "Page {{page}}",
+    "pageA11y": "Page {{page}}, position {{position}}",
+    "rotate": "Rotate page {{page}}",
+    "duplicate": "Duplicate page {{page}}",
+    "delete": "Delete page {{page}}",
+    "moveEarlier": "Move page {{page}} earlier",
+    "moveLater": "Move page {{page}} later",
+    "save": "Save as new PDF",
+    "lastPage": "A PDF needs at least one page",
+    "discardTitle": "Discard changes?",
+    "discardBody": "Your page changes haven't been saved.",
+    "discard": "Discard",
+    "keep": "Keep editing"
+  },
   "merge": {
     "moveUp": "Move {{name}} up",
     "moveDown": "Move {{name}} down",
