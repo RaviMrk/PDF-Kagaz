@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -144,15 +145,20 @@ class ToolFiles(private val context: Context) {
 
   /**
    * Streams [uri] (workspace file or guarded source, read-only) into the user-chosen document
-   * [target]; cancellable. On any failure or cancellation the target is deleted (best effort).
-   * A missing source is ERR_FILE_NOT_FOUND, anything else ERR_IO.
+   * [target]; cancellable. A target that already has content (the user confirmed "overwrite"), whose
+   * size is unknown, or that is the source itself is refused with ERR_FILE_EXISTS and left
+   * untouched ([SaveTargetPolicy]). Only a verified empty target is written ("wt") and, on any
+   * failure or cancellation, deleted (best effort). Missing source → ERR_FILE_NOT_FOUND, else ERR_IO.
    */
   suspend fun saveCopy(uri: String, target: Uri): Unit = RenderSupport.mapErrors {
     withContext(Dispatchers.IO) {
+      val source = Uri.parse(uri)
+      val same = SaveTargetPolicy.sameDocument(docRefOf(source), docRefOf(target))
+      if (SaveTargetPolicy.decide(sizeOf(target), same) == SaveTargetPolicy.Decision.REFUSE) throw FileExistsException()
       try {
-        openCopySource(Uri.parse(uri)).use { input ->
+        openCopySource(source).use { input ->
           val output = try {
-            context.contentResolver.openOutputStream(target, "w")
+            context.contentResolver.openOutputStream(target, "wt")
           } catch (e: java.io.FileNotFoundException) {
             throw IoCodedException(cause = e)
           } catch (e: SecurityException) {
@@ -170,6 +176,25 @@ class ToolFiles(private val context: Context) {
       }
       Unit
     }
+  }
+
+  /** OpenableColumns.SIZE of a content:// target (file:// by length); null when not reported. */
+  private fun sizeOf(target: Uri): Long? {
+    if (target.scheme == "file") return target.path?.let(::File)?.takeIf { it.exists() }?.length()
+    context.contentResolver.query(target, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->
+      if (c.moveToFirst() && !c.isNull(0)) return c.getLong(0)
+    }
+    return null
+  }
+
+  private fun docRefOf(uri: Uri): DocRef {
+    val path = if (uri.scheme == "file") uri.path?.let { File(it).canonicalPath } else null
+    val documentId = if (uri.scheme == "content" && DocumentsContract.isDocumentUri(context, uri)) {
+      DocumentsContract.getDocumentId(uri)
+    } else {
+      null
+    }
+    return DocRef(uri.toString(), uri.authority, documentId, path)
   }
 
   private fun openCopySource(uri: Uri): InputStream {

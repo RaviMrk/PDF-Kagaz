@@ -80,9 +80,15 @@ export interface PdfNativeApi {
   /**
    * "Save as": the user picks a new document (system picker, `suggestedName` prefilled) and the
    * PDF is copied into it; the original is untouched. Resolves false when the picker was cancelled.
+   * Rejects with ERR_FILE_EXISTS (target left untouched) when the chosen document already has
+   * content or is the source itself: an existing document is never overwritten.
    */
   saveCopyAs(uri: string, suggestedName: string): Promise<boolean>;
-  /** System PDF picker (content:// URIs, at most 50); resolves [] when cancelled. */
+  /**
+   * System PDF picker (content:// URIs, at most 50); resolves [] when cancelled. Picks this app may
+   * not read (e.g. its own providers) are dropped; rejects with ERR_PERMISSION_DENIED when every
+   * picked document was refused.
+   */
   pickPdfDocuments(multiple: boolean): Promise<string[]>;
   addScanProgressListener(cb: (e: ScanProgressEvent) => void): { remove(): void };
   /** PDFs shared to the app while it is running (ACTION_VIEW is left to Linking). */

@@ -44,9 +44,9 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
   renderToolThumbnail(fileUri: string, page: number, width: number): Promise<string>;
   getToolPageCount(fileUri: string): Promise<number>;
   releaseToolDocument(): Promise<void>;
-  /** ACTION_CREATE_DOCUMENT then a streamed copy; false when the picker was cancelled. */
+  /** ACTION_CREATE_DOCUMENT then a streamed copy; false when cancelled; ERR_FILE_EXISTS for a non-empty target. */
   saveCopyAs(uri: string, suggestedName: string): Promise<boolean>;
-  /** ACTION_OPEN_DOCUMENT for PDFs; [] when cancelled. */
+  /** ACTION_OPEN_DOCUMENT for PDFs; [] when cancelled; ERR_PERMISSION_DENIED when every pick is refused. */
   pickPdfDocuments(multiple: boolean): Promise<string[]>;
 }
 
