@@ -121,6 +121,19 @@ describe('toolJobStore', () => {
     expect(s.store.getState().active).toBeNull();
   });
 
+  it('a cancelled job keeps the outputs published before the cancel', async () => {
+    const s = setup();
+    const started = s.store.getState().start(merge, t);
+    if (!started.ok) throw new Error('expected ok');
+    const part = makeRow({ name: 'p1.pdf', source: 'output' });
+    s.calls[0]!.resolve({ ok: false, failure: 'cancelled', inputIndex: null, outputs: [part] });
+    await flush();
+    expect(getJob(s.db, started.jobId)).toMatchObject({
+      status: 'cancelled',
+      outputIds: [part.id],
+    });
+  });
+
   it('retry starts a new job with the same request', async () => {
     const s = setup();
     const split: ToolRequest = {

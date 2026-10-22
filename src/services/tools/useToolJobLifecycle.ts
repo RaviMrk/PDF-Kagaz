@@ -16,6 +16,13 @@ export type ToolJobLifecycleDeps = {
   startedAt: number;
 };
 
+// Module-level: recovery runs once per process (StrictMode double effects, fast refresh, remounts).
+let recovered = false;
+
+export function resetToolJobLifecycleForTests(): void {
+  recovered = false;
+}
+
 const DEFAULT_DEPS: ToolJobLifecycleDeps = {
   getDb,
   native: pdfNative,
@@ -30,6 +37,8 @@ const DEFAULT_DEPS: ToolJobLifecycleDeps = {
 export function useToolJobLifecycle(deps: ToolJobLifecycleDeps = DEFAULT_DEPS): void {
   const depsRef = useRef(deps);
   useEffect(() => {
+    if (recovered) return;
+    recovered = true;
     const { getDb: db, native, now, startedAt } = depsRef.current;
     try {
       failInterruptedJobs(db(), now());

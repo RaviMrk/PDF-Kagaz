@@ -5,6 +5,7 @@ import { mergePdfs } from '@/services/pdf/merge';
 import { organizePdf, type PageEdit } from '@/services/pdf/organize';
 import { PdfToolError, isPdfToolError, throwIfCancelled } from '@/services/pdf/pdfErrors';
 import { splitPdf } from '@/services/pdf/split';
+import { fileIdForUri } from '@/utils/fileId';
 import { everyNGroups, parsePageRanges, uniqueSortedPages } from '@/utils/pageRanges';
 
 import { checkInputSizes, JS_MAX_FILE_BYTES, JS_MAX_TOTAL_BYTES } from './limits';
@@ -84,6 +85,52 @@ function failureOf(
 
 type Output = { bytes: Uint8Array; name: string };
 
+/** Published outputs the index could not register (they exist on disk). */
+class RegistrationFailure extends Error {
+  constructor(readonly outputs: FileRow[]) {
+    super('tool outputs not registered');
+  }
+}
+
+/** A row for a published output that is not indexed yet (same id the next scan gives it). */
+function unindexedRow(info: PdfFileInfo): FileRow {
+  return {
+    id: fileIdForUri(info.uri),
+    uri: info.uri,
+    name: info.name,
+    folder: info.folder,
+    parentUri: info.parentUri === '' ? null : info.parentUri,
+    sizeBytes: info.sizeBytes,
+    modifiedAt: info.modifiedAt,
+    pageCount: null,
+    thumbPath: null,
+    isEncrypted: false,
+    isCorrupt: false,
+    isFavorite: false,
+    lastPage: null,
+    lastOpenedAt: null,
+    source: 'output',
+  };
+}
+
+const PHASE_ORDER: readonly ToolPhase[] = ['preparing', 'processing', 'saving'];
+
+/**
+ * One phase sequence: an earlier phase is never reported after a later one (split publishes parts
+ * while still processing) and a fraction never goes back within a phase.
+ */
+function monotonicProgress(report: ToolRunControl['onProgress']): ToolRunControl['onProgress'] {
+  let phase = -1;
+  let fraction = 0;
+  return (next, f) => {
+    const at = PHASE_ORDER.indexOf(next);
+    if (at < phase || (at === phase && f < fraction)) return;
+    phase = at;
+    fraction = f;
+    report(next, f);
+  };
+}
+
 /**
  * Runs one merge/split/organize job: inputs are staged into the job workspace first (picked
  * documents only carry a transient grant), processed from the staged copies, and every output is
@@ -96,16 +143,33 @@ export async function runTool(
   control: ToolRunControl,
 ): Promise<ToolOutcome> {
   const { native, fs, t } = deps;
-  const { signal, onProgress } = control;
+  const { signal } = control;
+  const onProgress = monotonicProgress(control.onProgress);
   const started = deps.now();
   const published: PdfFileInfo[] = [];
   let workspaceUsed = false;
   let pages = 0;
 
   let registered: Promise<FileRow[]> | null = null;
-  // Once only: outputs already published are registered on failure too.
+  // Once only: outputs already published are registered on failure too. Outputs the index could
+  // not take (DB error) are still returned, so files that exist are never reported as missing.
   const register = (): Promise<FileRow[]> =>
-    (registered ??= published.length === 0 ? Promise.resolve([]) : deps.registerOutputs(published));
+    (registered ??= (async () => {
+      if (published.length === 0) return [];
+      let rows: FileRow[] = [];
+      let failed = false;
+      try {
+        rows = await deps.registerOutputs(published);
+      } catch {
+        failed = true;
+      }
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      const outputs = published.map(
+        (info) => byId.get(fileIdForUri(info.uri)) ?? unindexedRow(info),
+      );
+      if (failed) throw new RegistrationFailure(outputs);
+      return outputs;
+    })());
 
   try {
     const ids = request.inputIds;
@@ -145,14 +209,15 @@ export async function runTool(
     const read = (i: number) => as('io', i, () => fs.readBytes(staged[i]!.uri));
     const processing = (f: number) => onProgress('processing', f);
     let k = 0;
-    const save = async (out: Output, fraction: number) => {
+    const save = async (out: Output, from: number, to: number) => {
       k += 1;
       const uri = `${workspace}/out-${k}.pdf`;
       await as('io', null, () => fs.writeBytes(uri, out.bytes));
       // Checked before each publish; a publish once started is never interrupted.
       throwIfCancelled(signal);
-      onProgress('saving', fraction);
+      onProgress('saving', from);
       published.push(await as(null, null, () => native.publishToolOutput(uri, out.name)));
+      onProgress('saving', to);
     };
 
     throwIfCancelled(signal);
@@ -160,16 +225,21 @@ export async function runTool(
     const first = rows[0]!;
     if (request.toolId === 'merge') {
       const sources = staged.map((_, i) => () => read(i));
-      const bytes = await mergePdfs(sources, { signal, onProgress: processing });
-      if (__DEV__) pages = (await loadPdf(bytes)).getPageCount();
-      await save({ bytes, name: mergedName(first.name, t) }, 1);
+      const bytes = await mergePdfs(sources, {
+        signal,
+        onProgress: processing,
+        onPageCount: (n) => {
+          pages = n;
+        },
+      });
+      await save({ bytes, name: mergedName(first.name, t) }, 0, 1);
     } else if (request.toolId === 'organize') {
       const bytes = await organizePdf(await read(0), request.pages, {
         signal,
         onProgress: processing,
       });
       pages = request.pages.length;
-      await save({ bytes, name: organisedName(first.name, t) }, 1);
+      await save({ bytes, name: organisedName(first.name, t) }, 0, 1);
     } else {
       const bytes = await read(0);
       const pageCount = (await loadPdf(bytes, 0)).getPageCount();
@@ -179,19 +249,24 @@ export async function runTool(
       await splitPdf(bytes, groups, {
         signal,
         onProgress: processing,
-        onPart: (i, part) => save({ bytes: part, name: names[i]! }, (i + 1) / groups.length),
+        onPart: (i, part) =>
+          save({ bytes: part, name: names[i]! }, i / groups.length, (i + 1) / groups.length),
       });
     }
 
     const outputs = await register();
-    if (__DEV__) {
-      const ms = deps.now() - started;
-      console.log(`[tool] ${request.toolId} ${ms}ms ${pages} pages ${published.length} files`);
-    }
+    // Release builds too (counts and timing only, never names).
+    const ms = deps.now() - started;
+    console.log(`[tool] ${request.toolId} ${ms}ms ${pages} pages ${published.length} files`);
     return { ok: true, outputs };
   } catch (e) {
+    if (e instanceof RegistrationFailure) {
+      return { ok: false, failure: 'io', inputIndex: null, outputs: e.outputs };
+    }
     const { failure, inputIndex } = failureOf(e, request.inputIds.length === 1);
-    const outputs = await register().catch((): FileRow[] => []);
+    const outputs = await register().catch((r: unknown) =>
+      r instanceof RegistrationFailure ? r.outputs : [],
+    );
     return { ok: false, failure, inputIndex, outputs };
   } finally {
     if (workspaceUsed) {

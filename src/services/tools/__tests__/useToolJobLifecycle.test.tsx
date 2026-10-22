@@ -2,14 +2,21 @@ import { renderHook } from '@testing-library/react-native';
 
 import { createFakePdfNative } from '@/test-utils/fakePdfNative';
 
-import { APP_STARTED_AT, useToolJobLifecycle } from '../useToolJobLifecycle';
+import {
+  APP_STARTED_AT,
+  resetToolJobLifecycleForTests,
+  useToolJobLifecycle,
+} from '../useToolJobLifecycle';
 
 const mockFailInterrupted = jest.fn();
 jest.mock('@/services/tools/toolJobRepo', () => ({
   failInterruptedJobs: (...args: unknown[]) => mockFailInterrupted(...args),
 }));
 
-beforeEach(() => mockFailInterrupted.mockReset());
+beforeEach(() => {
+  mockFailInterrupted.mockReset();
+  resetToolJobLifecycleForTests();
+});
 
 describe('useToolJobLifecycle', () => {
   it('fails interrupted jobs and cleans leftovers once on mount', async () => {
@@ -48,6 +55,16 @@ describe('useToolJobLifecycle', () => {
       startedAt: 5,
     };
     await expect(renderHook(() => useToolJobLifecycle(deps))).resolves.toBeDefined();
+    expect(native.cleanupToolLeftovers).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers once per process, even when mounted again', async () => {
+    const native = createFakePdfNative();
+    const deps = { getDb: () => ({}) as never, native, now: () => 1, startedAt: 5 };
+    const first = await renderHook(() => useToolJobLifecycle(deps));
+    await first.unmount();
+    await renderHook(() => useToolJobLifecycle(deps));
+    expect(mockFailInterrupted).toHaveBeenCalledTimes(1);
     expect(native.cleanupToolLeftovers).toHaveBeenCalledTimes(1);
   });
 });

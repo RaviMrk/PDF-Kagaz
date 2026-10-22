@@ -71,6 +71,14 @@ describe('mergePdfs', () => {
     expect(values).toEqual([0.25, 0.5, 0.75, 1]);
   });
 
+  it('reports the merged page count', async () => {
+    const counts: number[] = [];
+    await mergePdfs([src('one-page.pdf'), src('mixed-sizes.pdf'), src('अहवाल.pdf')], {
+      onPageCount: (n) => counts.push(n),
+    });
+    expect(counts).toEqual([6]);
+  });
+
   it('cancels when aborted during a source load', async () => {
     const controller = new AbortController();
     const first = () => {

@@ -6,6 +6,8 @@ import path from 'node:path';
 import type { FileRow } from '@/db/schema';
 import { initI18n } from '@/i18n';
 import type { PdfFileInfo } from '@/services/native/pdfNative';
+import * as loadPdfModule from '@/services/pdf/loadPdf';
+import { fileIdForUri } from '@/utils/fileId';
 import { makeRow } from '@/test-utils/fileRows';
 import { nativeError } from '@/test-utils/fakePdfNative';
 import { makeTempDir, nodeToolFs, tempPathOf } from '@/test-utils/nodeToolFs';
@@ -67,24 +69,30 @@ function setup(rows: FileRow[]) {
   const registerOutputs = jest.fn(async (infos: PdfFileInfo[]) =>
     infos.map((info) => makeRow({ name: info.name, uri: info.uri, source: 'output' })),
   );
+  const toolFs = {
+    readBytes: jest.fn(nodeToolFs.readBytes),
+    writeBytes: jest.fn(nodeToolFs.writeBytes),
+  };
   const deps: ToolRunDeps = {
     native,
-    fs: nodeToolFs,
+    fs: toolFs,
     getRows: (ids) => rows.filter((r) => ids.includes(r.id)),
     registerOutputs,
     t,
     now: Date.now,
   };
   const phases: ToolPhase[] = [];
+  const events: [ToolPhase, number][] = [];
   const controller = new AbortController();
   const control = {
     signal: controller.signal,
-    onProgress: (phase: ToolPhase) => {
+    onProgress: (phase: ToolPhase, fraction: number) => {
+      events.push([phase, fraction]);
       if (phases[phases.length - 1] !== phase) phases.push(phase);
     },
   };
   const run = (request: ToolRequest, jobId = 'j1') => runTool(jobId, request, deps, control);
-  return { tmp, native, registerOutputs, published, phases, controller, run };
+  return { tmp, native, toolFs, registerOutputs, published, phases, events, controller, run };
 }
 
 const row = (name: string, over: Partial<FileRow> = {}) =>
@@ -333,6 +341,149 @@ describe('runTool cancel and partial publish', () => {
     expect(outcome.outputs).toHaveLength(1);
     expect(s.registerOutputs).toHaveBeenCalledTimes(1);
     expect(s.native.publishToolOutput).toHaveBeenCalledTimes(2);
+    expect(fs.existsSync(path.join(s.tmp, 'j1'))).toBe(false);
+  });
+});
+
+/** Phases never go back and fractions never decrease within a phase. */
+function expectMonotonic(events: [ToolPhase, number][]) {
+  const order: ToolPhase[] = ['preparing', 'processing', 'saving'];
+  for (let i = 1; i < events.length; i++) {
+    const [pp, pf] = events[i - 1]!;
+    const [p, f] = events[i]!;
+    expect(order.indexOf(p)).toBeGreaterThanOrEqual(order.indexOf(pp));
+    if (p === pp) expect(f).toBeGreaterThanOrEqual(pf);
+  }
+}
+
+describe('runTool progress', () => {
+  it('split reports one monotonic phase sequence', async () => {
+    const r = row('two-hundred-pages.pdf');
+    const s = setup([r]);
+    await s.run({ toolId: 'split', inputIds: [r.id], split: { mode: 'everyN', n: 1 } });
+    expect(s.phases).toEqual(['preparing', 'processing', 'saving']);
+    expectMonotonic(s.events);
+    expect(s.events[s.events.length - 1]).toEqual(['saving', 1]);
+  });
+
+  it('organize reports one monotonic phase sequence', async () => {
+    const r = row('mixed-sizes.pdf');
+    const s = setup([r]);
+    await s.run({ toolId: 'organize', inputIds: [r.id], pages: [{ source: 1, rotate: 0 }] });
+    expect(s.phases).toEqual(['preparing', 'processing', 'saving']);
+    expectMonotonic(s.events);
+  });
+
+  it('merge progress is monotonic', async () => {
+    const rows = [row('one-page.pdf'), row('mixed-sizes.pdf')];
+    const s = setup(rows);
+    await s.run({ toolId: 'merge', inputIds: rows.map((x) => x.id) });
+    expectMonotonic(s.events);
+  });
+});
+
+describe('runTool release log', () => {
+  const g = globalThis as { __DEV__?: boolean };
+  let dev: boolean | undefined;
+  beforeEach(() => {
+    dev = g.__DEV__;
+    g.__DEV__ = false;
+  });
+  afterEach(() => {
+    g.__DEV__ = dev;
+  });
+
+  it('logs timing in release without re-parsing the merged output', async () => {
+    const spy = jest.spyOn(loadPdfModule, 'loadPdf');
+    const names = ['one-page.pdf', 'mixed-sizes.pdf', 'अहवाल.pdf'];
+    const rows = names.map((n) => row(n));
+    const s = setup(rows);
+    await s.run({ toolId: 'merge', inputIds: rows.map((x) => x.id) });
+    expect(spy).toHaveBeenCalledTimes(3);
+    spy.mockRestore();
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/^\[tool\] merge \d+ms 6 pages 1 files$/),
+    );
+  });
+});
+
+describe('runTool registration failures', () => {
+  it('keeps published outputs and reports io when registration rejects', async () => {
+    const rows = [row('one-page.pdf'), row('mixed-sizes.pdf')];
+    const s = setup(rows);
+    s.registerOutputs.mockRejectedValueOnce(new Error('db'));
+    const outcome = await s.run({ toolId: 'merge', inputIds: rows.map((x) => x.id) });
+    expect(outcome).toMatchObject({ ok: false, failure: 'io', inputIndex: null });
+    expect(outcome.outputs).toHaveLength(1);
+    const info = await s.native.publishToolOutput.mock.results[0]!.value;
+    expect(outcome.outputs[0]).toMatchObject({
+      id: fileIdForUri(info.uri),
+      uri: info.uri,
+      name: 'one-page merged.pdf',
+      source: 'output',
+    });
+  });
+
+  it('keeps unregistered outputs when registration indexes nothing', async () => {
+    const rows = [row('one-page.pdf'), row('mixed-sizes.pdf')];
+    const s = setup(rows);
+    s.registerOutputs.mockResolvedValueOnce([]);
+    const outcome = await s.run({ toolId: 'merge', inputIds: rows.map((x) => x.id) });
+    expect(outcome.ok).toBe(true);
+    expect(outcome.outputs.map((o) => o.name)).toEqual(['one-page merged.pdf']);
+  });
+
+  it('keeps the original failure and the published parts when registration rejects', async () => {
+    const r = row('two-hundred-pages.pdf');
+    const s = setup([r]);
+    const real = s.native.publishToolOutput.getMockImplementation()!;
+    s.native.publishToolOutput
+      .mockImplementationOnce(real)
+      .mockRejectedValueOnce(nativeError('ERR_PERMISSION_DENIED'));
+    s.registerOutputs.mockRejectedValueOnce(new Error('db'));
+    const outcome = await s.run({
+      toolId: 'split',
+      inputIds: [r.id],
+      split: { mode: 'ranges', ranges: '1, 2' },
+    });
+    expect(outcome).toMatchObject({ ok: false, failure: 'permission', inputIndex: null });
+    expect(outcome.outputs).toHaveLength(1);
+  });
+});
+
+describe('runTool cancellation around publishing', () => {
+  it('cancel after the write and before the publish publishes nothing', async () => {
+    const rows = [row('one-page.pdf'), row('mixed-sizes.pdf')];
+    const s = setup(rows);
+    s.toolFs.writeBytes.mockImplementationOnce(async (uri, bytes) => {
+      await nodeToolFs.writeBytes(uri, bytes);
+      s.controller.abort();
+    });
+    const outcome = await s.run({ toolId: 'merge', inputIds: rows.map((x) => x.id) });
+    expect(outcome).toEqual({ ok: false, failure: 'cancelled', inputIndex: null, outputs: [] });
+    expect(s.native.publishToolOutput).not.toHaveBeenCalled();
+    expect(s.native.cleanToolWorkspace).toHaveBeenCalledWith('j1');
+    expect(fs.existsSync(path.join(s.tmp, 'j1'))).toBe(false);
+  });
+
+  it('cancel mid-split keeps the part already published', async () => {
+    const r = row('two-hundred-pages.pdf');
+    const s = setup([r]);
+    const real = s.native.publishToolOutput.getMockImplementation()!;
+    s.native.publishToolOutput.mockImplementationOnce(async (u, n) => {
+      const info = await real(u, n);
+      s.controller.abort();
+      return info;
+    });
+    const outcome = await s.run({
+      toolId: 'split',
+      inputIds: [r.id],
+      split: { mode: 'ranges', ranges: '1, 2, 3' },
+    });
+    expect(outcome).toMatchObject({ ok: false, failure: 'cancelled', inputIndex: null });
+    expect(outcome.outputs).toHaveLength(1);
+    expect(s.native.publishToolOutput).toHaveBeenCalledTimes(1);
+    expect(s.registerOutputs).toHaveBeenCalledTimes(1);
     expect(fs.existsSync(path.join(s.tmp, 'j1'))).toBe(false);
   });
 });
