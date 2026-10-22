@@ -2,6 +2,7 @@
  * @jest-environment node
  */
 import Database from 'better-sqlite3';
+import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 
@@ -88,5 +89,40 @@ describe('toolJobRepo', () => {
       finishedAt: 9,
     });
     expect(getJob(db, 'done')).toMatchObject({ status: 'succeeded', finishedAt: 3, error: null });
+  });
+
+  it('failInterruptedJobs also closes queued jobs', () => {
+    const db = makeDb();
+    createJob(db, input('q', 1));
+    db.run(sql`UPDATE tool_jobs SET status = 'queued' WHERE id = 'q'`);
+    expect(failInterruptedJobs(db, 4)).toBe(1);
+    expect(getJob(db, 'q')).toMatchObject({ status: 'failed', error: 'interrupted' });
+  });
+
+  it('finishJob does not overwrite a job that is already closed', () => {
+    const db = makeDb();
+    createJob(db, input('j', 1));
+    failInterruptedJobs(db, 4);
+    finishJob(db, 'j', { status: 'succeeded', outputIds: ['a'], outputUri: null, now: 9 });
+    expect(getJob(db, 'j')).toMatchObject({
+      status: 'failed',
+      error: 'interrupted',
+      outputIds: [],
+      finishedAt: 4,
+    });
+  });
+
+  it('a row with corrupt JSON columns never breaks the history (returned with fallbacks)', () => {
+    const db = makeDb();
+    createJob(db, input('ok', 1));
+    db.run(
+      sql`INSERT INTO tool_jobs (id, tool_id, input_ids, options, output_ids, status, started_at)
+          VALUES ('bad', 'merge', 'not json', '{oops', '[1', 'succeeded', 2)`,
+    );
+    const jobs = listJobs(db);
+    expect(jobs.map((j) => j.id)).toEqual(['bad', 'ok']);
+    expect(jobs[0]).toMatchObject({ inputIds: [], options: {}, outputIds: [] });
+    expect(jobs[1]?.inputIds).toEqual(['x', 'y']);
+    expect(getJob(db, 'bad')?.status).toBe('succeeded');
   });
 });

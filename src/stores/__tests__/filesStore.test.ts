@@ -885,6 +885,25 @@ describe('filesStore: reader actions', () => {
       expect(getFile(db, idOf('Documents/PDFToolkit/out.pdf'))?.source).toBe('output');
     });
 
+    it('registerOutputs promotes a scan row to output and a later scan keeps it', async () => {
+      const a = info('Documents/PDFToolkit/a.pdf');
+      const provider = fakeProvider({ fullScan: jest.fn().mockResolvedValue(result([a])) });
+      const { store, db } = setup({ seed: [a], provider });
+      expect(getFile(db, idOf('Documents/PDFToolkit/a.pdf'))?.source).toBe('scan');
+      const rows = await store.getState().registerOutputs([a]);
+      expect(rows[0]?.source).toBe('output');
+      await store.getState().refresh('full');
+      expect(getFile(db, idOf('Documents/PDFToolkit/a.pdf'))?.source).toBe('output');
+    });
+
+    it('registerOutputs returns rows in output order', async () => {
+      const { store } = setup();
+      const rows = await store
+        .getState()
+        .registerOutputs([info('O/z.pdf'), info('O/a.pdf'), info('O/m.pdf')]);
+      expect(rows.map((r) => r.name)).toEqual(['z.pdf', 'a.pdf', 'm.pdf']);
+    });
+
     it('registerOutputs returns [] when the DB fails', async () => {
       const { store, breakDb } = setup();
       breakDb();

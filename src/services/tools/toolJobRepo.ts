@@ -1,4 +1,4 @@
-import { desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 
 import { toolJobs, type ToolJobRow } from '@/db/schema';
 import type { IndexDb } from '@/services/index/fileIndexRepo';
@@ -21,6 +21,46 @@ export type ToolFailure =
   | 'interrupted'
   | 'unknown';
 
+/**
+ * The JSON columns are read as raw text and parsed per row: one corrupt row must not make the
+ * whole history unreadable. A corrupt row is still returned, with [] / {} fallbacks.
+ */
+const { inputIds: _i, options: _o, outputIds: _p, ...plainColumns } = getTableColumns(toolJobs);
+const rawSelect = {
+  ...plainColumns,
+  inputIds: sql<string>`${toolJobs.inputIds}`.as('input_ids_raw'),
+  options: sql<string>`${toolJobs.options}`.as('options_raw'),
+  outputIds: sql<string>`${toolJobs.outputIds}`.as('output_ids_raw'),
+};
+
+function parseJson<T>(raw: unknown, fallback: T, valid: (v: unknown) => boolean): T {
+  try {
+    const v: unknown = JSON.parse(String(raw));
+    return valid(v) ? (v as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+const isStringArray = (v: unknown) => Array.isArray(v) && v.every((x) => typeof x === 'string');
+const isObject = (v: unknown) => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+type RawJobRow = Omit<ToolJobRow, 'inputIds' | 'options' | 'outputIds'> &
+  Record<'inputIds' | 'options' | 'outputIds', unknown>;
+
+function toRow(raw: RawJobRow): ToolJobRow {
+  return {
+    ...raw,
+    inputIds: parseJson<string[]>(raw.inputIds, [], isStringArray),
+    options: parseJson<Record<string, unknown>>(raw.options, {}, isObject),
+    outputIds: parseJson<string[]>(raw.outputIds, [], isStringArray),
+  };
+}
+
+function readRaw(db: IndexDb) {
+  return db.select(rawSelect).from(toolJobs);
+}
+
 export type JobResult =
   | { status: 'succeeded'; outputIds: string[]; outputUri: string | null; now: number }
   | { status: 'failed'; error: ToolFailure; outputIds: string[]; now: number }
@@ -36,8 +76,7 @@ export function createJob(
     now: number;
   },
 ): ToolJobRow {
-  return db
-    .insert(toolJobs)
+  db.insert(toolJobs)
     .values({
       id: input.id,
       toolId: input.toolId,
@@ -46,8 +85,8 @@ export function createJob(
       status: 'running',
       startedAt: input.now,
     })
-    .returning()
-    .get();
+    .run();
+  return getJob(db, input.id) as ToolJobRow;
 }
 
 export function finishJob(db: IndexDb, id: string, result: JobResult): void {
@@ -67,15 +106,19 @@ export function finishJob(db: IndexDb, id: string, result: JobResult): void {
             finishedAt: result.now,
           }
         : { status: 'cancelled' as const, outputIds: result.outputIds, finishedAt: result.now };
-  db.update(toolJobs).set(set).where(eq(toolJobs.id, id)).run();
+  db.update(toolJobs)
+    .set(set)
+    .where(and(eq(toolJobs.id, id), inArray(toolJobs.status, ['queued', 'running'])))
+    .run();
 }
 
 export function getJob(db: IndexDb, id: string): ToolJobRow | undefined {
-  return db.select().from(toolJobs).where(eq(toolJobs.id, id)).get();
+  const raw = readRaw(db).where(eq(toolJobs.id, id)).get();
+  return raw ? toRow(raw) : undefined;
 }
 
 export function listJobs(db: IndexDb, limit = 20): ToolJobRow[] {
-  return db.select().from(toolJobs).orderBy(desc(toolJobs.startedAt)).limit(limit).all();
+  return readRaw(db).orderBy(desc(toolJobs.startedAt)).limit(limit).all().map(toRow);
 }
 
 /** Jobs left queued/running by a process death can never finish: mark them interrupted. */
