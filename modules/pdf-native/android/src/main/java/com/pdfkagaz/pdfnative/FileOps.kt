@@ -19,6 +19,7 @@ import java.io.IOException
  */
 class FileOps(private val context: Context, private val hasAllFilesAccess: () -> Boolean) {
   private val resolver get() = context.contentResolver
+  private val mediaStore = MediaStoreFiles(context)
 
   fun rename(uri: String, newName: String): Map<String, Any?> = mapErrors {
     if (!FileNames.isValidName(newName)) throw InvalidNameException()
@@ -170,12 +171,12 @@ class FileOps(private val context: Context, private val hasAllFilesAccess: () ->
     PdfFileInfos.stat(context, uri) ?: throw FileNotFoundCodedException()
     val values = ContentValues().apply { put(MediaStore.MediaColumns.DISPLAY_NAME, newName) }
     if (resolver.update(uri, values, null, null) == 0) throw PermissionDeniedException("Could not rename file")
-    return mediaStoreInfo(uri)
+    return mediaStore.info(uri)
   }
 
   private fun duplicateMediaStore(uri: Uri): Map<String, Any?> {
     val stat = PdfFileInfos.stat(context, uri) ?: throw FileNotFoundCodedException()
-    val relativePath = relativePathOf(uri) ?: APP_RELATIVE_PATH
+    val relativePath = mediaStore.relativePathOf(uri) ?: APP_RELATIVE_PATH
     // MediaStore makes the name unique if it is taken.
     return insertIntoMediaStore(uri, FileNames.duplicateName(stat.name) { false }, relativePath)
   }
@@ -192,53 +193,15 @@ class FileOps(private val context: Context, private val hasAllFilesAccess: () ->
   }
 
   private fun insertIntoMediaStore(source: Uri, name: String, relativePath: String): Map<String, Any?> {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) throw PermissionDeniedException("Storage permission required")
-    val values = ContentValues().apply {
-      put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-      put(MediaStore.MediaColumns.MIME_TYPE, PDF_MIME)
-      put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
-      put(MediaStore.MediaColumns.IS_PENDING, 1)
-    }
-    val created = resolver.insert(MediaStore.Files.getContentUri("external"), values)
-      ?: throw PermissionDeniedException("Could not create file")
+    val created = mediaStore.insertPending(name, relativePath)
     try {
-      copy(source) { resolver.openOutputStream(created, "w") ?: throw IOException("No output stream") }
-      publish(created)
+      mediaStore.write(created, resolver.openInputStream(source) ?: throw FileNotFoundCodedException())
+      mediaStore.publish(created)
     } catch (e: Throwable) {
-      runCatching { resolver.delete(created, null, null) }
+      mediaStore.delete(created)
       throw e
     }
-    return mediaStoreInfo(created)
-  }
-
-  /**
-   * Clears IS_PENDING. A pending item is hidden and auto-deleted by the system, so if it does not
-   * take effect this throws — callers then roll back instead of deleting the source.
-   */
-  private fun publish(created: Uri) {
-    val updated = resolver.update(created, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
-    if (updated == 0 || isPending(created)) throw IoCodedException("Could not finish writing the file")
-  }
-
-  private fun isPending(uri: Uri): Boolean {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
-    return resolver.query(uri, arrayOf(MediaStore.MediaColumns.IS_PENDING), null, null, null)?.use { c ->
-      !c.moveToFirst() || c.getInt(0) != 0
-    } ?: true
-  }
-
-  private fun relativePathOf(uri: Uri): String? {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
-    return resolver.query(uri, arrayOf(MediaStore.MediaColumns.RELATIVE_PATH), null, null, null)?.use { c ->
-      if (c.moveToFirst()) c.getString(0) else null
-    }
-  }
-
-  private fun mediaStoreInfo(uri: Uri): Map<String, Any?> {
-    val stat = PdfFileInfos.stat(context, uri) ?: throw FileNotFoundCodedException()
-    val relativePath = relativePathOf(uri) ?: APP_RELATIVE_PATH
-    val dir = File(Environment.getExternalStorageDirectory(), relativePath.trimEnd('/'))
-    return PdfFileInfos.ofMediaStore(uri, stat, dir, volumes())
+    return mediaStore.info(created)
   }
 
   // endregion
@@ -305,8 +268,8 @@ class FileOps(private val context: Context, private val hasAllFilesAccess: () ->
     }
 
   private companion object {
-    const val PDF_MIME = "application/pdf"
-    const val APP_FOLDER = "PDFToolkit"
-    const val APP_RELATIVE_PATH = "Documents/PDFToolkit/"
+    const val PDF_MIME = MediaStoreFiles.PDF_MIME
+    const val APP_FOLDER = MediaStoreFiles.APP_FOLDER
+    const val APP_RELATIVE_PATH = MediaStoreFiles.APP_RELATIVE_PATH
   }
 }

@@ -7,6 +7,7 @@ import type {
   PickedFolder,
   ReaderFile,
   ScanResult,
+  StagedInput,
 } from './PdfNative.types';
 
 declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
@@ -34,6 +35,11 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
   takeIncomingPdf(): Promise<string | null>;
   resolveIncomingPdf(uri: string): Promise<PdfFileInfo>;
   releaseIncomingGrant(uri: string): Promise<void>;
+  createToolWorkspace(jobId: string): Promise<string>;
+  stageToolInput(uri: string, jobId: string, index: number, maxBytes: number): Promise<StagedInput>;
+  publishToolOutput(tempUri: string, fileName: string): Promise<PdfFileInfo>;
+  cleanToolWorkspace(jobId: string): Promise<void>;
+  cleanupToolLeftovers(olderThanMs: number): Promise<number>;
 }
 
 export default requireNativeModule<PdfNativeModule>('PdfNative');

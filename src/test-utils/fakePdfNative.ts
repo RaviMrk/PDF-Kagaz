@@ -54,6 +54,23 @@ function createNativeFns(): jest.Mocked<NativeFns> {
     takeIncomingPdf: jest.fn().mockResolvedValue(null),
     resolveIncomingPdf: jest.fn((uri: string) => Promise.resolve(infoFromUri(uri))),
     releaseIncomingGrant: jest.fn().mockResolvedValue(undefined),
+    createToolWorkspace: jest.fn((id: string) => Promise.resolve(`file:///data/cache/tools/${id}`)),
+    stageToolInput: jest.fn((_uri: string, id: string, i: number, _maxBytes: number) =>
+      Promise.resolve({ uri: `file:///data/cache/tools/${id}/in-${i}.pdf`, sizeBytes: 1000 }),
+    ),
+    publishToolOutput: jest.fn((_temp: string, name: string) =>
+      Promise.resolve({
+        uri: 'file:///storage/emulated/0/Documents/PDFToolkit/' + encodeURIComponent(name),
+        name,
+        folder: 'Documents/PDFToolkit',
+        parentUri: 'file:///storage/emulated/0/Documents/PDFToolkit',
+        parentModifiedAt: 0,
+        sizeBytes: 1000,
+        modifiedAt: 0,
+      }),
+    ),
+    cleanToolWorkspace: jest.fn().mockResolvedValue(undefined),
+    cleanupToolLeftovers: jest.fn().mockResolvedValue(0),
   };
 }
 

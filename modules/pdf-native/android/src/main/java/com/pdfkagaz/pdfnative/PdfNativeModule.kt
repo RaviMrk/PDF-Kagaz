@@ -122,6 +122,26 @@ class PdfNativeModule : Module() {
       withContext(Dispatchers.IO) { releaseIncomingGrant(uri) }
     }
 
+    AsyncFunction("createToolWorkspace") Coroutine { jobId: String ->
+      toolFiles.createWorkspace(jobId)
+    }
+
+    AsyncFunction("stageToolInput") Coroutine { uri: String, jobId: String, index: Int, maxBytes: Double ->
+      toolFiles.stage(uri, jobId, index, maxBytes)
+    }
+
+    AsyncFunction("publishToolOutput") Coroutine { tempUri: String, fileName: String ->
+      toolFiles.publish(tempUri, fileName)
+    }
+
+    AsyncFunction("cleanToolWorkspace") Coroutine { jobId: String ->
+      toolFiles.cleanWorkspace(jobId)
+    }
+
+    AsyncFunction("cleanupToolLeftovers") Coroutine { olderThanMs: Double ->
+      toolFiles.cleanupLeftovers(olderThanMs)
+    }
+
     lateinit var folderPicker: AppContextActivityResultLauncher<FolderPickerInput, Uri?>
 
     RegisterActivityContracts {
@@ -167,6 +187,8 @@ class PdfNativeModule : Module() {
   private val folderGrants by lazy { FolderGrants(context) }
 
   private val fileOps by lazy { FileOps(context, ::hasAllFilesAccess) }
+
+  private val toolFiles by lazy { ToolFiles(context) }
 
   // region scan
 

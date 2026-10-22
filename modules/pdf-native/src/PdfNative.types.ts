@@ -32,6 +32,12 @@ export type ScanProgressEvent = { scannedFolders: number; found: number };
  */
 export type ReaderFile = { uri: string; copied: boolean; sizeBytes: number };
 
+/**
+ * A tool input copied into the private tool workspace: `uri` is a percent-encoded `file://` URI
+ * in `cacheDir/tools/<jobId>/`; `sizeBytes` is the number of bytes copied.
+ */
+export type StagedInput = { uri: string; sizeBytes: number };
+
 export type PickedFolder = { uri: string; label: string };
 
 /** A PDF shared to the app (ACTION_SEND) while it is running; `uri` is the shared stream. */

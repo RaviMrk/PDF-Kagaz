@@ -8,6 +8,7 @@ import type {
   ReaderFile,
   ScanProgressEvent,
   ScanResult,
+  StagedInput,
 } from '../../../modules/pdf-native';
 
 export type {
@@ -19,6 +20,7 @@ export type {
   ReaderFile,
   ScanProgressEvent,
   ScanResult,
+  StagedInput,
 } from '../../../modules/pdf-native';
 
 export interface PdfNativeApi {
@@ -53,6 +55,19 @@ export interface PdfNativeApi {
   resolveIncomingPdf(uri: string): Promise<PdfFileInfo>;
   /** Releases the persisted read grant taken for an incoming document (call when its row is removed). */
   releaseIncomingGrant(uri: string): Promise<void>;
+  /** (Re)creates the private workspace of a tool job, empty; its file:// uri without trailing slash. */
+  createToolWorkspace(jobId: string): Promise<string>;
+  /**
+   * Copies a tool input into the job workspace (guarded read, never written); over `maxBytes`
+   * rejects with ERR_TOO_LARGE, whatever size the source reports.
+   */
+  stageToolInput(uri: string, jobId: string, index: number, maxBytes: number): Promise<StagedInput>;
+  /** Publishes a workspace file to Documents/PDFToolkit under a free name (never overwrites). */
+  publishToolOutput(tempUri: string, fileName: string): Promise<PdfFileInfo>;
+  /** Deletes a job workspace; idempotent. */
+  cleanToolWorkspace(jobId: string): Promise<void>;
+  /** Deletes tool leftovers older than `olderThanMs` (epoch ms); returns how many. */
+  cleanupToolLeftovers(olderThanMs: number): Promise<number>;
   addScanProgressListener(cb: (e: ScanProgressEvent) => void): { remove(): void };
   /** PDFs shared to the app while it is running (ACTION_VIEW is left to Linking). */
   addIncomingPdfListener(cb: (e: IncomingPdfEvent) => void): { remove(): void };
@@ -69,6 +84,7 @@ export const PDF_NATIVE_ERROR_CODES = [
   'ERR_NO_ACTIVITY',
   'ERR_IO',
   'ERR_VOLUME_UNAVAILABLE',
+  'ERR_TOO_LARGE',
 ] as const;
 
 export type PdfNativeErrorCode = (typeof PDF_NATIVE_ERROR_CODES)[number];
@@ -114,6 +130,12 @@ export const pdfNative: PdfNativeApi = {
   takeIncomingPdf: () => PdfNative.takeIncomingPdf(),
   resolveIncomingPdf: (uri) => PdfNative.resolveIncomingPdf(uri),
   releaseIncomingGrant: (uri) => PdfNative.releaseIncomingGrant(uri),
+  createToolWorkspace: (jobId) => PdfNative.createToolWorkspace(jobId),
+  stageToolInput: (uri, jobId, index, maxBytes) =>
+    PdfNative.stageToolInput(uri, jobId, index, maxBytes),
+  publishToolOutput: (tempUri, fileName) => PdfNative.publishToolOutput(tempUri, fileName),
+  cleanToolWorkspace: (jobId) => PdfNative.cleanToolWorkspace(jobId),
+  cleanupToolLeftovers: (olderThanMs) => PdfNative.cleanupToolLeftovers(olderThanMs),
   addScanProgressListener: (cb) => PdfNative.addListener('onScanProgress', cb),
   addIncomingPdfListener: (cb) => PdfNative.addListener('onIncomingPdf', cb),
 };

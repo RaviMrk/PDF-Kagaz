@@ -115,11 +115,40 @@ describe('pdfNative', () => {
     expect(mockedModule.releaseIncomingGrant).toHaveBeenCalledWith('content://x/1');
   });
 
+  it('forwards stageToolInput with all four arguments', async () => {
+    await expect(pdfNative.stageToolInput('content://x/1', 'j1', 0, 31457280)).resolves.toEqual({
+      uri: 'file:///data/cache/tools/j1/in-0.pdf',
+      sizeBytes: 1000,
+    });
+    expect(mockedModule.stageToolInput).toHaveBeenCalledWith('content://x/1', 'j1', 0, 31457280);
+  });
+
+  it('forwards the tool workspace lifecycle and output publishing', async () => {
+    await expect(pdfNative.createToolWorkspace('j1')).resolves.toBe('file:///data/cache/tools/j1');
+    expect(mockedModule.createToolWorkspace).toHaveBeenCalledWith('j1');
+    await expect(
+      pdfNative.publishToolOutput('file:///data/cache/tools/j1/out-1.pdf', 'a b.pdf'),
+    ).resolves.toMatchObject({
+      uri: 'file:///storage/emulated/0/Documents/PDFToolkit/a%20b.pdf',
+      name: 'a b.pdf',
+      folder: 'Documents/PDFToolkit',
+    });
+    expect(mockedModule.publishToolOutput).toHaveBeenCalledWith(
+      'file:///data/cache/tools/j1/out-1.pdf',
+      'a b.pdf',
+    );
+    await expect(pdfNative.cleanToolWorkspace('j1')).resolves.toBeUndefined();
+    expect(mockedModule.cleanToolWorkspace).toHaveBeenCalledWith('j1');
+    await expect(pdfNative.cleanupToolLeftovers(123)).resolves.toBe(0);
+    expect(mockedModule.cleanupToolLeftovers).toHaveBeenCalledWith(123);
+  });
+
   it('recognises native errors by code', () => {
     expect(isPdfNativeError(nativeError('ERR_PDF_ENCRYPTED'), 'ERR_PDF_ENCRYPTED')).toBe(true);
     expect(isPdfNativeError(nativeError('ERR_PDF_ENCRYPTED'), 'ERR_PDF_INVALID')).toBe(false);
     expect(isPdfNativeError(nativeError('ERR_PDF_ENCRYPTED'))).toBe(true);
     expect(isPdfNativeError(new Error('x'))).toBe(false);
     expect(isPdfNativeError(nativeError('ERR_IO'), 'ERR_IO')).toBe(true);
+    expect(isPdfNativeError(nativeError('ERR_TOO_LARGE'), 'ERR_TOO_LARGE')).toBe(true);
   });
 });

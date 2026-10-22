@@ -33,3 +33,7 @@ class IoCodedException(message: String = "File operation failed", cause: Throwab
 /** The file is on a storage volume (e.g. a removed SD card) that is not mounted right now. */
 class VolumeUnavailableException(message: String = "Storage volume is not available", cause: Throwable? = null) :
   CodedException("ERR_VOLUME_UNAVAILABLE", message, cause)
+
+/** The input is over the size cap of the tool it was given to. */
+class TooLargeException(message: String = "File is too large for this tool", cause: Throwable? = null) :
+  CodedException("ERR_TOO_LARGE", message, cause)
