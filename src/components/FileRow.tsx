@@ -34,11 +34,13 @@ function FileRowImpl({ file, onPress, onMore, onLongPress, selectionMode, select
   return (
     <View style={styles.row}>
       <Pressable
-        accessibilityRole="button"
+        accessibilityRole={selectionMode ? 'checkbox' : 'button'}
         accessibilityLabel={[shown, meta, ...flags].join(', ')}
         onPress={() => onPress(file)}
         onLongPress={selectionMode ? undefined : () => onLongPress?.(file)}
-        accessibilityState={selectionMode ? { selected: !!selected } : undefined}
+        accessibilityState={
+          selectionMode ? { selected: !!selected, checked: !!selected } : undefined
+        }
         accessibilityActions={
           selectionMode || !onLongPress
             ? undefined
@@ -72,13 +74,19 @@ function FileRowImpl({ file, onPress, onMore, onLongPress, selectionMode, select
         ) : null}
       </Pressable>
       {selectionMode ? (
-        <View style={styles.more} importantForAccessibility="no-hide-descendants">
+        <Pressable
+          testID="file-row-checkbox"
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+          onPress={() => onPress(file)}
+          style={styles.more}
+        >
           <MaterialCommunityIcons
             name={selected ? 'checkbox-marked' : 'checkbox-blank-outline'}
             size={24}
             color={selected ? colors.primary : colors.text}
           />
-        </View>
+        </Pressable>
       ) : (
         <Pressable
           accessibilityRole="button"

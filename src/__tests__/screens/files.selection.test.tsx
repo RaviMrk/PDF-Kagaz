@@ -161,4 +161,48 @@ describe('Files tab selection', () => {
     });
     expect(screen.getByText('1 selected')).toBeTruthy();
   });
+
+  it('clears the selection when the tab loses focus', async () => {
+    await renderFiles();
+    await longPress('Zebra.pdf');
+    await fireEvent.press(screen.getByRole('tab', { name: 'Settings' }));
+    await fireEvent.press(screen.getByRole('tab', { name: 'Files' }));
+    expect(screen.getByPlaceholderText('Search PDFs')).toBeTruthy();
+    expect(screen.queryByText('1 selected')).toBeNull();
+  });
+
+  it('tapping the checkbox zone toggles the row', async () => {
+    await renderFiles();
+    await longPress('Zebra.pdf');
+    await press('Apple.pdf');
+    expect(screen.getByText('2 selected')).toBeTruthy();
+    const boxes = screen.getAllByTestId('file-row-checkbox', { includeHiddenElements: true });
+    await fireEvent.press(boxes[0]!);
+    expect(screen.getByText('1 selected')).toBeTruthy();
+  });
+
+  it('back clears selection inside a folder first, then leaves the folder', async () => {
+    await renderFiles();
+    await fireEvent.press(screen.getByRole('tab', { name: 'Folders' }));
+    await fireEvent.press(screen.getByText('Download'));
+    await longPress('Zebra.pdf');
+    await act(async () => {
+      pressBack();
+    });
+    expect(screen.queryByText('1 selected')).toBeNull();
+    expect(screen.getByText('Zebra.pdf')).toBeTruthy();
+    await act(async () => {
+      pressBack();
+    });
+    expect(screen.getByText('Documents')).toBeTruthy();
+  });
+
+  it('ends selection mode when every selected row vanishes', async () => {
+    await renderFiles();
+    await longPress('Zebra.pdf');
+    await act(async () => {
+      useFiles.setState({ files: rows.filter((r) => r.name !== 'Zebra.pdf') });
+    });
+    expect(screen.getByPlaceholderText('Search PDFs')).toBeTruthy();
+  });
 });

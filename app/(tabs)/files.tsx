@@ -58,6 +58,7 @@ function FilesList() {
   // Rows can vanish (delete, rescan); the selection only keeps ids still present in `files`.
   const selectedIds = useMemo(() => pruneSelection(pickedIds, files), [pickedIds, files]);
   const selecting = selectedIds.length > 0;
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   useEffect(() => {
     if (!notice) return;
@@ -76,6 +77,13 @@ function FilesList() {
       });
       return () => sub.remove();
     }, [folder]),
+  );
+
+  // Leaving the tab by any route (tab switch, deep link) drops the selection.
+  useFocusEffect(
+    useCallback(() => {
+      return () => setSelectedIds([]);
+    }, []),
   );
 
   // Registered after the folder handler so it runs first: back ends selection before leaving a folder.
@@ -112,8 +120,9 @@ function FilesList() {
     router.push({ pathname: '/reader/[id]', params: { id: f.id } });
   }, []);
   const toggleFile = useCallback(
-    (f: FileRowData) => setSelectedIds(toggleId(selectedIds, f.id)),
-    [selectedIds],
+    (f: FileRowData) =>
+      setSelectedIds((ids) => toggleId(pruneSelection(ids, useFiles.getState().files), f.id)),
+    [],
   );
   const startSelection = useCallback((f: FileRowData) => setSelectedIds([f.id]), []);
   const exitSelection = useCallback(() => setSelectedIds([]), []);
@@ -254,10 +263,10 @@ function FilesList() {
               onMore={openMore}
               onLongPress={startSelection}
               selectionMode={selecting}
-              selected={selectedIds.includes(item.id)}
+              selected={selectedSet.has(item.id)}
             />
           )}
-          extraData={selectedIds}
+          extraData={selectedSet}
           refreshing={refreshing}
           onRefresh={refresh}
           ListEmptyComponent={empty}
