@@ -13,6 +13,7 @@ import { createToolJobStore, newJobId, optionsOf, requestFromJob } from '../tool
 
 const mockFiles = {
   dropMissing: jest.fn(),
+  getRow: jest.fn((id: string): FileRow | null => makeRow({ name: id, id })),
   getRows: jest.fn((ids: string[]): FileRow[] => ids.map((id) => makeRow({ name: id, id }))),
 };
 jest.mock('@/stores/filesStore', () => ({ useFiles: { getState: () => mockFiles } }));
@@ -222,6 +223,21 @@ describe('toolJobStore', () => {
       outcome: { ok: false, failure: 'permission', inputIndex: null, outputs: [] },
     });
     expect(s.store.getState().outcomeOf('nope')).toEqual({ kind: 'missing' });
+  });
+});
+
+describe('toolJobStore inputNameOf', () => {
+  it('names the input at an index of the last job, else null', async () => {
+    const s = setup();
+    const started = s.store.getState().start(merge, t);
+    if (!started.ok) throw new Error('expected ok');
+    s.calls[0]!.resolve({ ok: false, failure: 'encrypted', inputIndex: 1, outputs: [] });
+    await flush();
+    const ids = merge.inputIds;
+    expect(s.store.getState().inputNameOf(started.jobId, 1)).toBe(ids[1]);
+    expect(s.store.getState().inputNameOf(started.jobId, null)).toBeNull();
+    expect(s.store.getState().inputNameOf(started.jobId, 99)).toBeNull();
+    expect(s.store.getState().inputNameOf('other', 0)).toBeNull();
   });
 });
 

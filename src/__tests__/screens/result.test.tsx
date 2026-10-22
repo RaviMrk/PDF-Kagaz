@@ -8,7 +8,6 @@ import { useSettings } from '@/stores/settingsStore';
 import { useStorage } from '@/stores/storageStore';
 import { useToolJobs, type JobView, type StartResult } from '@/stores/toolJobStore';
 import { nativeError } from '@/test-utils/fakePdfNative';
-import { getJob as getJobRepo } from '@/services/tools/toolJobRepo';
 import { makeRow } from '@/test-utils/fileRows';
 
 import PdfNativeModule from '../../../modules/pdf-native';
@@ -20,12 +19,6 @@ jest.mock('@/db/useDatabaseReady', () => ({
 }));
 jest.mock('@/services/files/useFileIndexLifecycle', () => ({ useFileIndexLifecycle: jest.fn() }));
 
-jest.mock('@/db/client', () => ({ getDb: () => ({}) }));
-jest.mock('@/services/tools/toolJobRepo', () => ({
-  ...jest.requireActual('@/services/tools/toolJobRepo'),
-  getJob: jest.fn(),
-}));
-
 const APP_DIR = path.join(__dirname, '../../../app');
 
 const merged = makeRow({ name: 'a merged.pdf', pageCount: 5 });
@@ -33,7 +26,7 @@ const second = makeRow({ name: 'b.pdf', pageCount: null });
 const inA = makeRow({ name: 'in-a.pdf' });
 const inB = makeRow({ name: 'in-b.pdf' });
 
-const getJob = jest.mocked(getJobRepo) as unknown as jest.Mock;
+let inputNameOf: jest.Mock<string | null>;
 let outcomeOf: jest.Mock<JobView, [string]>;
 let markSeen: jest.Mock;
 let retry: jest.Mock<StartResult>;
@@ -63,12 +56,20 @@ describe('result screen', () => {
       status: 'idle',
       requestThumb: jest.fn(),
     });
-    getJob.mockReturnValue(undefined);
+    inputNameOf = jest.fn(() => null);
     outcomeOf = jest.fn();
     markSeen = jest.fn();
     retry = jest.fn((): StartResult => ({ ok: true, jobId: 'j2' }));
     cancel = jest.fn();
-    useToolJobs.setState({ active: null, last: null, outcomeOf, markSeen, retry, cancel });
+    useToolJobs.setState({
+      active: null,
+      last: null,
+      outcomeOf,
+      markSeen,
+      retry,
+      cancel,
+      inputNameOf,
+    });
   });
 
   it('lists every output and marks the job seen', async () => {
@@ -124,8 +125,57 @@ describe('result screen', () => {
     useFiles.setState({ files: [] });
     await open();
     expect(screen.getByText('bare.pdf')).toBeTruthy();
+    expect(screen.getByLabelText('Open bare.pdf')).toBeDisabled();
+    expect(
+      screen.getByText('You can open this file from Files after the next refresh'),
+    ).toBeTruthy();
     await press('Share bare.pdf');
     expect(PdfNativeModule.sharePdf).toHaveBeenCalledWith(bare.uri, 'Share PDF');
+  });
+
+  it('reports an existing target on save as', async () => {
+    jest.mocked(PdfNativeModule.saveCopyAs).mockRejectedValueOnce(nativeError('ERR_FILE_EXISTS'));
+    outcomeOf.mockReturnValue(done({ ok: true, outputs: [merged] }));
+    await open();
+    await press('Save a copy of a merged.pdf');
+    expect(
+      screen.getByText('A file with that name already exists. Choose a different name.'),
+    ).toBeTruthy();
+  });
+
+  it('marks a job seen when it finishes while the screen is open', async () => {
+    outcomeOf.mockReturnValue({
+      kind: 'running',
+      job: { jobId: 'j1', toolId: 'merge', phase: 'processing', fraction: 0.5 },
+    });
+    await open();
+    markSeen.mockClear();
+    outcomeOf.mockReturnValue(done({ ok: true, outputs: [merged] }));
+    await act(async () => {
+      useToolJobs.setState({
+        last: {
+          jobId: 'j1',
+          toolId: 'merge',
+          inputIds: [],
+          outcome: { ok: true, outputs: [] },
+          seen: false,
+        },
+      });
+    });
+    expect(markSeen).toHaveBeenCalledWith('j1');
+  });
+
+  it('only cancels its own job', async () => {
+    outcomeOf.mockReturnValue({
+      kind: 'running',
+      job: { jobId: 'j1', toolId: 'merge', phase: 'processing', fraction: 0.5 },
+    });
+    useToolJobs.setState({
+      active: { jobId: 'other', toolId: 'merge', phase: 'processing', fraction: 0.1 },
+    });
+    await open();
+    await press('Cancel');
+    expect(cancel).not.toHaveBeenCalled();
   });
 
   it('names the failing input and offers retry that follows the new job', async () => {
@@ -137,7 +187,7 @@ describe('result screen', () => {
             job: { jobId: id, toolId: 'merge', phase: 'processing', fraction: 0.1 },
           },
     );
-    getJob.mockReturnValue({ inputIds: [inA.id, inB.id] });
+    inputNameOf.mockImplementation((_id, i) => (i === 1 ? inB.name : null));
     const r = await open();
     expect(screen.getByText("Couldn't finish")).toBeTruthy();
     expect(screen.getByText(/"in-b.pdf" is password-protected/)).toBeTruthy();
@@ -163,6 +213,9 @@ describe('result screen', () => {
     outcomeOf.mockReturnValue({
       kind: 'running',
       job: { jobId: 'j1', toolId: 'merge', phase: 'processing', fraction: 0.5 },
+    });
+    useToolJobs.setState({
+      active: { jobId: 'j1', toolId: 'merge', phase: 'processing', fraction: 0.5 },
     });
     await open();
     expect(screen.getByText('50%')).toBeTruthy();

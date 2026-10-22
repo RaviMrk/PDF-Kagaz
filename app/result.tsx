@@ -6,10 +6,8 @@ import { useTranslation } from 'react-i18next';
 
 import { EmptyState } from '@/components/EmptyState';
 import { OutputRow } from '@/components/tools/OutputRow';
-import { getDb } from '@/db/client';
 import type { FileRow } from '@/db/schema';
 import { failureMessage } from '@/services/tools/failureMessage';
-import { getJob } from '@/services/tools/toolJobRepo';
 import { useFiles } from '@/stores/filesStore';
 import { useToolJobs } from '@/stores/toolJobStore';
 import { useTheme } from '@/theme/useTheme';
@@ -19,17 +17,6 @@ const NOTICE_MS = 4000;
 function leave() {
   if (router.canGoBack()) router.back();
   else router.replace('/home');
-}
-
-/** Name of the input a failure points at, from the job's stored input ids. */
-function failingInputName(jobId: string, inputIndex: number | null): string | null {
-  if (inputIndex === null) return null;
-  try {
-    const id = getJob(getDb(), jobId)?.inputIds[inputIndex];
-    return id === undefined ? null : (useFiles.getState().getRow(id)?.name ?? null);
-  } catch {
-    return null;
-  }
 }
 
 export default function ResultScreen() {
@@ -45,9 +32,11 @@ export default function ResultScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [retryFailed, setRetryFailed] = useState<string | null>(null);
 
+  // Also when a running job finishes while this screen is open (markSeen ignores active jobs).
+  const viewKind = view.kind;
   useEffect(() => {
-    if (jobId) useToolJobs.getState().markSeen(jobId);
-  }, [jobId]);
+    if (jobId && viewKind === 'done') useToolJobs.getState().markSeen(jobId);
+  }, [jobId, viewKind]);
 
   useEffect(() => {
     if (!notice) return;
@@ -103,7 +92,13 @@ export default function ResultScreen() {
           <Text style={{ color: colors.text }}>{t('progress.percent', { percent })}</Text>
         </View>
         <View style={styles.actions}>
-          {button(t('progress.cancel'), () => useToolJobs.getState().cancel(), colors.danger)}
+          {button(
+            t('progress.cancel'),
+            () => {
+              if (useToolJobs.getState().active?.jobId === jobId) useToolJobs.getState().cancel();
+            },
+            colors.danger,
+          )}
         </View>
       </View>
     );
@@ -122,7 +117,7 @@ export default function ResultScreen() {
       <View style={styles.section}>
         {header(t('result.failedTitle'))}
         <Text style={{ color: colors.danger }}>
-          {failureMessage(failure, failingInputName(jobId, inputIndex), t)}
+          {failureMessage(failure, useToolJobs.getState().inputNameOf(jobId, inputIndex), t)}
         </Text>
         {retryFailed !== null ? (
           <Text accessibilityLiveRegion="polite" style={{ color: colors.danger }}>

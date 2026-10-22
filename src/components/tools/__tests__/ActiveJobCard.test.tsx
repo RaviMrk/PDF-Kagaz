@@ -11,6 +11,7 @@ jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 const finished = (ok: boolean, seen: boolean) => ({
   jobId: 'j2',
   toolId: 'merge' as const,
+  inputIds: [],
   outcome: ok
     ? { ok: true as const, outputs: [] }
     : { ok: false as const, failure: 'io' as const, inputIndex: null, outputs: [] },

@@ -34,6 +34,7 @@ export type ActiveJob = {
 export type FinishedJob = {
   jobId: string;
   toolId: RunnableToolId;
+  inputIds: string[];
   outcome: ToolOutcome;
   seen: boolean;
 };
@@ -52,6 +53,8 @@ export type ToolJobsState = {
   retry(jobId: string, t: Translate): StartResult;
   outcomeOf(jobId: string): JobView;
   markSeen(jobId: string): void;
+  /** Name of the input a failure points at (this process's last job only); null when unknown. */
+  inputNameOf(jobId: string, inputIndex: number | null): string | null;
 };
 
 export type ToolJobStoreDeps = {
@@ -167,7 +170,13 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
       controller = null;
       set({
         active: null,
-        last: { jobId, toolId: request.toolId, outcome, seen: false },
+        last: {
+          jobId,
+          toolId: request.toolId,
+          inputIds: [...request.inputIds],
+          outcome,
+          seen: false,
+        },
       });
     }
 
@@ -260,6 +269,13 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
               ? (FAILURES.find((f) => f === row.error) ?? 'unknown')
               : 'interrupted';
         return { kind: 'done', toolId, outcome: { ok: false, failure, inputIndex: null, outputs } };
+      },
+
+      inputNameOf(jobId, inputIndex) {
+        const { last } = get();
+        if (inputIndex === null || last?.jobId !== jobId) return null;
+        const id = last.inputIds[inputIndex];
+        return id === undefined ? null : (useFiles.getState().getRow(id)?.name ?? null);
       },
 
       markSeen(jobId) {

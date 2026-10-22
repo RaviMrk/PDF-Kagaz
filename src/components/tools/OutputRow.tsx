@@ -20,6 +20,7 @@ const SHARE_FAILURE_KEYS: Record<Exclude<ReaderActionResult, 'ok'>, string> = {
   unknown: 'files.errorUnknown',
 };
 const SAVE_FAILURE_KEYS: Record<Exclude<SaveCopyResult, 'saved' | 'cancelled'>, string> = {
+  exists: 'result.saveExists',
   notFound: 'files.errorNotFound',
   permission: 'reader.errorPermission',
   unknown: 'files.errorUnknown',
@@ -33,10 +34,16 @@ export function OutputRow({ file, onNotice }: Props) {
   const meta = [formatBytes(file.sizeBytes)];
   if (file.pageCount != null) meta.push(t('files.pages', { count: file.pageCount }));
 
+  // An unindexed fallback row is not in the library yet, so the reader cannot open it.
+  const indexed = useFiles((s) => s.getRow(file.id) !== null);
+  const dropIfIndexed = () => {
+    if (indexed) useFiles.getState().dropMissing(file.id);
+  };
+
   const share = async () => {
     const result = await runReaderAction('share', { uri: file.uri, title: t('result.shareTitle') });
     if (result === 'ok') return;
-    if (result === 'notFound') useFiles.getState().dropMissing(file.id);
+    if (result === 'notFound') dropIfIndexed();
     onNotice(SHARE_FAILURE_KEYS[result]);
   };
 
@@ -47,13 +54,14 @@ export function OutputRow({ file, onNotice }: Props) {
       onNotice('result.saved');
       return;
     }
-    if (result === 'notFound') useFiles.getState().dropMissing(file.id);
+    if (result === 'notFound') dropIfIndexed();
     onNotice(SAVE_FAILURE_KEYS[result]);
   };
 
   const actions = [
     {
       key: 'open',
+      disabled: !indexed,
       label: t('result.open'),
       a11y: t('result.openA11y', { name }),
       onPress: () => router.push({ pathname: '/reader/[id]', params: { id: file.id } }),
@@ -89,13 +97,18 @@ export function OutputRow({ file, onNotice }: Props) {
             key={a.key}
             accessibilityRole="button"
             accessibilityLabel={a.a11y}
+            disabled={a.disabled}
+            accessibilityState={{ disabled: a.disabled === true }}
             onPress={a.onPress}
-            style={styles.button}
+            style={[styles.button, a.disabled && styles.disabled]}
           >
             <Text style={[styles.buttonText, { color: colors.primary }]}>{a.label}</Text>
           </Pressable>
         ))}
       </View>
+      {indexed ? null : (
+        <Text style={{ color: colors.textMuted }}>{t('result.openAfterScan')}</Text>
+      )}
     </View>
   );
 }
@@ -107,5 +120,6 @@ const styles = StyleSheet.create({
   name: { fontSize: 16, fontWeight: '600' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   button: { minHeight: 48, minWidth: 48, paddingHorizontal: 12, justifyContent: 'center' },
+  disabled: { opacity: 0.4 },
   buttonText: { fontSize: 15, fontWeight: '600' },
 });

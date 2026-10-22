@@ -105,6 +105,7 @@ describe('tool flow', () => {
         last: {
           jobId: 'j1',
           toolId: 'merge',
+          inputIds: [],
           outcome: { ok: true, outputs: [] },
           seen: false,
         },
@@ -371,7 +372,13 @@ describe('tool flow', () => {
     await act(async () => {
       useToolJobs.setState({
         active: null,
-        last: { jobId: 'other', toolId: 'merge', outcome: { ok: true, outputs: [] }, seen: false },
+        last: {
+          jobId: 'other',
+          toolId: 'merge',
+          inputIds: [],
+          outcome: { ok: true, outputs: [] },
+          seen: false,
+        },
       });
     });
     expect(r.pathname()).toBe('/tool/merge');

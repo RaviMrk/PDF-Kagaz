@@ -20,7 +20,7 @@ describe('saveOutputCopy', () => {
   it.each([
     ['ERR_FILE_NOT_FOUND', 'notFound'],
     ['ERR_PERMISSION_DENIED', 'permission'],
-    ['ERR_FILE_EXISTS', 'unknown'],
+    ['ERR_FILE_EXISTS', 'exists'],
   ] as const)('maps %s to %s', async (code, expected) => {
     const saveCopyAs = jest.fn().mockRejectedValue(nativeError(code));
     await expect(saveOutputCopy(row, { saveCopyAs })).resolves.toBe(expected);

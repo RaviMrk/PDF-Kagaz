@@ -327,6 +327,8 @@
     "saveAs": "Save as…",
     "saveAsA11y": "Save a copy of {{name}}",
     "saved": "Saved a copy",
+    "saveExists": "A file with that name already exists. Choose a different name.",
+    "openAfterScan": "You can open this file from Files after the next refresh",
     "shareTitle": "Share PDF",
     "done": "Done",
     "close": "Close",
