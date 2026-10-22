@@ -42,7 +42,9 @@ export function PickFilesList({ files, selectedIds, max, onToggle }: Props) {
         style={[styles.search, { color: colors.text, borderColor: colors.border }]}
       />
       {visible.length === 0 ? (
-        <Text style={[styles.empty, { color: colors.textMuted }]}>{t('tool.noFiles')}</Text>
+        <Text style={[styles.empty, { color: colors.textMuted }]}>
+          {t(files.length === 0 ? 'tool.noFiles' : 'tool.noMatches')}
+        </Text>
       ) : (
         <FlashList
           data={visible}
@@ -51,7 +53,7 @@ export function PickFilesList({ files, selectedIds, max, onToggle }: Props) {
           renderItem={({ item }) => {
             const checked = selected.has(item.id);
             const tooLarge = item.sizeBytes > JS_MAX_FILE_BYTES;
-            const disabled = tooLarge || (!checked && full);
+            const disabled = !checked && (tooLarge || full);
             const name = displayName(item.name);
             const folder = item.folder === '' ? t('tool.fromOtherApp') : item.folder;
             return (

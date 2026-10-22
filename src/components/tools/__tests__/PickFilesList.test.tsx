@@ -75,4 +75,19 @@ describe('PickFilesList', () => {
       screen.getByText('No PDFs to choose from. Use Browse files to pick one.'),
     ).toBeOnTheScreen();
   });
+
+  it('lets an already selected oversized row be deselected', async () => {
+    await render(list([big, small], [big.id]));
+    const row = screen.getByRole('checkbox', { name: 'Select huge.pdf' });
+    expect(row.props.accessibilityState).toMatchObject({ checked: true, disabled: false });
+    await fireEvent.press(row);
+    expect(onToggle).toHaveBeenCalledWith(big.id);
+  });
+
+  it('says nothing matches when the search filters everything out', async () => {
+    await render(list());
+    await fireEvent.changeText(screen.getByLabelText('Search PDFs'), 'zzz');
+    expect(screen.getByText('No PDFs match your search')).toBeOnTheScreen();
+    expect(screen.queryByText('No PDFs to choose from. Use Browse files to pick one.')).toBeNull();
+  });
 });

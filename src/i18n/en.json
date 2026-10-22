@@ -253,7 +253,8 @@
     "tooLargeFile": "Too large for this tool (max 30 MB)",
     "noFiles": "No PDFs to choose from. Use Browse files to pick one.",
     "search": "Search PDFs",
-    "selectFile": "Select {{name}}"
+    "selectFile": "Select {{name}}",
+    "noMatches": "No PDFs match your search"
   },
   "merge": {
     "moveUp": "Move {{name}} up",

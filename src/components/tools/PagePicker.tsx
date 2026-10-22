@@ -50,7 +50,12 @@ export function PagePicker({ pageCount, fileUri, selected, onChange }: Props) {
   const pages = useMemo(() => Array.from({ length: pageCount }, (_, i) => i + 1), [pageCount]);
   const chosen = useMemo(() => new Set(selected), [selected]);
 
-  const emit = (next: number[]) => {
+  // Typing keeps the field as written; taps and buttons rewrite it to the canonical ranges.
+  const emit = (next: number[], rewriteText = false) => {
+    if (rewriteText) {
+      setText(formatPageRanges(next));
+      setError(null);
+    }
     typed.current = next;
     onChange(next);
   };
@@ -69,16 +74,13 @@ export function PagePicker({ pageCount, fileUri, selected, onChange }: Props) {
       uniqueSortedPages([
         chosen.has(page) ? selected.filter((p) => p !== page) : [...selected, page],
       ]),
+      true,
     );
   const selectAll = () => {
-    setText(formatPageRanges(pages));
-    setError(null);
-    emit(pages);
+    emit(pages, true);
   };
   const clear = () => {
-    setText('');
-    setError(null);
-    emit([]);
+    emit([], true);
   };
 
   return (
@@ -126,6 +128,7 @@ export function PagePicker({ pageCount, fileUri, selected, onChange }: Props) {
         numColumns={COLUMNS}
         extraData={selected}
         keyExtractor={String}
+        keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
           <Tile page={item} checked={chosen.has(item)} loader={loader} onToggle={toggle} />
         )}

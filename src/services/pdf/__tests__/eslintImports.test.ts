@@ -86,7 +86,7 @@ describe('import restrictions', () => {
     ['app/index.tsx', [PDF, FS, SORT]],
     ['src/components/Button.tsx', [PDF, FS]],
     ['src/components/__tests__/Button.test.tsx', [FS]],
-    ['src/test-utils/pdfFixtures.ts', [FS]],
+    ['src/test-utils/pdfFixtures.ts', [FS, SORT]],
     ['src/services/pdf/merge.ts', [FS, SORT]],
     ['src/services/pdf/__tests__/merge.test.ts', [FS, SORT]],
     ['src/services/tools/toolFs.ts', [PDF, SORT]],

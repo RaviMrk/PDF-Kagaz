@@ -1,10 +1,16 @@
 import { act, fireEvent, render as rtlRender, screen } from '@testing-library/react-native';
-import type { ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
 import { I18nextProvider } from 'react-i18next';
 
 import { PagePicker } from '@/components/tools/PagePicker';
 import { initI18n } from '@/i18n';
+import { createToolThumbLoader } from '@/services/tools/toolThumbs';
 import { pdfNative } from '@/services/native/pdfNative';
+
+jest.mock('@/services/tools/toolThumbs', () => {
+  const actual = jest.requireActual('@/services/tools/toolThumbs');
+  return { ...actual, createToolThumbLoader: jest.fn(actual.createToolThumbLoader) };
+});
 
 const i18n = initI18n('en');
 // FlashList settles its layout (and thumbnails resolve) after the first commit.
@@ -99,5 +105,29 @@ describe('PagePicker', () => {
     await render(picker([], null));
     expect(screen.getByRole('checkbox', { name: 'Page 3' })).toBeOnTheScreen();
     expect(toolThumb).not.toHaveBeenCalled();
+  });
+
+  it('rewrites the range text on tile taps and clears a previous error', async () => {
+    function Harness() {
+      const [selected, setSelected] = useState<number[]>([1]);
+      return <PagePicker pageCount={10} fileUri={URI} selected={selected} onChange={setSelected} />;
+    }
+    await render(<Harness />);
+    const input = screen.getByLabelText('Pages');
+    await fireEvent.changeText(input, '99');
+    expect(screen.getByText('Pages must be from 1 to 10')).toBeOnTheScreen();
+    await fireEvent.press(screen.getByRole('checkbox', { name: 'Page 7' }));
+    expect(screen.getByLabelText('Pages').props.value).toBe('1, 7');
+    expect(screen.queryByText('Pages must be from 1 to 10')).toBeNull();
+    await fireEvent.press(screen.getByRole('checkbox', { name: 'Page 2' }));
+    expect(screen.getByLabelText('Pages').props.value).toBe('1-2, 7');
+  });
+
+  it('cancels pending thumbnail requests on unmount', async () => {
+    await render(picker());
+    const loader = jest.mocked(createToolThumbLoader).mock.results.at(-1)!.value;
+    const cancel = jest.spyOn(loader, 'cancelPending');
+    await screen.unmount();
+    expect(cancel).toHaveBeenCalled();
   });
 });

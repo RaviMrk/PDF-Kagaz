@@ -20,7 +20,7 @@ const FILE_SYSTEM = {
 };
 const SORTABLES = {
   name: 'react-native-sortables',
-  allowed: ['src/components/**', 'src/test-utils/**'],
+  allowed: ['src/components/**'],
   message: 'react-native-sortables may only be used inside src/components.',
 };
 
