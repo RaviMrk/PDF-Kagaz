@@ -22,6 +22,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 class PdfNativeModule : Module() {
@@ -87,6 +88,25 @@ class PdfNativeModule : Module() {
 
     AsyncFunction("releaseReaderDocument") Coroutine { ->
       readerThumbnails.release()
+    }
+
+    // Thumbnails, reader copies and share copies; see CacheCleaner. Holds every lane's lock so no
+    // render or copy is writing into the folders while they are emptied.
+    AsyncFunction("clearCaches") Coroutine { ->
+      readerThumbnails.release()
+      RenderSupport.mapErrors {
+        withContext(Dispatchers.IO) {
+          Thumbnails.rendererLock.withLock {
+            ReaderThumbnails.lock.withLock {
+              ReaderFiles.copyLock.withLock {
+                ShareFiles.copyLock.withLock {
+                  CacheCleaner.clear(context.cacheDir, System.currentTimeMillis()).toDouble()
+                }
+              }
+            }
+          }
+        }
+      }
     }
 
     AsyncFunction("renameFile") Coroutine { uri: String, newName: String ->

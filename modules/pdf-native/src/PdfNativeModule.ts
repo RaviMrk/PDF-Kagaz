@@ -25,6 +25,8 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
   /** 1-based page, width clamped to 1..512; serialized apart from generateThumbnail. */
   renderReaderThumbnail(fileUri: string, page: number, width: number): Promise<string>;
   releaseReaderDocument(): Promise<void>;
+  /** Deletes thumbnails, reader copies and share copies older than 10 minutes; resolves with the bytes freed. */
+  clearCaches(): Promise<number>;
   renameFile(uri: string, newName: string): Promise<PdfFileInfo>;
   deleteFile(uri: string): Promise<void>;
   duplicateFile(uri: string, parentUri: string): Promise<PdfFileInfo>;

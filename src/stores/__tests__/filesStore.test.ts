@@ -956,3 +956,29 @@ describe('filesStore: reader actions', () => {
     });
   });
 });
+
+describe('filesStore: resetThumbnails', () => {
+  it('nulls every thumbPath in state and DB and queues the rows again, retried ones too', async () => {
+    const { store, db, native } = setup({ seed: [info('A/a.pdf'), info('A/b.pdf')] });
+    store.getState().loadFromCache();
+    for (const f of store.getState().files) store.getState().requestThumb(f);
+    await flush();
+    expect(native.generateThumbnail).toHaveBeenCalledTimes(2);
+    const id = idOf('A/a.pdf');
+    store.getState().thumbMissing(id); // already retried this session
+    await flush();
+    expect(native.generateThumbnail).toHaveBeenCalledTimes(3);
+
+    store.getState().resetThumbnails();
+    expect(store.getState().files.every((f) => f.thumbPath === null)).toBe(true);
+    expect(getFile(db, id)?.thumbPath).toBeNull();
+    await flush();
+    expect(native.generateThumbnail).toHaveBeenCalledTimes(5);
+    expect(store.getState().files.every((f) => f.thumbPath === 'file:///thumb.jpg')).toBe(true);
+
+    // The retry-once guard is cleared as well.
+    store.getState().thumbMissing(id);
+    await flush();
+    expect(native.generateThumbnail).toHaveBeenCalledTimes(6);
+  });
+});

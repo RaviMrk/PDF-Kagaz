@@ -44,6 +44,8 @@ export interface PdfNativeApi {
   renderReaderThumbnail(fileUri: string, page: number, width: number): Promise<string>;
   /** Closes the document kept open for reader thumbnails. */
   releaseReaderDocument(): Promise<void>;
+  /** Clears thumbnails, reader copies and share copies (the latter only when older than 10 minutes); returns bytes freed. */
+  clearCaches(): Promise<number>;
   renameFile(uri: string, newName: string): Promise<PdfFileInfo>;
   deleteFile(uri: string): Promise<void>;
   duplicateFile(uri: string, parentUri: string): Promise<PdfFileInfo>;
@@ -195,6 +197,7 @@ export const pdfNative: PdfNativeApi = {
   renderReaderThumbnail: (fileUri, page, width) =>
     PdfNative.renderReaderThumbnail(fileUri, page, width),
   releaseReaderDocument: () => PdfNative.releaseReaderDocument(),
+  clearCaches: () => PdfNative.clearCaches(),
   renameFile: (uri, newName) => PdfNative.renameFile(uri, newName),
   deleteFile: (uri) => PdfNative.deleteFile(uri),
   duplicateFile: (uri, parentUri) => PdfNative.duplicateFile(uri, parentUri),

@@ -71,7 +71,7 @@ class ShareFiles(private val context: Context) {
 
   private fun sizeOf(entry: File): Long = entry.walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
-  private companion object {
+  companion object {
     const val BUFFER_BYTES = 256 * 1024
 
     /** One copy at a time, so eviction never removes another call's in-progress .part dir. */

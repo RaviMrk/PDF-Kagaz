@@ -95,6 +95,11 @@ export function createThumbnailQueue(deps: Deps) {
       seen.delete(keyOf(file));
       request(file);
     },
+    /** Forgets what was queued or done this session (the cache was cleared). */
+    reset(): void {
+      pending.length = 0;
+      seen.clear();
+    },
     clear(): void {
       for (const j of pending) seen.delete(keyOf(j));
       pending.length = 0;

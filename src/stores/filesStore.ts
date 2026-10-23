@@ -7,6 +7,7 @@ import {
   applyFolderChanges,
   applyScan,
   deleteBySource,
+  clearThumbPaths,
   getFile,
   getFolderStamps,
   listFiles,
@@ -76,6 +77,8 @@ export type FilesState = {
   requestThumb: (file: FileRow) => void;
   /** The stored thumbnail file could not be loaded (cache cleared): regenerate it once. */
   thumbMissing: (id: string) => void;
+  /** The thumbnail cache was cleared: forget every thumbPath and regenerate visible rows. */
+  resetThumbnails: () => void;
   clearNotice: () => void;
   reportError: (error: FilesError) => void;
 };
@@ -107,6 +110,9 @@ function toActionError(e: unknown): FileActionError {
 }
 
 type FileOp = (provider: StorageProvider, ref: FileRef, row: FileRow, db: IndexDb) => Promise<void>;
+
+/** Rows regenerated at once after a cache clear; the rest follow as the list renders them. */
+const RESET_REQUEUE = 48;
 
 export function createFilesStore(deps: FilesStoreDeps) {
   return create<FilesState>()((set, get) => {
@@ -501,6 +507,23 @@ export function createFilesStore(deps: FilesStoreDeps) {
         if (thumbRetried.has(id)) return; // Still unloadable: keep the placeholder icon.
         thumbRetried.add(id);
         if (!row.isEncrypted && !row.isCorrupt) thumbs.retry(row);
+      },
+
+      resetThumbnails() {
+        const before = get().files;
+        try {
+          clearThumbPaths(deps.getDb());
+        } catch {
+          // DB unavailable: the stored paths are dropped on the next thumbMissing.
+        }
+        thumbRetried.clear();
+        thumbs.reset();
+        set({ files: before.map((f) => (f.thumbPath ? { ...f, thumbPath: null } : f)) });
+        // The list re-requests rows as they render; warm the first screens now.
+        before
+          .filter((f) => f.thumbPath && !f.isEncrypted && !f.isCorrupt)
+          .slice(0, RESET_REQUEUE)
+          .forEach((f) => thumbs.request(f));
       },
 
       clearNotice() {

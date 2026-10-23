@@ -14,6 +14,7 @@ import {
   addScanRoot,
   applyFolderChanges,
   applyScan,
+  clearThumbPaths,
   deleteBySource,
   getFile,
   getFolderStamps,
@@ -644,5 +645,17 @@ describe('setLastPage', () => {
     const id = upsertFile(db, info('A/a.pdf'), 'scan').id;
     setLastPage(db, id, 57);
     expect(getFile(db, id)?.lastPage).toBe(57);
+  });
+});
+
+describe('clearThumbPaths', () => {
+  it('nulls every stored thumbnail path and counts them', () => {
+    const db = makeDb();
+    applyScan(db, scan([info('A/a.pdf'), info('A/b.pdf'), info('A/c.pdf')]));
+    updateThumb(db, idOf('A/a.pdf'), { thumbPath: 'file:///t/a.jpg' });
+    updateThumb(db, idOf('A/b.pdf'), { thumbPath: 'file:///t/b.jpg' });
+    expect(clearThumbPaths(db)).toBe(2);
+    expect(listFiles(db).every((r) => r.thumbPath === null)).toBe(true);
+    expect(clearThumbPaths(db)).toBe(0);
   });
 });

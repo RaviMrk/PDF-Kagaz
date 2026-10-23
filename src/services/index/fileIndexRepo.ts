@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core';
 
 import {
@@ -443,6 +443,11 @@ export function updateThumb(
 ): void {
   if (Object.keys(patch).length === 0) return;
   db.update(files).set(patch).where(eq(files.id, id)).run();
+}
+
+/** Forgets every stored thumbnail path (the files were deleted); returns how many rows had one. */
+export function clearThumbPaths(db: IndexDb): number {
+  return db.update(files).set({ thumbPath: null }).where(isNotNull(files.thumbPath)).run().changes;
 }
 
 export function getFolderStamps(db: IndexDb): FolderStamp[] {

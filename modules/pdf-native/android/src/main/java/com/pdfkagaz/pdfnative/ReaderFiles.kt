@@ -99,6 +99,6 @@ class ReaderFiles(private val context: Context) {
     private const val BUFFER_BYTES = 256 * 1024
 
     /** One copy at a time, so eviction never removes another call's in-progress .part file. */
-    private val copyLock = Mutex()
+    val copyLock = Mutex()
   }
 }

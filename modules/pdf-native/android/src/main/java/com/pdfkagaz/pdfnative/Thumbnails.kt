@@ -41,7 +41,7 @@ class Thumbnails(private val context: Context) {
     }
   }
 
-  private companion object {
+  companion object {
     val rendererLock = Mutex()
     const val MAX_WIDTH = 2048
   }
