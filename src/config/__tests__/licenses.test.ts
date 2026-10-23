@@ -1,7 +1,8 @@
 import licenses from '../licenses.json';
+import licenseTexts from '../licenseTexts.json';
 import { NATIVE_NOTICES } from '../nativeNotices';
 
-type Entry = { name: string; version: string; license: string };
+type Entry = { name: string; version: string; license: string; text: string };
 const list = licenses as Entry[];
 
 describe('generated licence list', () => {
@@ -29,13 +30,44 @@ describe('generated licence list', () => {
   });
 
   it('gives every entry a non-empty licence', () => {
-    expect(list.filter((e) => !e.license)).toEqual([]);
+    expect(list.filter((e) => !e.license || e.license === 'UNKNOWN')).toEqual([]);
+  });
+
+  it('excludes build-time tooling', () => {
+    expect(list.filter((e) => /^(jest-|@jest\/|@types\/|metro|@babel\/)/.test(e.name))).toEqual([]);
+  });
+
+  it('includes the libraries the app ships', () => {
+    const names = new Set(list.map((e) => e.name));
+    for (const lib of [
+      'react-native-pdf',
+      'react-native-mmkv',
+      'react-native-google-mobile-ads',
+      'react-native-blob-util',
+      '@shopify/flash-list',
+      '@cantoo/pdf-lib',
+      'expo-router',
+    ]) {
+      expect(names.has(lib)).toBe(true);
+    }
+  });
+
+  it('has a licence text for every entry, stored once per distinct text', () => {
+    const texts = licenseTexts as Record<string, string>;
+    for (const e of list) expect(texts[e.text]?.length ?? 0).toBeGreaterThan(50);
+    expect(Object.keys(texts).length).toBeLessThan(list.length);
+    expect(texts[list.find((e) => e.name === 'react-native')!.text]).toMatch(
+      /Permission is hereby granted/,
+    );
   });
 });
 
 describe('native notices', () => {
   it('gives every Android library a licence', () => {
-    expect(NATIVE_NOTICES.length).toBeGreaterThan(0);
+    expect(NATIVE_NOTICES.length).toBeGreaterThanOrEqual(15);
+    const all = NATIVE_NOTICES.map((n) => n.name).join(' ');
+    for (const w of ['OkHttp', 'Fresco', 'Mobile Ads', 'UMP', 'Kotlin', 'MMKV'])
+      expect(all).toContain(w);
     for (const n of NATIVE_NOTICES) {
       expect(n.name).not.toBe('');
       expect(n.license).not.toBe('');

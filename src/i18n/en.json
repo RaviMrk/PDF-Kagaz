@@ -482,6 +482,10 @@
     "native": "Android libraries",
     "js": "JavaScript libraries",
     "item": "{{name}} {{version}} · {{license}}",
-    "back": "Back"
+    "back": "Back",
+    "itemNoVersion": "{{name}} · {{license}}",
+    "backToList": "All licences",
+    "textMissing": "The licence text is not available.",
+    "open": "Show licence text for {{name}} {{version}}"
   }
 }
