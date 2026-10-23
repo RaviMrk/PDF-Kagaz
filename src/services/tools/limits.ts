@@ -15,3 +15,8 @@ export function checkInputSizes(sizes: readonly number[]): SizeCheck {
     return { ok: false, reason: 'totalTooLarge' };
   return { ok: true };
 }
+
+export const IMAGES_MAX = 100;
+export const IMAGE_MAX_BYTES = 52_428_800;
+export const IMAGE_MAX_LONG_SIDE_PX = 2400;
+export const IMAGE_JPEG_QUALITY = 85;

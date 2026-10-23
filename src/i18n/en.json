@@ -236,7 +236,9 @@
     "page": "{{name}} page {{page}}",
     "part": "{{name}} part {{n}}",
     "extracted": "{{name}} extracted",
-    "organised": "{{name}} organised"
+    "organised": "{{name}} organised",
+    "images": "Images {{date}}",
+    "scan": "Scan {{date}}"
   },
   "progress": {
     "preparing": "Reading files…",

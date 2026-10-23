@@ -69,7 +69,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "fixtures:generate": "node scripts/make-fixtures.mjs",
-    "fixtures:large": "node scripts/make-large-fixture.mjs"
+    "fixtures:large": "node scripts/make-large-fixture.mjs",
+    "fixtures:images": "node scripts/make-image-fixtures.mjs"
   },
   "private": true,
   "jest": {

@@ -1,6 +1,14 @@
 import { initI18n } from '@/i18n';
 
-import { mergedName, organisedName, splitNames } from '../outputNames';
+import {
+  customOutputName,
+  imagesName,
+  mergedName,
+  nameStamp,
+  organisedName,
+  scanName,
+  splitNames,
+} from '../outputNames';
 
 const i18n = initI18n('en');
 const tr = (key: string, options?: Record<string, unknown>): string => i18n.t(key, options);
@@ -24,5 +32,26 @@ describe('outputNames', () => {
   });
   it('strips bidi controls from the input name', () => {
     expect(organisedName('‮x.pdf', tr)).toBe('x organised.pdf');
+  });
+});
+
+describe('image and scan names', () => {
+  const ms = new Date(2026, 9, 23, 14, 5).getTime();
+  it('formats the local stamp with dots', () => {
+    expect(nameStamp(ms)).toBe('2026-10-23 14.05');
+  });
+  it('names image and scan outputs', () => {
+    expect(imagesName(ms, tr)).toBe('Images 2026-10-23 14.05.pdf');
+    expect(scanName(ms, tr)).toBe('Scan 2026-10-23 14.05.pdf');
+  });
+  it('uses the fallback for a blank custom name', () => {
+    expect(customOutputName('  ', 'd.pdf')).toBe('d.pdf');
+    expect(customOutputName(null, 'd.pdf')).toBe('d.pdf');
+  });
+  it('cleans a custom name', () => {
+    expect(customOutputName('Receipt.PDF', 'd.pdf')).toBe('Receipt.pdf');
+    expect(customOutputName('../x', 'd.pdf')).toBe('_x.pdf');
+    expect(customOutputName('a/b:c?.pdf', 'd.pdf')).toBe('a_b_c_.pdf');
+    expect(customOutputName('अ'.repeat(120), 'd.pdf')).toBe(`${'अ'.repeat(66)}.pdf`);
   });
 });

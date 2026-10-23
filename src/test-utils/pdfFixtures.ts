@@ -1,7 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { decodePDFRawStream, PDFArray, PDFDocument, PDFRawStream } from '@cantoo/pdf-lib';
+import {
+  decodePDFRawStream,
+  PDFArray,
+  PDFDict,
+  PDFDocument,
+  PDFName,
+  PDFNumber,
+  PDFRawStream,
+} from '@cantoo/pdf-lib';
 
 /** Reads a PDF fixture from `__fixtures__/` (NFC-normalised name). Node-only; for tests. */
 export function readFixture(name: string): Uint8Array {
@@ -34,6 +42,37 @@ export async function inspectPages(bytes: Uint8Array) {
       size: [Math.round(page.getWidth()), Math.round(page.getHeight())] as [number, number],
       rotation: page.getRotation().angle,
       text,
+    };
+  });
+}
+
+/** Per page: rounded size and the image XObjects in its Resources (size and first filter). */
+export async function inspectImages(bytes: Uint8Array): Promise<
+  {
+    size: [number, number];
+    images: { width: number; height: number; filter: string }[];
+  }[]
+> {
+  const doc = await loadStrict(bytes);
+  return doc.getPages().map((page) => {
+    const images: { width: number; height: number; filter: string }[] = [];
+    const xObjects = page.node.Resources()?.lookupMaybe(PDFName.of('XObject'), PDFDict);
+    for (const [, ref] of xObjects?.entries() ?? []) {
+      const stream = doc.context.lookup(ref);
+      if (!(stream instanceof PDFRawStream)) continue;
+      const dict = stream.dict;
+      if (dict.lookup(PDFName.of('Subtype')) !== PDFName.of('Image')) continue;
+      const filter = dict.lookup(PDFName.of('Filter'));
+      const first = filter instanceof PDFArray ? filter.lookup(0) : filter;
+      images.push({
+        width: dict.lookup(PDFName.of('Width'), PDFNumber).asNumber(),
+        height: dict.lookup(PDFName.of('Height'), PDFNumber).asNumber(),
+        filter: first instanceof PDFName ? first.decodeText() : '',
+      });
+    }
+    return {
+      size: [Math.round(page.getWidth()), Math.round(page.getHeight())] as [number, number],
+      images,
     };
   });
 }
