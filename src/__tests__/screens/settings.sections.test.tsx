@@ -3,6 +3,7 @@ import { I18nextProvider } from 'react-i18next';
 
 import SettingsScreen from '../../../app/(tabs)/settings';
 import { initI18n } from '@/i18n';
+import * as clearCacheModule from '@/services/files/clearCache';
 import { useAds } from '@/services/ads/adsStore';
 import { useSettings } from '@/stores/settingsStore';
 import { useToolJobs } from '@/stores/toolJobStore';
@@ -51,12 +52,23 @@ describe('Settings sections', () => {
   });
 
   it('chooses the language and lists the coming-soon note', async () => {
+    const change = jest.spyOn(i18n, 'changeLanguage');
     await renderSettings();
     expect(screen.getByText('Marathi and Hindi are coming in a later update.')).toBeTruthy();
     await fireEvent.press(screen.getByLabelText('English'));
     expect(useSettings.getState().language).toBe('en');
+    expect(change).toHaveBeenLastCalledWith('en');
     await fireEvent.press(screen.getByLabelText('Phone language'));
     expect(useSettings.getState().language).toBeNull();
+    expect(change).toHaveBeenCalledTimes(2);
+    change.mockRestore();
+  });
+
+  it('changes the theme', async () => {
+    useSettings.setState({ theme: 'system' });
+    await renderSettings();
+    await fireEvent.press(screen.getByLabelText('Dark'));
+    expect(useSettings.getState().theme).toBe('dark');
   });
 
   it('toggles the telemetry opt-outs as switches', async () => {
@@ -113,7 +125,12 @@ describe('Settings sections', () => {
       } as never);
     });
     expect(screen.getByText('Wait for the running tool to finish')).toBeTruthy();
-    await fireEvent.press(screen.getByLabelText('Clear cache'));
+    const button = screen.getByLabelText('Clear cache');
+    expect(button.props.accessibilityState.disabled).toBe(true);
+    const spy = jest.spyOn(clearCacheModule, 'clearAppCache');
+    await fireEvent.press(button);
+    expect(spy).not.toHaveBeenCalled();
     expect(mockClearCaches).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 });

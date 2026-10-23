@@ -38,6 +38,27 @@ describe('ad placement', () => {
     expect(importing(/react-native-google-mobile-ads/).filter((f) => !allowed(f))).toEqual([]);
   });
 
+  describe('settings components', () => {
+    const dir = path.join(ROOT, 'src/components/settings');
+    const files = fs.readdirSync(dir).filter((f) => /\.tsx?$/.test(f));
+
+    it.each(files)('%s never touches banners, the interstitial or the ads package', (f) => {
+      expect(
+        /AdBanner|ads\/interstitial|react-native-google-mobile-ads/.test(read(path.join(dir, f))),
+      ).toBe(false);
+    });
+
+    it('lets only AdPrivacyRow reach the ads service, and only for useAds', () => {
+      const using = files.filter((f) => /services\/ads/.test(read(path.join(dir, f))));
+      expect(using).toEqual(['AdPrivacyRow.tsx']);
+      const imports = read(path.join(dir, 'AdPrivacyRow.tsx')).match(
+        /from '@\/services\/ads\/[^']+'/g,
+      );
+      expect(imports).toEqual(["from '@/services/ads/adsStore'"]);
+      expect(read(path.join(dir, 'AdPrivacyRow.tsx'))).toMatch(/import \{ useAds \} from/);
+    });
+  });
+
   describe('ad-free screens', () => {
     const adFree = [
       'app/reader/[id].tsx',
