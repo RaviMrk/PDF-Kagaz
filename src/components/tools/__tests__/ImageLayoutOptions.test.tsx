@@ -26,21 +26,30 @@ const options = (v: Layout = value) => (
 describe('ImageLayoutOptions', () => {
   beforeEach(() => jest.clearAllMocks());
 
+  it('groups each option row under its field label', async () => {
+    await render(options());
+    for (const name of ['Page size', 'Orientation', 'Margins']) {
+      expect(screen.getByLabelText(name).props.accessibilityRole).toBe('radiogroup');
+    }
+    expect(screen.getByRole('radio', { name: 'A4' })).toBeChecked();
+  });
+
   it('changes the page size', async () => {
     await render(options());
-    await fireEvent.press(screen.getByLabelText('Letter'));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Letter' }));
     expect(onChange).toHaveBeenCalledWith({ ...value, pageSize: 'letter' });
   });
 
   it('changes the margins', async () => {
     await render(options());
-    await fireEvent.press(screen.getByLabelText('Large'));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Large' }));
     expect(onChange).toHaveBeenCalledWith({ ...value, margin: 'large' });
   });
 
   it('disables orientation for fit and explains why', async () => {
     await render(options({ ...value, pageSize: 'fit' }));
-    await fireEvent.press(screen.getByLabelText('Landscape'));
+    expect(screen.getByRole('radio', { name: 'Landscape' })).toBeDisabled();
+    await fireEvent.press(screen.getByRole('radio', { name: 'Landscape' }));
     expect(onChange).not.toHaveBeenCalled();
     expect(
       screen.getByText('Fit to image gives each page the shape of its image'),
@@ -49,7 +58,7 @@ describe('ImageLayoutOptions', () => {
 
   it('allows orientation otherwise, without the hint', async () => {
     await render(options());
-    await fireEvent.press(screen.getByLabelText('Landscape'));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Landscape' }));
     expect(onChange).toHaveBeenCalledWith({ ...value, orientation: 'landscape' });
     expect(screen.queryByText(/shape of its image/)).toBeNull();
   });

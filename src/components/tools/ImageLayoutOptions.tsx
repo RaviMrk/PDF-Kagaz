@@ -1,7 +1,7 @@
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
-import { SegmentedControl } from '@/components/SegmentedControl';
+import { ChoiceChips } from '@/components/ChoiceChips';
 import type {
   ImageLayoutOptions as Layout,
   MarginOption,
@@ -35,43 +35,40 @@ export function ImageLayoutOptions({
   return (
     <View style={styles.root}>
       {label('layout.pageSize')}
-      <View style={styles.row}>
-        <SegmentedControl<PageSizeOption>
-          options={[
-            { key: 'a4', label: t('layout.a4') },
-            { key: 'letter', label: t('layout.letter') },
-            { key: 'fit', label: t('layout.fit') },
-          ]}
-          value={value.pageSize}
-          onChange={(pageSize) => onChange({ ...value, pageSize })}
-        />
-      </View>
+      <ChoiceChips<PageSizeOption>
+        label={t('layout.pageSize')}
+        options={[
+          { key: 'a4', label: t('layout.a4') },
+          { key: 'letter', label: t('layout.letter') },
+          { key: 'fit', label: t('layout.fit') },
+        ]}
+        value={value.pageSize}
+        onChange={(pageSize) => onChange({ ...value, pageSize })}
+      />
       {label('layout.orientation')}
-      <View style={styles.row}>
-        <SegmentedControl<OrientationOption>
-          options={[
-            { key: 'auto', label: t('layout.auto') },
-            { key: 'portrait', label: t('layout.portrait') },
-            { key: 'landscape', label: t('layout.landscape') },
-          ]}
-          value={value.orientation}
-          disabled={fit}
-          onChange={(orientation) => onChange({ ...value, orientation })}
-        />
-      </View>
+      <ChoiceChips<OrientationOption>
+        label={t('layout.orientation')}
+        options={[
+          { key: 'auto', label: t('layout.auto') },
+          { key: 'portrait', label: t('layout.portrait') },
+          { key: 'landscape', label: t('layout.landscape') },
+        ]}
+        value={value.orientation}
+        disabled={fit}
+        onChange={(orientation) => onChange({ ...value, orientation })}
+      />
       {fit ? <Text style={{ color: colors.textMuted }}>{t('layout.fitHint')}</Text> : null}
       {label('layout.margins')}
-      <View style={styles.row}>
-        <SegmentedControl<MarginOption>
-          options={[
-            { key: 'none', label: t('layout.marginNone') },
-            { key: 'small', label: t('layout.marginSmall') },
-            { key: 'large', label: t('layout.marginLarge') },
-          ]}
-          value={value.margin}
-          onChange={(margin) => onChange({ ...value, margin })}
-        />
-      </View>
+      <ChoiceChips<MarginOption>
+        label={t('layout.margins')}
+        options={[
+          { key: 'none', label: t('layout.marginNone') },
+          { key: 'small', label: t('layout.marginSmall') },
+          { key: 'large', label: t('layout.marginLarge') },
+        ]}
+        value={value.margin}
+        onChange={(margin) => onChange({ ...value, margin })}
+      />
       {label('layout.name')}
       <TextInput
         accessibilityLabel={t('layout.name')}
@@ -88,7 +85,6 @@ export function ImageLayoutOptions({
 
 const styles = StyleSheet.create({
   root: { gap: 6 },
-  row: { flexDirection: 'row' },
   label: { fontWeight: '600' },
   input: { minHeight: 48, borderWidth: 1, borderRadius: 8, paddingHorizontal: 12 },
 });

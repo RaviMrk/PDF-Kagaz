@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
-import { SegmentedControl } from '@/components/SegmentedControl';
+import { ChoiceChips } from '@/components/ChoiceChips';
 import type { ImageFilter } from '@/services/native/pdfNative';
 import { useTheme } from '@/theme/useTheme';
 
@@ -13,23 +13,21 @@ export function ImageFilterControl({ value, onChange }: Props) {
   return (
     <View style={styles.root}>
       <Text style={[styles.label, { color: colors.text }]}>{t('scan.filter')}</Text>
-      <View style={styles.row}>
-        <SegmentedControl<ImageFilter>
-          options={[
-            { key: 'colour', label: t('scan.filterColour') },
-            { key: 'greyscale', label: t('scan.filterGreyscale') },
-            { key: 'bw', label: t('scan.filterBw') },
-          ]}
-          value={value}
-          onChange={onChange}
-        />
-      </View>
+      <ChoiceChips<ImageFilter>
+        label={t('scan.filter')}
+        options={[
+          { key: 'colour', label: t('scan.filterColour') },
+          { key: 'greyscale', label: t('scan.filterGreyscale') },
+          { key: 'bw', label: t('scan.filterBw') },
+        ]}
+        value={value}
+        onChange={onChange}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { gap: 4 },
-  row: { flexDirection: 'row' },
   label: { fontWeight: '600' },
 });

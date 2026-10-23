@@ -12,9 +12,11 @@ describe('ImageFilterControl', () => {
   it('reports the chosen filter', async () => {
     const onChange = jest.fn();
     await render(<ImageFilterControl value="colour" onChange={onChange} />);
-    await fireEvent.press(screen.getByLabelText('Black & white'));
+    expect(screen.getByLabelText('Filter').props.accessibilityRole).toBe('radiogroup');
+    expect(screen.getByRole('radio', { name: 'Colour' })).toBeChecked();
+    await fireEvent.press(screen.getByRole('radio', { name: 'Black & white' }));
     expect(onChange).toHaveBeenCalledWith('bw');
-    await fireEvent.press(screen.getByLabelText('Greyscale'));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Greyscale' }));
     expect(onChange).toHaveBeenCalledWith('greyscale');
   });
 });
