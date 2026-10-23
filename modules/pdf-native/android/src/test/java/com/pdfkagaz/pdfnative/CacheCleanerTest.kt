@@ -40,6 +40,7 @@ class CacheCleanerTest {
         f.parentFile!!.mkdirs()
         f.writeBytes(ByteArray(bytes))
         f.setLastModified(now - age)
+        f.parentFile!!.setLastModified(now - age)
       }
       make("thumbs/a.jpg", 0)
       make("reader/old.pdf", 700_000)
@@ -62,5 +63,74 @@ class CacheCleanerTest {
     } finally {
       root.deleteRecursively()
     }
+  }
+
+  private fun tree(block: (java.io.File, Long) -> Unit) {
+    val root = kotlin.io.path.createTempDirectory("cache").toFile()
+    try {
+      block(root, 10_000_000L)
+    } finally {
+      root.deleteRecursively()
+    }
+  }
+
+  private fun put(root: java.io.File, path: String, mtime: Long) {
+    val f = java.io.File(root, path)
+    f.parentFile!!.mkdirs()
+    f.writeBytes(ByteArray(10))
+    f.setLastModified(mtime)
+  }
+
+  @Test fun shareCopyWithFreshDirectoryIsKeptWholeAsAUnit() = tree { root, now ->
+    put(root, "share/h/a.pdf", now - 700_000)
+    java.io.File(root, "share/h").setLastModified(now - 1_000) // re-shared: only the dir was touched
+    assertEquals(0L, CacheCleaner.clear(root, now))
+    assertTrue(java.io.File(root, "share/h/a.pdf").exists())
+  }
+
+  @Test fun shareCopyWithFreshChildIsKept() = tree { root, now ->
+    put(root, "share/h/a.pdf", now - 1_000)
+    java.io.File(root, "share/h").setLastModified(now - 700_000)
+    CacheCleaner.clear(root, now)
+    assertTrue(java.io.File(root, "share/h/a.pdf").exists())
+  }
+
+  @Test fun oldShareDirectoryIsRemovedWhole() = tree { root, now ->
+    put(root, "share/h/a.pdf", now - 700_000)
+    java.io.File(root, "share/h").setLastModified(now - 700_000)
+    assertEquals(10L, CacheCleaner.clear(root, now))
+    assertFalse(java.io.File(root, "share/h").exists())
+  }
+
+  @Test fun emptiedNestedDirectoryIsRemoved() = tree { root, now ->
+    put(root, "thumbs/s1/a.jpg", 0)
+    CacheCleaner.clear(root, now)
+    assertFalse(java.io.File(root, "thumbs/s1").exists())
+    assertTrue(java.io.File(root, "thumbs").exists())
+  }
+
+  @Test fun symlinkedTopLevelDirIsNotWalked() = tree { root, now ->
+    val outside = kotlin.io.path.createTempDirectory("outside").toFile()
+    try {
+      put(outside, "x.jpg", 0)
+      try {
+        java.nio.file.Files.createSymbolicLink(java.io.File(root, "thumbs").toPath(), outside.toPath())
+      } catch (e: Exception) {
+        return@tree // JVM cannot create symlinks here
+      }
+      assertEquals(0L, CacheCleaner.clear(root, now))
+      assertTrue(java.io.File(outside, "x.jpg").exists())
+    } finally {
+      outside.deleteRecursively()
+    }
+  }
+
+  @Test fun touchMarksACopyAsRecentlyUsed() = tree { root, now ->
+    put(root, "reader/x.pdf", 0)
+    val f = java.io.File(root, "reader/x.pdf")
+    CacheCleaner.touch(f, now)
+    assertEquals(now, f.lastModified() / 1000 * 1000)
+    assertEquals(0L, CacheCleaner.clear(root, now))
+    assertTrue(f.exists())
   }
 }

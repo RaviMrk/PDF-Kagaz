@@ -28,7 +28,13 @@ class PdfIntents(private val context: Context) {
       val stat = RenderSupport.statOrThrow(context, parsed)
       if (parsed.scheme != "file") return@withContext parsed
       val source = File(parsed.path ?: throw FileNotFoundCodedException())
-      val file = if (ShareablePaths.isInside(source.path, guard.readerDir)) source else ShareFiles(context).copyOf(source, stat)
+      val file = if (ShareablePaths.isInside(source.path, guard.readerDir)) {
+        // The reader copy is in use by another app now: Clear cache keeps it for 10 minutes.
+        CacheCleaner.touch(source, System.currentTimeMillis())
+        source
+      } else {
+        ShareFiles(context).copyOf(source, stat)
+      }
       try {
         FileProvider.getUriForFile(context, "${context.packageName}$AUTHORITY_SUFFIX", file)
       } catch (e: IllegalArgumentException) {

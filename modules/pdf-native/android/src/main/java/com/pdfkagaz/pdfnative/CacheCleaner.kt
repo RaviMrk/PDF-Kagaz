@@ -26,15 +26,67 @@ object CacheCleaner {
   fun keepRecentReader(relativePath: String, lastModifiedMs: Long, nowMs: Long): Boolean =
     relativePath.startsWith("reader/") && nowMs - lastModifiedMs < SHARE_MIN_AGE_MS
 
+  /** Marks a copy as in use now, so the age rules keep it. */
+  fun touch(file: File, nowMs: Long) {
+    try {
+      file.setLastModified(nowMs)
+    } catch (_: SecurityException) {
+      // Best effort.
+    }
+  }
+
   /** Deletes the eligible files under [cacheDir] and returns the bytes freed. Per-file errors are skipped. */
   fun clear(cacheDir: File, nowMs: Long): Long {
     var freed = 0L
+    val base = try {
+      cacheDir.canonicalPath
+    } catch (_: java.io.IOException) {
+      return 0L
+    }
     for (name in CLEARED_DIRS) {
       val dir = File(cacheDir, name)
-      if (!dir.isDirectory) continue
-      freed += clearDir(dir, name, nowMs)
+      // A symlinked or otherwise relocated top-level directory is never walked.
+      val inside = try {
+        dir.isDirectory && dir.canonicalPath == "$base/$name"
+      } catch (_: java.io.IOException) {
+        false
+      }
+      if (!inside) continue
+      freed += if (name == "share") clearShare(dir, nowMs) else clearDir(dir, name, nowMs)
     }
     return freed
+  }
+
+  /** Each share/<hash> entry is judged as a unit by its newest mtime (reuse only touches the directory). */
+  private fun clearShare(dir: File, nowMs: Long): Long {
+    var freed = 0L
+    for (entry in dir.listFiles() ?: return 0L) {
+      if (java.nio.file.Files.isSymbolicLink(entry.toPath())) continue
+      if (!shouldDelete("share/${entry.name}", newestMtime(entry), nowMs)) continue
+      val bytes = sizeOf(entry)
+      if (deleteTree(entry)) freed += bytes
+    }
+    return freed
+  }
+
+  private fun newestMtime(f: File): Long {
+    var newest = f.lastModified()
+    if (f.isDirectory && !java.nio.file.Files.isSymbolicLink(f.toPath())) {
+      for (c in f.listFiles() ?: emptyArray()) newest = maxOf(newest, newestMtime(c))
+    }
+    return newest
+  }
+
+  private fun sizeOf(f: File): Long =
+    if (java.nio.file.Files.isSymbolicLink(f.toPath())) 0L
+    else if (f.isDirectory) (f.listFiles() ?: emptyArray()).sumOf { sizeOf(it) }
+    else f.length()
+
+  private fun deleteTree(f: File): Boolean {
+    if (f.isDirectory && !java.nio.file.Files.isSymbolicLink(f.toPath())) {
+      for (c in f.listFiles() ?: emptyArray()) deleteTree(c)
+    }
+    return f.delete()
   }
 
   private fun clearDir(dir: File, relative: String, nowMs: Long): Long {
@@ -42,8 +94,8 @@ object CacheCleaner {
     val children = dir.listFiles() ?: return 0L
     for (child in children) {
       val childRelative = "$relative/${child.name}"
-      // Symlinks are never followed.
-      if (child.isDirectory && !java.nio.file.Files.isSymbolicLink(child.toPath())) {
+      val isLink = java.nio.file.Files.isSymbolicLink(child.toPath())
+      if (child.isDirectory && !isLink) {
         freed += clearDir(child, childRelative, nowMs)
         child.delete() // Only succeeds for a now-empty sub-directory.
         continue
@@ -51,7 +103,7 @@ object CacheCleaner {
       try {
         val modified = child.lastModified()
         if (!shouldDelete(childRelative, modified, nowMs) || keepRecentReader(childRelative, modified, nowMs)) continue
-        val length = child.length()
+        val length = if (isLink) 0L else child.length()
         if (child.delete()) freed += length
       } catch (_: SecurityException) {
         // Skipped.
