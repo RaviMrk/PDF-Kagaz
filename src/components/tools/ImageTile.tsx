@@ -42,9 +42,11 @@ export const ImageTile = memo(function ImageTile({
   useEffect(() => {
     let alive = true;
     const px = Math.min(MAX_THUMB_PX, Math.round(TILE_DP * PixelRatio.get()));
-    void imageThumbnail(sessionId, index, px, filter).then((done) => {
-      if (alive) setResult({ id, uri: done });
-    });
+    imageThumbnail(sessionId, index, px, filter)
+      .catch(() => null)
+      .then((done) => {
+        if (alive) setResult({ id, uri: done });
+      });
     return () => {
       alive = false;
     };

@@ -20,16 +20,21 @@ const mk = (n: number): ImageItem => ({
 });
 const [i0, i1, i2] = [mk(0), mk(1), mk(2)];
 const onReorder = jest.fn();
-const onRemove = jest.fn();
+const onTileToggle = jest.fn();
 
-const grid = (kind: 'image' | 'page' = 'image', filter: 'colour' | 'bw' = 'colour') => (
+const grid = (
+  kind: 'image' | 'page' = 'image',
+  filter: 'colour' | 'bw' = 'colour',
+  selectedKey: string | null = null,
+) => (
   <ImageGrid
     sessionId="img-s"
     items={[i0, i1, i2]}
     filter={filter}
     kind={kind}
+    selectedKey={selectedKey}
+    onTileToggle={onTileToggle}
     onReorder={onReorder}
-    onRemove={onRemove}
   />
 );
 
@@ -58,34 +63,34 @@ describe('ImageGrid', () => {
     expect(onReorder).toHaveBeenCalledWith(['i2', 'i0', 'i1']);
   });
 
-  it('moves the selected image earlier', async () => {
-    await render(grid());
-    await fireEvent.press(screen.getByLabelText('Image 2 of 3'));
-    await fireEvent.press(screen.getByLabelText('Move image 2 earlier'));
-    expect(onReorder).toHaveBeenCalledWith(['i1', 'i0', 'i2']);
+  it('reports a tapped tile and exposes the selected state', async () => {
+    await render(grid('image', 'colour', 'i1'));
+    expect(screen.getByLabelText('Image 2 of 3')).toBeSelected();
+    expect(screen.getByLabelText('Image 1 of 3')).not.toBeSelected();
+    await fireEvent.press(screen.getByLabelText('Image 3 of 3'));
+    expect(onTileToggle).toHaveBeenCalledWith('i2');
   });
 
-  it('moves the selected image later', async () => {
+  it('renders no action bar', async () => {
     await render(grid());
-    await fireEvent.press(screen.getByLabelText('Image 1 of 3'));
-    await fireEvent.press(screen.getByLabelText('Move image 1 later'));
-    expect(onReorder).toHaveBeenCalledWith(['i1', 'i0', 'i2']);
+    expect(screen.queryByLabelText(/Remove/)).toBeNull();
   });
 
-  it('removes the selected image', async () => {
+  it('shows the placeholder when the thumbnail request rejects', async () => {
+    thumb.mockRejectedValue(new Error('x'));
     await render(grid());
-    await fireEvent.press(screen.getByLabelText('Image 2 of 3'));
-    await fireEvent.press(screen.getByLabelText('Remove image 2'));
-    expect(onRemove).toHaveBeenCalledWith('i1');
+    expect(screen.getAllByTestId('image-placeholder')).toHaveLength(3);
   });
 
-  it('disables the actions until something is selected', async () => {
-    await render(grid());
-    await fireEvent.press(screen.getByLabelText('Move image  earlier'));
-    await fireEvent.press(screen.getByLabelText('Remove image '));
-    expect(onReorder).not.toHaveBeenCalled();
-    expect(onRemove).not.toHaveBeenCalled();
-    expect(screen.getByLabelText('Remove image ')).toBeDisabled();
+  it('ignores a thumbnail that arrives after unmount', async () => {
+    let done: (u: string) => void = () => {};
+    thumb.mockReturnValue(new Promise<string>((r) => (done = r)));
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const view = await render(grid());
+    await view.unmount();
+    await act(async () => done('file:///late.jpg'));
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
   });
 
   it('requests thumbnails and re-requests them when the filter changes', async () => {
@@ -94,7 +99,7 @@ describe('ImageGrid', () => {
     const width = thumb.mock.calls[0]?.[2] as number;
     expect(width).toBeLessThanOrEqual(320);
     await act(async () => {
-      view.rerender(<I18nextProvider i18n={i18n}>{grid('image', 'bw')}</I18nextProvider>);
+      await view.rerender(<I18nextProvider i18n={i18n}>{grid('image', 'bw')}</I18nextProvider>);
     });
     expect(thumb).toHaveBeenCalledWith('img-s', 0, expect.any(Number), 'bw');
   });

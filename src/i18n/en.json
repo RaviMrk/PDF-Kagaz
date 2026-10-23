@@ -375,7 +375,10 @@
     "moveEarlier": "Move image {{n}} earlier",
     "moveLater": "Move image {{n}} later",
     "remove": "Remove image {{n}}",
-    "selectHint": "Tap an image to move or remove it. Long-press to drag."
+    "selectHint": "Tap an image to move or remove it. Long-press to drag.",
+    "moveEarlierNone": "Move selected image earlier",
+    "moveLaterNone": "Move selected image later",
+    "removeNone": "Remove selected image"
   },
   "scan": {
     "page": "Page {{n}}",
@@ -387,7 +390,10 @@
     "filter": "Filter",
     "filterColour": "Colour",
     "filterGreyscale": "Greyscale",
-    "filterBw": "Black & white"
+    "filterBw": "Black & white",
+    "moveEarlierNone": "Move selected page earlier",
+    "moveLaterNone": "Move selected page later",
+    "removeNone": "Remove selected page"
   },
   "layout": {
     "pageSize": "Page size",
