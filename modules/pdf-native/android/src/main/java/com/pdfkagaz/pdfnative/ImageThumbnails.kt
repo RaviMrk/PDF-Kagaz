@@ -17,7 +17,8 @@ class ImageThumbnails(private val context: Context) {
       if (!ImageFilters.isValid(filter)) throw InvalidNameException()
       val source = ImageFiles.sourceFile(context, sessionId, index)
       val w = width.coerceIn(1, ImageLimits.THUMB_MAX_WIDTH)
-      val dir = File(context.cacheDir, ToolPaths.THUMB_DIR).apply { mkdirs() }
+      // Per session, so the thumbnails go when the session is cleaned (ToolFiles.cleanWorkspace).
+      val dir = File(context.cacheDir, ToolPaths.sessionThumbDir(sessionId) ?: throw InvalidNameException()).apply { mkdirs() }
       val key = ThumbKey.of(Uri.fromFile(source).toString(), source.length(), source.lastModified(), index, w)
       val target = File(dir, "$key-$filter.jpg")
       lock.withLock {

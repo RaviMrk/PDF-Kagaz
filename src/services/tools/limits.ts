@@ -20,3 +20,11 @@ export const IMAGES_MAX = 100;
 export const IMAGE_MAX_BYTES = 52_428_800;
 export const IMAGE_MAX_LONG_SIDE_PX = 2400;
 export const IMAGE_JPEG_QUALITY = 85;
+
+/**
+ * Images and scans: a prepared page over its share of `JS_MAX_TOTAL_BYTES × IMAGE_TOTAL_BUDGET`
+ * (what is left, split over the pages left) is prepared once more at this smaller size and quality.
+ */
+export const IMAGE_TOTAL_BUDGET = 0.95;
+export const IMAGE_SMALLER_LONG_SIDE_PX = 1600;
+export const IMAGE_SMALLER_JPEG_QUALITY = 75;

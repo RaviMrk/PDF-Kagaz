@@ -1,4 +1,4 @@
-import type { ImportedImage } from '@/services/native/pdfNative';
+import type { ImportedImage, PickedImageUris } from '@/services/native/pdfNative';
 import { nativeError } from '@/test-utils/fakePdfNative';
 
 import {
@@ -21,7 +21,7 @@ const imported = (index: number): ImportedImage => ({
 function fakes() {
   const native = {
     createToolWorkspace: jest.fn((id: string) => Promise.resolve(`file:///cache/tools/${id}`)),
-    pickImages: jest.fn((_max: number) => Promise.resolve<string[]>([])),
+    pickImages: jest.fn((_max: number) => Promise.resolve<PickedImageUris>(picked([]))),
     importImage: jest.fn((_uri: string, _session: string, index: number, _max: number) =>
       Promise.resolve(imported(index)),
     ),
@@ -36,6 +36,8 @@ function fakes() {
 }
 
 const uris = (n: number) => Array.from({ length: n }, (_, i) => `content://picker/${i}`);
+/** The native result: the picks kept (at most `max`) and how many over `max` were dropped. */
+const picked = (kept: string[], dropped = 0): PickedImageUris => ({ uris: kept, dropped });
 
 describe('imageSession', () => {
   it('makes session ids the native workspace accepts', () => {
@@ -60,7 +62,7 @@ describe('imageSession', () => {
 
   it('imports picks in order at consecutive indices and keys them', async () => {
     const { native, deps } = fakes();
-    native.pickImages.mockResolvedValueOnce(uris(2));
+    native.pickImages.mockResolvedValueOnce(picked(uris(2)));
     const result = await addPickedImages('img-a', 4, 4, deps);
     expect(native.importImage.mock.calls).toEqual([
       ['content://picker/0', 'img-a', 4, 52_428_800],
@@ -76,9 +78,23 @@ describe('imageSession', () => {
     });
   });
 
-  it('drops picks over the limit and says so', async () => {
+  it('says so when the picker dropped picks over the limit', async () => {
     const { native, deps } = fakes();
-    native.pickImages.mockResolvedValueOnce(uris(5));
+    // The fallback picker has no item limit: native keeps the first 3 and reports the other 2.
+    native.pickImages.mockResolvedValueOnce(picked(uris(3), 2));
+    const result = await addPickedImages('img-a', 97, 97, deps);
+    expect(native.importImage.mock.calls.map((c) => [c[0], c[2]])).toEqual([
+      ['content://picker/0', 97],
+      ['content://picker/1', 98],
+      ['content://picker/2', 99],
+    ]);
+    expect(result.limited).toBe(true);
+    expect(result.items.map((i) => i.index)).toEqual([97, 98, 99]);
+  });
+
+  it('still drops picks over the limit if more come back than asked for', async () => {
+    const { native, deps } = fakes();
+    native.pickImages.mockResolvedValueOnce(picked(uris(5)));
     const result = await addPickedImages('img-a', 97, 97, deps);
     expect(native.importImage.mock.calls.map((c) => [c[0], c[2]])).toEqual([
       ['content://picker/0', 97],
@@ -91,7 +107,7 @@ describe('imageSession', () => {
 
   it('counts an image that cannot be imported and keeps the others', async () => {
     const { native, deps } = fakes();
-    native.pickImages.mockResolvedValueOnce(uris(3));
+    native.pickImages.mockResolvedValueOnce(picked(uris(3)));
     native.importImage
       .mockImplementationOnce((_u, _s, i) => Promise.resolve(imported(i)))
       .mockRejectedValueOnce(nativeError('ERR_IMAGE_INVALID'));
@@ -103,7 +119,7 @@ describe('imageSession', () => {
 
   it('sizes the picker by the count and numbers imports from the next free index', async () => {
     const { native, deps } = fakes();
-    native.pickImages.mockResolvedValueOnce(uris(2));
+    native.pickImages.mockResolvedValueOnce(picked(uris(2)));
     const result = await addPickedImages('img-a', 3, 2, deps);
     expect(native.pickImages).toHaveBeenCalledWith(98);
     expect(result.items.map((i) => i.index)).toEqual([3, 4]);
@@ -111,7 +127,7 @@ describe('imageSession', () => {
 
   it('can add into freed capacity after failed imports', async () => {
     const { native, deps } = fakes();
-    native.pickImages.mockResolvedValueOnce(uris(5));
+    native.pickImages.mockResolvedValueOnce(picked(uris(5)));
     const result = await addPickedImages('img-a', 100, 95, deps);
     expect(native.pickImages).toHaveBeenCalledWith(5);
     expect(result.items).toHaveLength(5);

@@ -29,8 +29,11 @@ object ScanResults {
    * True for a file strictly inside cacheDir/[SCANNER_CACHE_DIR]/ (any depth, no "." or ".."
    * segments) last modified before [cutoffMs]: a scan page a previous process never deleted.
    */
-  fun isStaleScannerLeftover(cacheDir: String, canonicalPath: String, lastModifiedMs: Long, cutoffMs: Long): Boolean {
-    if (lastModifiedMs >= cutoffMs) return false
+  fun isStaleScannerLeftover(cacheDir: String, canonicalPath: String, lastModifiedMs: Long, cutoffMs: Long): Boolean =
+    lastModifiedMs < cutoffMs && isScannerCacheFile(cacheDir, canonicalPath)
+
+  /** True for a path strictly inside cacheDir/[SCANNER_CACHE_DIR]/ (any depth, no "." or ".." segments). */
+  fun isScannerCacheFile(cacheDir: String, canonicalPath: String): Boolean {
     val prefix = "${cacheDir.trimEnd('/')}/$SCANNER_CACHE_DIR/"
     if (!canonicalPath.startsWith(prefix)) return false
     val segments = canonicalPath.substring(prefix.length).split('/')

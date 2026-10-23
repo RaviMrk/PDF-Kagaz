@@ -86,4 +86,13 @@ class ToolPathsTest {
     assertEquals("page-0.jpg", ToolPaths.pageName(0))
     assertTrue(ToolPaths.isWorkspaceFile(root, "$root/img-a/src-3"))
   }
+
+  @Test
+  fun imageSessionThumbnailsLiveInAFolderOfTheirSession() {
+    assertEquals("tool-thumbs/img-lq3x9-ab12cd", ToolPaths.sessionThumbDir("img-lq3x9-ab12cd"))
+    // Tool jobs (organiser thumbnails) and invalid ids have no session folder.
+    assertEquals(null, ToolPaths.sessionThumbDir("lq3x9-ab12cd"))
+    assertEquals(null, ToolPaths.sessionThumbDir("img-../x"))
+    assertEquals(null, ToolPaths.sessionThumbDir("img-A"))
+  }
 }

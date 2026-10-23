@@ -100,10 +100,11 @@ class ToolFiles(private val context: Context) {
     }
   }
 
-  /** Deletes cacheDir/tools/<jobId>; an invalid id is a no-op. */
+  /** Deletes cacheDir/tools/<jobId> and, for an image session, its thumbnails; an invalid id is a no-op. */
   suspend fun cleanWorkspace(jobId: String): Unit = RenderSupport.mapErrors {
     withContext(Dispatchers.IO) {
       jobDir(jobId)?.deleteRecursively()
+      ToolPaths.sessionThumbDir(jobId)?.let { File(context.cacheDir, it).deleteRecursively() }
       Unit
     }
   }
@@ -288,6 +289,24 @@ class ToolFiles(private val context: Context) {
       file.isFile &&
         ScanResults.isStaleScannerLeftover(cacheDir, file.canonicalPath, file.lastModified(), cutoff) &&
         file.delete()
+    }
+  }
+
+  /**
+   * Deletes every file in cacheDir/mlkit_docscan_ui_client/ ([ScanResults.isScannerCacheFile]),
+   * whatever its age, unless a scan import is reading from it ([ScanImports]): pages of a scan
+   * whose result reached no waiting call (activity recreated mid-scan). Returns how many.
+   */
+  suspend fun sweepScannerCache(): Int = withContext(Dispatchers.IO) {
+    quietly {
+      ScanImports.sweepIfIdle {
+        val root = File(context.cacheDir, ScanResults.SCANNER_CACHE_DIR)
+        if (!root.isDirectory) return@sweepIfIdle 0
+        val cacheDir = context.cacheDir.canonicalPath
+        root.walkBottomUp().count { file ->
+          file.isFile && ScanResults.isScannerCacheFile(cacheDir, file.canonicalPath) && file.delete()
+        }
+      }
     }
   }
 

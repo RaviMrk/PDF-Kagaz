@@ -19,21 +19,21 @@ internal data class PickImagesInput(val max: Int) : Serializable
 /**
  * The system photo picker, images only: ACTION_PICK_IMAGES where available (API 33+, or API 30+
  * with SDK extension 2), else androidx's fallback (ACTION_OPEN_DOCUMENT for images). Needs no media
- * permission; no persistable grant is taken. Returns the picked URIs ([PickerResults]), empty when
- * cancelled.
+ * permission; no persistable grant is taken. Returns the first [PickImagesInput.max] picked URIs and
+ * how many more were dropped ([PickerResults.limited]); empty when cancelled.
  */
-internal class PickImagesContract : AppContextActivityResultContract<PickImagesInput, List<String>> {
+internal class PickImagesContract : AppContextActivityResultContract<PickImagesInput, PickerResults.Limited> {
   override fun createIntent(context: Context, input: PickImagesInput): Intent {
     val request = PickVisualMediaRequest(PickVisualMedia.ImageOnly)
     if (input.max <= 1) return PickVisualMedia().createIntent(context, request)
     return PickMultipleVisualMedia(maxItems(input.max)).createIntent(context, request)
   }
 
-  override fun parseResult(input: PickImagesInput, resultCode: Int, intent: Intent?): List<String> {
-    if (resultCode != Activity.RESULT_OK || intent == null) return emptyList()
+  override fun parseResult(input: PickImagesInput, resultCode: Int, intent: Intent?): PickerResults.Limited {
+    if (resultCode != Activity.RESULT_OK || intent == null) return PickerResults.Limited(emptyList(), 0)
     val clip = intent.clipData
     val items = if (clip == null) emptyList() else (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri?.toString() }
-    return PickerResults.urisOf(intent.dataString, items, input.max)
+    return PickerResults.limited(intent.dataString, items, input.max)
   }
 
   /** PickMultipleVisualMedia needs at least 2 and, on the system picker, at most its own limit. */

@@ -1,4 +1,5 @@
 import { act, fireEvent } from '@testing-library/react-native';
+import { router } from 'expo-router';
 import { renderRouter, screen } from 'expo-router/testing-library';
 import path from 'path';
 
@@ -31,6 +32,7 @@ let outcomeOf: jest.Mock<JobView, [string]>;
 let markSeen: jest.Mock;
 let retry: jest.Mock<StartResult>;
 let cancel: jest.Mock;
+let dismiss: jest.Mock;
 
 const done = (outcome: ToolOutcome): JobView => ({ kind: 'done', toolId: 'merge', outcome });
 
@@ -61,6 +63,7 @@ describe('result screen', () => {
     markSeen = jest.fn();
     retry = jest.fn((): StartResult => ({ ok: true, jobId: 'j2' }));
     cancel = jest.fn();
+    dismiss = jest.fn();
     useToolJobs.setState({
       active: null,
       last: null,
@@ -68,6 +71,7 @@ describe('result screen', () => {
       markSeen,
       retry,
       cancel,
+      dismiss,
       inputNameOf,
     });
   });
@@ -258,6 +262,45 @@ describe('result screen', () => {
     expect(
       screen.getByText("An image is damaged or in a format that isn't supported"),
     ).toBeTruthy();
+  });
+
+  it('explains image jobs over the size cap with images copy', async () => {
+    outcomeOf.mockReturnValue({
+      kind: 'done',
+      toolId: 'images-to-pdf',
+      outcome: { ok: false, failure: 'totalTooLarge', inputIndex: null, outputs: [] },
+    });
+    await open();
+    expect(
+      screen.getByText('These images are too large together for one PDF. Use fewer images.'),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Merge fewer files/)).toBeNull();
+  });
+
+  it('dismisses a failed job when Close leaves, never on retry', async () => {
+    const replace = jest.spyOn(router, 'replace').mockImplementation(() => {});
+    outcomeOf.mockReturnValue({
+      kind: 'done',
+      toolId: 'scan',
+      outcome: { ok: false, failure: 'io', inputIndex: null, outputs: [] },
+    });
+    retry.mockReturnValueOnce({ ok: false, reason: 'busy' });
+    await open();
+    await press('Try again');
+    expect(dismiss).not.toHaveBeenCalled();
+    await press('Close');
+    expect(dismiss).toHaveBeenCalledWith('j1');
+    expect(replace).toHaveBeenCalledWith('/home');
+    replace.mockRestore();
+  });
+
+  it('dismisses a finished job when Done leaves', async () => {
+    const replace = jest.spyOn(router, 'replace').mockImplementation(() => {});
+    outcomeOf.mockReturnValue(done({ ok: true, outputs: [merged] }));
+    await open();
+    await press('Done');
+    expect(dismiss).toHaveBeenCalledWith('j1');
+    replace.mockRestore();
   });
 
   it('says when the result is gone', async () => {

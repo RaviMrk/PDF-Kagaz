@@ -71,6 +71,11 @@ export type ToolJobsState = {
    * replaces a job of this process. Errors are ignored.
    */
   recoverInterrupted(jobId: string): void;
+  /**
+   * The user left the result of `jobId` (Done / Close) without retrying: a failed or cancelled
+   * image job's kept session is deleted, and a later retry reports `gone`.
+   */
+  dismiss(jobId: string): void;
   /** Name of the input a failure points at (this process's last job only); null when unknown. */
   inputNameOf(jobId: string, inputIndex: number | null): string | null;
 };
@@ -204,9 +209,26 @@ function resultOf(outcome: ToolOutcome, now: number): JobResult {
   return { status: 'failed', error: outcome.failure, outputIds, now };
 }
 
+/** The image session `last` keeps for "Try again" (a failed or cancelled image job), else null. */
+function keptSession(last: FinishedJob | null): string | null {
+  const request = last?.request;
+  if (!last || last.outcome.ok || !request || !isImagesRequest(request)) return null;
+  return request.sessionId;
+}
+
 export function createToolJobStore(deps: ToolJobStoreDeps) {
   return create<ToolJobsState>()((set, get) => {
     let controller: AbortController | null = null;
+    /** The request of the running job (its session must never be deleted under it). */
+    let running: ToolRequest | null = null;
+
+    function cleanSession(sessionId: string) {
+      try {
+        deps.cleanSession(sessionId).catch(() => {});
+      } catch {
+        // Left for cleanupToolLeftovers at the next start.
+      }
+    }
 
     function finish(jobId: string, request: ToolRequest, outcome: ToolOutcome) {
       try {
@@ -220,14 +242,14 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
         if (id !== undefined) useFiles.getState().dropMissing(id);
       }
       // The session is kept after a failure or cancel, so "Try again" can use it in this process.
-      if (outcome.ok && isImagesRequest(request)) {
-        try {
-          deps.cleanSession(request.sessionId).catch(() => {});
-        } catch {
-          // Left for cleanupToolLeftovers at the next start.
-        }
+      if (outcome.ok && isImagesRequest(request)) cleanSession(request.sessionId);
+      // The job this one replaces as `last` can no longer be retried: its kept session goes.
+      const previous = keptSession(get().last);
+      if (previous !== null && !(isImagesRequest(request) && request.sessionId === previous)) {
+        cleanSession(previous);
       }
       controller = null;
+      running = null;
       set({
         active: null,
         last: {
@@ -257,6 +279,7 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
       }
       const ac = new AbortController();
       controller = ac;
+      running = request;
       set({ active: { jobId, toolId: request.toolId, phase: 'preparing', fraction: 0 } });
 
       let appliedAt = Number.NEGATIVE_INFINITY;
@@ -339,6 +362,19 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
               ? (FAILURES.find((f) => f === row.error) ?? 'unknown')
               : 'interrupted';
         return { kind: 'done', toolId, outcome: { ok: false, failure, inputIndex: null, outputs } };
+      },
+
+      dismiss(jobId) {
+        const { last } = get();
+        if (last?.jobId !== jobId) return;
+        const session = keptSession(last);
+        if (session === null) return;
+        // A retry of this job is running on the same session.
+        if (running && isImagesRequest(running) && running.sessionId === session) return;
+        cleanSession(session);
+        // Without its request, a retry reads the row and reports the images `gone`.
+        const { request: _dropped, ...rest } = last;
+        set({ last: rest });
       },
 
       inputNameOf(jobId, inputIndex) {

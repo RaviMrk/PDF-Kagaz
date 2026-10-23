@@ -65,4 +65,16 @@ class ScanResultsTest {
     assertFalse(ScanResults.isStaleScannerLeftover(cache, "/data/user/0/p/files/mlkit_docscan_ui_client/1.jpg", old, cutoff))
     assertFalse(ScanResults.isStaleScannerLeftover(cache, "$cache/mlkit_docscan_ui_client/../tools/x", old, cutoff))
   }
+
+  @Test
+  fun scannerCacheFilesAreAnyFileStrictlyInsideTheScannerFolder() {
+    assertTrue(ScanResults.isScannerCacheFile(cache, "$cache/mlkit_docscan_ui_client/1.jpg"))
+    assertTrue(ScanResults.isScannerCacheFile("$cache/", "$cache/mlkit_docscan_ui_client/a/b.jpg"))
+    assertFalse(ScanResults.isScannerCacheFile(cache, "$cache/mlkit_docscan_ui_client"))
+    assertFalse(ScanResults.isScannerCacheFile(cache, "$cache/mlkit_docscan_ui_client/"))
+    assertFalse(ScanResults.isScannerCacheFile(cache, "$cache/mlkit_docscan_ui_client/../tools/img-a/src-0"))
+    assertFalse(ScanResults.isScannerCacheFile(cache, "$cache/mlkit_docscan_ui_clientx/1.jpg"))
+    assertFalse(ScanResults.isScannerCacheFile(cache, "$cache/tools/img-a/src-0"))
+    assertFalse(ScanResults.isScannerCacheFile(cache, "/data/user/0/p/files/mlkit_docscan_ui_client/1.jpg"))
+  }
 }

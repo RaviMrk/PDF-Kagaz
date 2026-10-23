@@ -553,4 +553,83 @@ describe('toolJobStore images and scans', () => {
       outcome: { ok: false, failure: 'imageInvalid', inputIndex: null, outputs: [] },
     });
   });
+
+  it('deletes a kept image session once another job finishes after it', async () => {
+    const s = setup();
+    s.store.getState().start(imagesReq, t);
+    s.calls[0]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    expect(s.cleanSession).not.toHaveBeenCalled();
+
+    // A later job of another tool replaces it as `last`: no retry can reach that session now.
+    s.store.getState().start(merge, t);
+    s.calls[1]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    expect(s.cleanSession.mock.calls).toEqual([['img-s1']]);
+
+    s.store.getState().start(merge, t);
+    s.calls[2]!.resolve({ ok: true, outputs: [] });
+    await flush();
+    expect(s.cleanSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the session while a retry of the same session fails again', async () => {
+    const s = setup();
+    const first = s.store.getState().start(imagesReq, t);
+    if (!first.ok) throw new Error('expected ok');
+    s.calls[0]!.resolve({ ok: false, failure: 'cancelled', inputIndex: null, outputs: [] });
+    await flush();
+    s.store.getState().retry(first.jobId, t);
+    s.calls[1]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    expect(s.cleanSession).not.toHaveBeenCalled();
+    // A new session's job replacing it cleans the old one.
+    s.store.getState().start({ ...imagesReq, sessionId: 'img-s2' }, t);
+    s.calls[2]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    expect(s.cleanSession.mock.calls).toEqual([['img-s1']]);
+  });
+
+  it('dismissing a failed image job deletes its session; retry then reports gone', async () => {
+    const s = setup();
+    const first = s.store.getState().start(imagesReq, t);
+    if (!first.ok) throw new Error('expected ok');
+    s.calls[0]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    s.store.getState().dismiss('other');
+    expect(s.cleanSession).not.toHaveBeenCalled();
+    s.store.getState().dismiss(first.jobId);
+    expect(s.cleanSession.mock.calls).toEqual([['img-s1']]);
+    expect(s.store.getState().retry(first.jobId, t)).toEqual({ ok: false, reason: 'gone' });
+    expect(s.run).toHaveBeenCalledTimes(1);
+    // Cleaned once: neither a second dismiss nor the next job cleans it again.
+    s.store.getState().dismiss(first.jobId);
+    s.store.getState().start(merge, t);
+    s.calls[1]!.resolve({ ok: true, outputs: [] });
+    await flush();
+    expect(s.cleanSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('dismiss leaves successful, running and non-image jobs alone', async () => {
+    const s = setup();
+    const ok = s.store.getState().start(imagesReq, t);
+    if (!ok.ok) throw new Error('expected ok');
+    s.calls[0]!.resolve({ ok: true, outputs: [] });
+    await flush();
+    s.cleanSession.mockClear();
+    s.store.getState().dismiss(ok.jobId);
+    const merged = s.store.getState().start(merge, t);
+    if (!merged.ok) throw new Error('expected ok');
+    s.calls[1]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    s.store.getState().dismiss(merged.jobId);
+    // A failed image job whose retry is running keeps its session.
+    const failed = s.store.getState().start(imagesReq, t);
+    if (!failed.ok) throw new Error('expected ok');
+    s.calls[2]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    s.store.getState().retry(failed.jobId, t);
+    s.store.getState().dismiss(failed.jobId);
+    expect(s.cleanSession).not.toHaveBeenCalled();
+  });
 });

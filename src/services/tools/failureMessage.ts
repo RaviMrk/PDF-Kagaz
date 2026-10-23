@@ -2,6 +2,7 @@ import { displayName } from '@/utils/displayName';
 
 import type { Translate } from './outputNames';
 import type { ToolFailure } from './toolJobRepo';
+import type { RunnableToolId } from './toolRegistry';
 
 /** Failures with a `toolError.<failure>Named` copy in en.json. */
 const NAMED: ReadonlySet<ToolFailure> = new Set([
@@ -25,13 +26,20 @@ export function failureMessage(
   return t(`toolError.${failure}`);
 }
 
-/** Copy for a finished job's failure: an interrupted job that saved files says so. */
+/**
+ * Copy for a finished job's failure: an interrupted job that saved files says so, and an image or
+ * scan job over the size cap gets images copy instead of the merge copy.
+ */
 export function jobFailureMessage(
   failure: ToolFailure,
   inputName: string | null,
   savedCount: number,
   t: Translate,
+  toolId: RunnableToolId,
 ): string {
   if (failure === 'interrupted' && savedCount > 0) return t('toolError.interruptedPartial');
+  if (failure === 'totalTooLarge' && (toolId === 'images-to-pdf' || toolId === 'scan')) {
+    return t('toolError.imagesTooLarge');
+  }
   return failureMessage(failure, inputName, t);
 }

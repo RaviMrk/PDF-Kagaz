@@ -21,6 +21,9 @@ import {
   checkInputSizes,
   IMAGE_JPEG_QUALITY,
   IMAGE_MAX_LONG_SIDE_PX,
+  IMAGE_SMALLER_JPEG_QUALITY,
+  IMAGE_SMALLER_LONG_SIDE_PX,
+  IMAGE_TOTAL_BUDGET,
   IMAGES_MAX,
   JS_MAX_FILE_BYTES,
   JS_MAX_TOTAL_BYTES,
@@ -249,15 +252,22 @@ export async function runTool(
   };
 
   /** Prepares session source `source` as page `index`, mapping its failure for this job. */
-  const prepare = async (request: ImagesRequest, source: number, index: number) => {
+  const prepare = async (
+    request: ImagesRequest,
+    source: number,
+    index: number,
+    longSidePx: number,
+    quality: number,
+  ) => {
+    let page: PreparedPage;
     try {
-      return await native.prepareImagePage(
+      page = await native.prepareImagePage(
         request.sessionId,
         source,
         jobId,
         index,
-        IMAGE_MAX_LONG_SIDE_PX,
-        IMAGE_JPEG_QUALITY,
+        longSidePx,
+        quality,
         request.filter,
       );
     } catch (e) {
@@ -266,6 +276,10 @@ export async function runTool(
       if (isPdfNativeError(e, 'ERR_FILE_NOT_FOUND')) throw new ToolRunFailure('imagesGone', null);
       throw new ToolRunFailure(toToolFailure(e), index);
     }
+    if (!Number.isFinite(page.sizeBytes) || page.sizeBytes < 0) {
+      throw new ToolRunFailure('unknown', index);
+    }
+    return page;
   };
 
   const runImages = async (request: ImagesRequest) => {
@@ -275,12 +289,21 @@ export async function runTool(
 
     onProgress('preparing', 0);
     const prepared: PreparedPage[] = [];
+    const budget = JS_MAX_TOTAL_BYTES * IMAGE_TOTAL_BUDGET;
     let total = 0;
     for (const [index, source] of request.images.entries()) {
       throwIfCancelled(signal);
-      const page = await prepare(request, source, index);
-      if (!Number.isFinite(page.sizeBytes) || page.sizeBytes < 0) {
-        throw new ToolRunFailure('unknown', index);
+      let page = await prepare(request, source, index, IMAGE_MAX_LONG_SIDE_PX, IMAGE_JPEG_QUALITY);
+      // Over its share of what is left: prepared once more, smaller (it overwrites the same page).
+      if (page.sizeBytes > (budget - total) / (n - index)) {
+        throwIfCancelled(signal);
+        page = await prepare(
+          request,
+          source,
+          index,
+          IMAGE_SMALLER_LONG_SIDE_PX,
+          IMAGE_SMALLER_JPEG_QUALITY,
+        );
       }
       // Bounded before any byte reaches JS.
       total += page.sizeBytes;

@@ -47,6 +47,9 @@ export type ImportedImage = { index: number; width: number; height: number; size
 /** A prepared page JPEG in a job workspace (`file://` uri); size is in pixels, upright. */
 export type PreparedPage = { uri: string; width: number; height: number; sizeBytes: number };
 
+/** Photo picker result: the picks kept (at most the requested max) and how many over it were dropped. */
+export type PickedImageUris = { uris: string[]; dropped: number };
+
 export type PickedFolder = { uri: string; label: string };
 
 /** A PDF shared to the app (ACTION_SEND) while it is running; `uri` is the shared stream. */

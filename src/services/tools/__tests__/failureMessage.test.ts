@@ -29,18 +29,26 @@ describe('failureMessage', () => {
 
 describe('jobFailureMessage', () => {
   it('says some files were saved when an interrupted job has outputs', () => {
-    expect(jobFailureMessage('interrupted', null, 2, t)).toBe(
+    expect(jobFailureMessage('interrupted', null, 2, t, 'split')).toBe(
       'The app was closed before this finished. Some files were already saved.',
     );
   });
   it('uses the plain interrupted copy when nothing was saved', () => {
-    expect(jobFailureMessage('interrupted', null, 0, t)).toBe(
+    expect(jobFailureMessage('interrupted', null, 0, t, 'merge')).toBe(
       'The app was closed before this finished.',
     );
   });
   it('falls back to failureMessage for other failures', () => {
-    expect(jobFailureMessage('encrypted', 'protected.pdf', 1, t)).toBe(
+    expect(jobFailureMessage('encrypted', 'protected.pdf', 1, t, 'merge')).toBe(
       failureMessage('encrypted', 'protected.pdf', t),
+    );
+  });
+  it('explains an over-cap image or scan job with images copy, not the merge copy', () => {
+    const images = 'These images are too large together for one PDF. Use fewer images.';
+    expect(jobFailureMessage('totalTooLarge', null, 0, t, 'images-to-pdf')).toBe(images);
+    expect(jobFailureMessage('totalTooLarge', null, 0, t, 'scan')).toBe(images);
+    expect(jobFailureMessage('totalTooLarge', null, 0, t, 'merge')).toBe(
+      'These files are over 100 MB together. Merge fewer files at a time.',
     );
   });
 });

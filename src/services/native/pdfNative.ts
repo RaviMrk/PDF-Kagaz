@@ -7,6 +7,7 @@ import type {
   IncomingPdfEvent,
   PdfFileInfo,
   PickedFolder,
+  PickedImageUris,
   PreparedPage,
   ReaderFile,
   ScanProgressEvent,
@@ -22,6 +23,7 @@ export type {
   IncomingPdfEvent,
   PdfFileInfo,
   PickedFolder,
+  PickedImageUris,
   PreparedPage,
   ReaderFile,
   ScanProgressEvent,
@@ -127,11 +129,13 @@ export interface PdfNativeApi {
    */
   pickPdfDocuments(multiple: boolean): Promise<string[]>;
   /**
-   * System photo picker, images only (`max` clamped to 1..IMAGES_MAX); resolves [] when cancelled.
-   * No media permission is used and no persistable grant is taken. Picks this app may not read are
-   * dropped; rejects with ERR_PERMISSION_DENIED when every picked image was refused.
+   * System photo picker, images only (`max` clamped to 1..IMAGES_MAX); `uris` is empty when
+   * cancelled. At most `max` picks are kept, in order; `dropped` counts the picks over `max` (the
+   * ACTION_OPEN_DOCUMENT fallback has no item limit). No media permission is used and no
+   * persistable grant is taken. Picks this app may not read are dropped silently; rejects with
+   * ERR_PERMISSION_DENIED when every kept image was refused.
    */
-  pickImages(max: number): Promise<string[]>;
+  pickImages(max: number): Promise<PickedImageUris>;
   /**
    * Google Play services document scanner (`pageLimit` clamped to 1..IMAGES_MAX). The scanned pages
    * are imported into the image session as sources `firstIndex`, `firstIndex + 1`… and returned in

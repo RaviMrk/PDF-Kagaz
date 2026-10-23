@@ -66,12 +66,14 @@ export async function addPickedImages(
   const remaining = IMAGES_MAX - count;
   if (remaining <= 0) return { items: [], failed: 0, limited: true };
   let uris: string[];
+  let dropped: number;
   try {
-    uris = await deps.native.pickImages(remaining);
+    ({ uris, dropped } = await deps.native.pickImages(remaining));
   } catch {
     return { items: [], failed: 0, limited: false };
   }
-  const limited = uris.length > remaining;
+  // The fallback picker has no item limit: native keeps the first `remaining` and counts the rest.
+  const limited = dropped > 0 || uris.length > remaining;
   const items: ImageItem[] = [];
   let failed = 0;
   for (const [k, uri] of uris.slice(0, remaining).entries()) {

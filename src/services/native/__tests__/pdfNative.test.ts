@@ -190,10 +190,16 @@ describe('pdfNative', () => {
   });
 
   it('forwards pickImages and scanDocument with every argument', async () => {
-    await expect(pdfNative.pickImages(100)).resolves.toEqual([]);
+    await expect(pdfNative.pickImages(100)).resolves.toEqual({ uris: [], dropped: 0 });
     expect(mockedModule.pickImages).toHaveBeenCalledWith(100);
-    mockedModule.pickImages.mockResolvedValueOnce(['content://media/picker/1']);
-    await expect(pdfNative.pickImages(3)).resolves.toEqual(['content://media/picker/1']);
+    mockedModule.pickImages.mockResolvedValueOnce({
+      uris: ['content://media/picker/1'],
+      dropped: 2,
+    });
+    await expect(pdfNative.pickImages(3)).resolves.toEqual({
+      uris: ['content://media/picker/1'],
+      dropped: 2,
+    });
     expect(mockedModule.pickImages).toHaveBeenLastCalledWith(3);
 
     await expect(pdfNative.scanDocument('img-a', 3, 97)).resolves.toEqual([]);

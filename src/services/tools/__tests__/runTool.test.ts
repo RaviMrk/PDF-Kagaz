@@ -674,6 +674,59 @@ describe('runTool images and scans', () => {
     spy.mockRestore();
   });
 
+  /** 100 photo-like pages: `first` bytes each at 2400 px / q85, `smaller` at any other size. */
+  const hundredPhotos = (first: number, smaller: number) => {
+    const s = imageSetup();
+    const real = s.native.prepareImagePage.getMockImplementation()!;
+    s.native.prepareImagePage.mockImplementation(async (...args) => ({
+      ...(await real(...args)),
+      sizeBytes: args[4] === 2400 && args[5] === 85 ? first : smaller,
+    }));
+    return s;
+  };
+  const hundred = (toolId: ImagesRequest['toolId'] = 'images-to-pdf') =>
+    images({ toolId, images: Array.from({ length: 100 }, () => 0) });
+
+  it('re-prepares a page over its share of the cap smaller, so 100 large photos still fit', async () => {
+    // 100 × 1.2 MiB = 120 MiB would exceed the 100 MiB cap at the first pass.
+    const s = hundredPhotos(1.2 * MIB, 0.6 * MIB);
+    const outcome = await s.run(hundred());
+    expect(outcome.ok).toBe(true);
+    const calls = s.native.prepareImagePage.mock.calls;
+    const smaller = calls.filter((c) => c[4] !== 2400);
+    expect(smaller.length).toBeGreaterThan(0);
+    // Each re-prepare is the same page once more, right after its first pass, at 1600 px / q75.
+    for (const [i, call] of calls.entries()) {
+      if (call[4] === 2400) continue;
+      expect(call).toEqual(['img-s1', 0, 'j1', calls[i - 1]![3], 1600, 75, 'colour']);
+      expect(calls[i - 1]!.slice(4, 6)).toEqual([2400, 85]);
+    }
+    expect(calls.length).toBe(100 + smaller.length);
+    // Pages are prepared in order, every page index 0..99.
+    const indices = calls.map((c) => c[3]);
+    expect(new Set(indices).size).toBe(100);
+    expect([...indices].sort((a, b) => a - b)).toEqual(indices);
+    const pages = await inspectPages(new Uint8Array(fs.readFileSync(s.published[0]!.path)));
+    expect(pages).toHaveLength(100);
+  });
+
+  it('keeps first-pass pages that fit their share of the cap', async () => {
+    const s = hundredPhotos(0.9 * MIB, 0.5 * MIB);
+    const outcome = await s.run(hundred());
+    expect(outcome.ok).toBe(true);
+    expect(s.native.prepareImagePage).toHaveBeenCalledTimes(100);
+  });
+
+  it('fails with totalTooLarge when even the smaller pages exceed the cap', async () => {
+    const spy = jest.spyOn(imagesToPdfModule, 'imagesToPdf');
+    const s = hundredPhotos(1.2 * MIB, 1.1 * MIB);
+    const outcome = await s.run(hundred('scan'));
+    expect(outcome).toEqual({ ok: false, failure: 'totalTooLarge', inputIndex: null, outputs: [] });
+    expect(spy).not.toHaveBeenCalled();
+    expect(s.native.publishToolOutput).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
   it('refuses no images, or more than 100, as badPages without native calls', async () => {
     const s = imageSetup();
     expect(await s.run(images({ images: [] }))).toEqual({

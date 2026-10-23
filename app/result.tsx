@@ -26,6 +26,12 @@ function leave() {
   else router.replace('/home');
 }
 
+/** Done / Close: the user is finished with this job (a failed image job's session goes away). */
+function dismissAndLeave(jobId: string) {
+  useToolJobs.getState().dismiss(jobId);
+  leave();
+}
+
 export default function ResultScreen() {
   const { t } = useTranslation();
   const { colors } = useTheme();
@@ -113,7 +119,9 @@ export default function ResultScreen() {
         {header(t('result.successTitle'))}
         <Text style={{ color: colors.textMuted }}>{t('result.savedTo')}</Text>
         {outputs(view.outcome.outputs)}
-        <View style={styles.actions}>{button(t('result.done'), leave, colors.primary)}</View>
+        <View style={styles.actions}>
+          {button(t('result.done'), () => dismissAndLeave(jobId), colors.primary)}
+        </View>
       </View>
     );
   } else {
@@ -127,6 +135,7 @@ export default function ResultScreen() {
             useToolJobs.getState().inputNameOf(jobId, inputIndex),
             partial.length,
             t,
+            view.toolId,
           )}
         </Text>
         {retryFailed !== null ? (
@@ -142,7 +151,7 @@ export default function ResultScreen() {
         ) : null}
         <View style={styles.actions}>
           {button(t('result.retry'), retry, colors.primary)}
-          {button(t('result.close'), leave, colors.textMuted)}
+          {button(t('result.close'), () => dismissAndLeave(jobId), colors.textMuted)}
         </View>
       </View>
     );

@@ -67,7 +67,7 @@ describe('images to PDF screen', () => {
     start = jest.fn((): StartResult => ({ ok: true, jobId: 'j1' }));
     useToolJobs.setState({ active: null, last: null, start, cancel: jest.fn() });
     jest.spyOn(pdfNative, 'createToolWorkspace').mockResolvedValue('file:///ws');
-    pick = jest.spyOn(pdfNative, 'pickImages').mockResolvedValue(uris(3));
+    pick = jest.spyOn(pdfNative, 'pickImages').mockResolvedValue({ uris: uris(3), dropped: 0 });
     jest
       .spyOn(pdfNative, 'importImage')
       .mockImplementation((_u, _s, index) =>
@@ -150,13 +150,13 @@ describe('images to PDF screen', () => {
   });
 
   it('shows the empty state when nothing was picked', async () => {
-    pick.mockResolvedValue([]);
+    pick.mockResolvedValue({ uris: [], dropped: 0 });
     await open();
     expect(screen.getByText('Add the photos you want in the PDF')).toBeTruthy();
   });
 
   it('counts images that could not be added', async () => {
-    pick.mockResolvedValue(uris(2));
+    pick.mockResolvedValue({ uris: uris(2), dropped: 0 });
     jest
       .spyOn(pdfNative, 'importImage')
       .mockRejectedValueOnce(nativeError('ERR_IMAGE_INVALID'))
@@ -169,7 +169,8 @@ describe('images to PDF screen', () => {
   });
 
   it('says when the picks went over the limit', async () => {
-    pick.mockResolvedValue(uris(101));
+    // The fallback picker has no item limit: native keeps 100 and reports 1 dropped.
+    pick.mockResolvedValue({ uris: uris(100), dropped: 1 });
     await open();
     expect(
       screen.getByText('A PDF can have up to 100 images. Only the first ones were added.'),
@@ -195,7 +196,7 @@ describe('images to PDF screen', () => {
     await open();
     await press(/^Image 2 of 3/);
     await press('Remove image 2');
-    pick.mockResolvedValue(['content://picker/new']);
+    pick.mockResolvedValue({ uris: ['content://picker/new'], dropped: 0 });
     await press('Add images');
     expect(pick).toHaveBeenLastCalledWith(98);
     expect(pdfNative.importImage).toHaveBeenLastCalledWith(
@@ -208,7 +209,7 @@ describe('images to PDF screen', () => {
   });
 
   it('can add again after failed imports freed capacity', async () => {
-    pick.mockResolvedValue(uris(100));
+    pick.mockResolvedValue({ uris: uris(100), dropped: 0 });
     const imp = jest.spyOn(pdfNative, 'importImage');
     for (let i = 0; i < 5; i += 1) imp.mockRejectedValueOnce(nativeError('ERR_IMAGE_INVALID'));
     imp.mockImplementation((_u, _s, index) =>
@@ -216,7 +217,7 @@ describe('images to PDF screen', () => {
     );
     await open();
     expect(screen.getByText('95 images')).toBeTruthy();
-    pick.mockResolvedValue(uris(5));
+    pick.mockResolvedValue({ uris: uris(5), dropped: 0 });
     await press('Add images');
     expect(pick).toHaveBeenLastCalledWith(5);
     expect(screen.getByText('100 images')).toBeTruthy();

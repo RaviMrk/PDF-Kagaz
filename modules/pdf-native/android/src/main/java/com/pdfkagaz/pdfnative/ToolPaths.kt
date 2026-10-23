@@ -20,6 +20,12 @@ object ToolPaths {
   /** Image sessions are workspaces whose id starts with "img-" (picked or scanned sources). */
   fun isImageSessionId(id: String): Boolean = isValidJobId(id) && id.startsWith("img-")
 
+  /**
+   * cacheDir/<result> holds the thumbnails of image session [id], deleted with the session; null
+   * for anything but an image session id.
+   */
+  fun sessionThumbDir(id: String): String? = if (isImageSessionId(id)) "$THUMB_DIR/$id" else null
+
   /** Imported source number [index] of an image session. */
   fun sourceName(index: Int): String = "src-$index"
 

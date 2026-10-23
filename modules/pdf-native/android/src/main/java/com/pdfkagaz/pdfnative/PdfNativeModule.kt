@@ -21,6 +21,7 @@ import java.util.stream.Collectors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class PdfNativeModule : Module() {
@@ -31,6 +32,18 @@ class PdfNativeModule : Module() {
     Name("PdfNative")
 
     Events(SCAN_PROGRESS_EVENT, INCOMING_PDF_EVENT)
+
+    // Scanner pages a previous module instance never imported (no import can be in flight then
+    // unless another instance runs one, which ScanImports guards).
+    OnCreate {
+      appContext.backgroundCoroutineScope.launch {
+        try {
+          toolFiles.sweepScannerCache()
+        } catch (e: Exception) {
+          // Best effort: the next scan or the next start sweeps again.
+        }
+      }
+    }
 
     // A VIEW while running arrives through Linking; only PDFs shared with ACTION_SEND are reported here.
     OnNewIntent { intent ->
@@ -170,7 +183,7 @@ class PdfNativeModule : Module() {
     lateinit var folderPicker: AppContextActivityResultLauncher<FolderPickerInput, Uri?>
     lateinit var createDocument: AppContextActivityResultLauncher<CreateDocumentInput, Uri?>
     lateinit var openDocuments: AppContextActivityResultLauncher<OpenDocumentsInput, List<String>>
-    lateinit var pickImagesLauncher: AppContextActivityResultLauncher<PickImagesInput, List<String>>
+    lateinit var pickImagesLauncher: AppContextActivityResultLauncher<PickImagesInput, PickerResults.Limited>
     lateinit var scanLauncher: AppContextActivityResultLauncher<ScanLaunchInput, ScanOutcome>
 
     RegisterActivityContracts {
@@ -199,13 +212,20 @@ class PdfNativeModule : Module() {
 
     AsyncFunction("pickImages") Coroutine { max: Int ->
       val picked = launchPicker { pickImagesLauncher.launch(PickImagesInput(max.coerceIn(1, ImageLimits.IMAGES_MAX))) }
-      if (picked.isEmpty()) return@Coroutine emptyList<String>()
-      RenderSupport.mapErrors { withContext(Dispatchers.IO) { allowedPicks(picked) } }
+      // Picks over max (the ACTION_OPEN_DOCUMENT fallback has no item limit) are counted, not imported.
+      val uris = if (picked.uris.isEmpty()) {
+        emptyList()
+      } else {
+        RenderSupport.mapErrors { withContext(Dispatchers.IO) { allowedPicks(picked.uris) } }
+      }
+      mapOf("uris" to uris, "dropped" to picked.dropped)
     }
 
     AsyncFunction("scanDocument") Coroutine { sessionId: String, firstIndex: Int, pageLimit: Int ->
       if (!ToolPaths.isImageSessionId(sessionId) || firstIndex < 0) throw InvalidNameException()
       val limit = pageLimit.coerceIn(1, ImageLimits.IMAGES_MAX)
+      // Pages of an earlier scan whose result reached no waiting call (activity recreated mid-scan).
+      toolFiles.sweepScannerCache()
       val outcome = launchPicker {
         val activity = appContext.currentActivity ?: throw NoActivityException()
         scanContract.pendingSender = documentScanner.startIntent(activity, limit)
@@ -215,12 +235,15 @@ class PdfNativeModule : Module() {
         ScanOutcome.Cancelled -> emptyList()
         ScanOutcome.Failed -> throw ScannerUnavailableException()
         is ScanOutcome.Pages ->
-          try {
-            importScannedPages(sessionId, firstIndex, ScanResults.pageUris(outcome.uris, limit))
-          } finally {
-            // Every page the scanner returned, imported or not: dropped duplicates, pages over the
-            // limit and pages not reached when the import was cancelled. Process death: startup cleanup.
-            withContext(NonCancellable + Dispatchers.IO) { deleteScannerFiles(outcome.uris) }
+          // In flight until its scanner files are deleted: no sweep may take pages being imported.
+          ScanImports.tracking {
+            try {
+              importScannedPages(sessionId, firstIndex, ScanResults.pageUris(outcome.uris, limit))
+            } finally {
+              // Every page the scanner returned, imported or not: dropped duplicates, pages over the
+              // limit and pages not reached when the import was cancelled. Process death: startup cleanup.
+              withContext(NonCancellable + Dispatchers.IO) { deleteScannerFiles(outcome.uris) }
+            }
           }
       }
     }

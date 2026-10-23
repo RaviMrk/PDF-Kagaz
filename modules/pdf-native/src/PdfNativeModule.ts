@@ -6,6 +6,7 @@ import type {
   PdfFileInfo,
   PdfNativeModuleEvents,
   PickedFolder,
+  PickedImageUris,
   PreparedPage,
   ReaderFile,
   ScanResult,
@@ -71,8 +72,8 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
   saveCopyAs(uri: string, suggestedName: string): Promise<boolean>;
   /** ACTION_OPEN_DOCUMENT for PDFs; [] when cancelled; ERR_PERMISSION_DENIED when every pick is refused. */
   pickPdfDocuments(multiple: boolean): Promise<string[]>;
-  /** System photo picker, images only (max clamped to 1..100); [] when cancelled. */
-  pickImages(max: number): Promise<string[]>;
+  /** System photo picker, images only (max clamped to 1..100); the first `max` picks and how many more were dropped. */
+  pickImages(max: number): Promise<PickedImageUris>;
   /** ML Kit document scanner; pages imported as src-<firstIndex + k>; [] when cancelled. */
   scanDocument(sessionId: string, firstIndex: number, pageLimit: number): Promise<ImportedImage[]>;
 }
