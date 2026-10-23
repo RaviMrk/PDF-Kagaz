@@ -24,3 +24,14 @@ export function failureMessage(
   }
   return t(`toolError.${failure}`);
 }
+
+/** Copy for a finished job's failure: an interrupted job that saved files says so. */
+export function jobFailureMessage(
+  failure: ToolFailure,
+  inputName: string | null,
+  savedCount: number,
+  t: Translate,
+): string {
+  if (failure === 'interrupted' && savedCount > 0) return t('toolError.interruptedPartial');
+  return failureMessage(failure, inputName, t);
+}

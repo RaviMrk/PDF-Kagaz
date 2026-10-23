@@ -19,6 +19,7 @@ import {
   createJob,
   finishJob,
   getJob,
+  recordJobOutput,
   type JobResult,
   type ToolFailure,
 } from '@/services/tools/toolJobRepo';
@@ -37,6 +38,8 @@ export type FinishedJob = {
   inputIds: string[];
   outcome: ToolOutcome;
   seen: boolean;
+  /** Interrupted by a process death and loaded from its row: outcomeOf re-reads the row. */
+  recovered?: true;
 };
 export type StartResult = { ok: true; jobId: string } | { ok: false; reason: 'busy' | 'db' };
 export type JobView =
@@ -53,6 +56,11 @@ export type ToolJobsState = {
   retry(jobId: string, t: Translate): StartResult;
   outcomeOf(jobId: string): JobView;
   markSeen(jobId: string): void;
+  /**
+   * Startup only: surfaces a job a process death interrupted (Home card, result screen). Never
+   * replaces a job of this process. Errors are ignored.
+   */
+  recoverInterrupted(jobId: string): void;
   /** Name of the input a failure points at (this process's last job only); null when unknown. */
   inputNameOf(jobId: string, inputIndex: number | null): string | null;
 };
@@ -60,7 +68,8 @@ export type ToolJobsState = {
 export type ToolJobStoreDeps = {
   getDb: () => IndexDb;
   run: typeof runTool;
-  runDeps: (t: Translate) => ToolRunDeps;
+  /** Everything but recordOutput, which the store writes to the job row itself. */
+  runDeps: (t: Translate) => Omit<ToolRunDeps, 'recordOutput'>;
   now: () => number;
   random: () => number;
 };
@@ -212,7 +221,11 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
       void (async () => {
         let outcome: ToolOutcome;
         try {
-          outcome = await deps.run(jobId, request, deps.runDeps(t), {
+          const runDeps: ToolRunDeps = {
+            ...deps.runDeps(t),
+            recordOutput: (id, info) => recordJobOutput(deps.getDb(), id, info),
+          };
+          outcome = await deps.run(jobId, request, runDeps, {
             signal: ac.signal,
             onProgress,
           });
@@ -248,7 +261,7 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
       outcomeOf(jobId) {
         const { active, last } = get();
         if (active?.jobId === jobId) return { kind: 'running', job: active };
-        if (last?.jobId === jobId)
+        if (last?.jobId === jobId && !last.recovered)
           return { kind: 'done', toolId: last.toolId, outcome: last.outcome };
         let row: ToolJobRow | undefined;
         try {
@@ -276,6 +289,33 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
         if (inputIndex === null || last?.jobId !== jobId) return null;
         const id = last.inputIds[inputIndex];
         return id === undefined ? null : (useFiles.getState().getRow(id)?.name ?? null);
+      },
+
+      recoverInterrupted(jobId) {
+        if (get().active || get().last) return;
+        let row: ToolJobRow | undefined;
+        try {
+          row = getJob(deps.getDb(), jobId);
+        } catch {
+          return;
+        }
+        const toolId = row ? runnable(row.toolId) : null;
+        if (!row || !toolId) return;
+        set({
+          last: {
+            jobId,
+            toolId,
+            inputIds: [...row.inputIds],
+            outcome: {
+              ok: false,
+              failure: 'interrupted',
+              inputIndex: null,
+              outputs: useFiles.getState().getRows(row.outputIds),
+            },
+            seen: false,
+            recovered: true,
+          },
+        });
       },
 
       markSeen(jobId) {

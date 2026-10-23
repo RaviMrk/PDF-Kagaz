@@ -1,7 +1,7 @@
 /** @jest-environment node */
 import { initI18n } from '@/i18n';
 
-import { failureMessage } from '../failureMessage';
+import { failureMessage, jobFailureMessage } from '../failureMessage';
 
 const i18n = initI18n('en');
 const t = (key: string, options?: Record<string, unknown>): string => i18n.t(key, options);
@@ -24,5 +24,23 @@ describe('failureMessage', () => {
   });
   it('strips bidi controls from the name', () => {
     expect(failureMessage('notFound', '‮fdp.exe‬', t)).toBe('"fdp.exe" no longer exists');
+  });
+});
+
+describe('jobFailureMessage', () => {
+  it('says some files were saved when an interrupted job has outputs', () => {
+    expect(jobFailureMessage('interrupted', null, 2, t)).toBe(
+      'The app was closed before this finished. Some files were already saved.',
+    );
+  });
+  it('uses the plain interrupted copy when nothing was saved', () => {
+    expect(jobFailureMessage('interrupted', null, 0, t)).toBe(
+      'The app was closed before this finished.',
+    );
+  });
+  it('falls back to failureMessage for other failures', () => {
+    expect(jobFailureMessage('encrypted', 'protected.pdf', 1, t)).toBe(
+      failureMessage('encrypted', 'protected.pdf', t),
+    );
   });
 });

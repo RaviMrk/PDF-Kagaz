@@ -339,7 +339,8 @@
     "badPages": "Those pages aren't in this PDF",
     "io": "Couldn't save the file. Check free space and try again.",
     "cancelled": "Cancelled. Nothing more was saved.",
-    "interrupted": "The app was closed before this finished. Nothing was saved.",
+    "interrupted": "The app was closed before this finished.",
+    "interruptedPartial": "The app was closed before this finished. Some files were already saved.",
     "unknown": "Something went wrong"
   },
   "result": {

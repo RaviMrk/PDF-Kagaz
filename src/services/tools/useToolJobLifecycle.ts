@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { getDb } from '@/db/client';
 import type { IndexDb } from '@/services/index/fileIndexRepo';
 import { pdfNative, type PdfNativeApi } from '@/services/native/pdfNative';
+import { useToolJobs } from '@/stores/toolJobStore';
 
 import { failInterruptedJobs } from './toolJobRepo';
 
@@ -14,6 +15,8 @@ export type ToolJobLifecycleDeps = {
   native: Pick<PdfNativeApi, 'cleanupToolLeftovers'>;
   now: () => number;
   startedAt: number;
+  /** Surfaces an interrupted job (Home card, result screen). */
+  recoverJob: (jobId: string) => void;
 };
 
 // Module-level: recovery runs once per process (StrictMode double effects, fast refresh, remounts).
@@ -28,20 +31,22 @@ const DEFAULT_DEPS: ToolJobLifecycleDeps = {
   native: pdfNative,
   now: Date.now,
   startedAt: APP_STARTED_AT,
+  recoverJob: (jobId) => useToolJobs.getState().recoverInterrupted(jobId),
 };
 
 /**
- * Startup recovery, once: jobs a process death left running are marked interrupted and their
- * workspaces (and any older leftovers) deleted. Originals are never touched. Errors are ignored.
+ * Startup recovery, once: jobs a process death left running are marked interrupted (the newest is
+ * surfaced on Home) and their workspaces (and any older leftovers) deleted. Originals are never touched. Errors are ignored.
  */
 export function useToolJobLifecycle(deps: ToolJobLifecycleDeps = DEFAULT_DEPS): void {
   const depsRef = useRef(deps);
   useEffect(() => {
     if (recovered) return;
     recovered = true;
-    const { getDb: db, native, now, startedAt } = depsRef.current;
+    const { getDb: db, native, now, startedAt, recoverJob } = depsRef.current;
     try {
-      failInterruptedJobs(db(), now());
+      const [newest] = failInterruptedJobs(db(), now());
+      if (newest !== undefined) recoverJob(newest);
     } catch {
       // Retried at the next start.
     }

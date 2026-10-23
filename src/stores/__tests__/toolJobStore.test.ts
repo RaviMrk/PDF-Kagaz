@@ -6,7 +6,16 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import type { FileRow } from '@/db/schema';
 import type { IndexDb } from '@/services/index/fileIndexRepo';
 import type { ToolOutcome, ToolRequest, ToolRunDeps, runTool } from '@/services/tools/runTool';
-import { createJob, finishJob, getJob } from '@/services/tools/toolJobRepo';
+import {
+  addJobOutput,
+  createJob,
+  failInterruptedJobs,
+  finishJob,
+  getJob,
+} from '@/services/tools/toolJobRepo';
+import { getFile } from '@/services/index/fileIndexRepo';
+import type { PdfFileInfo } from '@/services/native/pdfNative';
+import { fileIdForUri } from '@/utils/fileId';
 import { makeRow } from '@/test-utils/fileRows';
 
 import { createToolJobStore, newJobId, optionsOf, requestFromJob } from '../toolJobStore';
@@ -68,6 +77,15 @@ function setup() {
 }
 
 const t = (key: string) => key;
+const outputInfo = (uri: string, name: string): PdfFileInfo => ({
+  uri,
+  name,
+  folder: 'Documents/PDFToolkit',
+  parentUri: '',
+  parentModifiedAt: 0,
+  sizeBytes: 10,
+  modifiedAt: 1,
+});
 const flush = () => new Promise((r) => setImmediate(r));
 const merge: ToolRequest = { toolId: 'merge', inputIds: ['a', 'b'] };
 
@@ -223,6 +241,110 @@ describe('toolJobStore', () => {
       outcome: { ok: false, failure: 'permission', inputIndex: null, outputs: [] },
     });
     expect(s.store.getState().outcomeOf('nope')).toEqual({ kind: 'missing' });
+  });
+});
+
+describe('toolJobStore recovery', () => {
+  it('records each published output on the running job row and indexes it', () => {
+    const s = setup();
+    const started = s.store.getState().start(merge, t);
+    if (!started.ok) throw new Error('expected ok');
+    const runDeps = s.run.mock.calls[0]![2];
+    const info = outputInfo('content://media/external/file/77', 'a part 1.pdf');
+    runDeps.recordOutput(started.jobId, info);
+    const id = fileIdForUri(info.uri);
+    expect(getJob(s.db, started.jobId)?.outputIds).toEqual([id]);
+    // Indexed now, so the next process can resolve it even if this one dies.
+    expect(getFile(s.db, id)).toMatchObject({ name: 'a part 1.pdf', source: 'output' });
+  });
+
+  /** A split the previous process was running when it died, with one part already published. */
+  function deadSplit(db: IndexDb): string[] {
+    createJob(db, {
+      id: 'dead',
+      toolId: 'split',
+      inputIds: ['a'],
+      options: { split: { mode: 'everyN', n: 1 } },
+      now: 1,
+    });
+    addJobOutput(db, 'dead', 'p1');
+    addJobOutput(db, 'dead', 'gone');
+    return failInterruptedJobs(db, 5);
+  }
+
+  it('seeds last with the interrupted job, unseen, with its saved parts', () => {
+    const s = setup();
+    const [id] = deadSplit(s.db);
+    mockFiles.getRows.mockImplementation((ids: string[]) =>
+      ids.filter((x) => x !== 'gone').map((x) => makeRow({ name: x, id: x })),
+    );
+    s.store.getState().recoverInterrupted(id!);
+    expect(s.store.getState().last).toMatchObject({
+      jobId: 'dead',
+      toolId: 'split',
+      inputIds: ['a'],
+      seen: false,
+      outcome: { ok: false, failure: 'interrupted', inputIndex: null },
+    });
+    const view = s.store.getState().outcomeOf('dead');
+    expect(view).toMatchObject({
+      kind: 'done',
+      toolId: 'split',
+      outcome: { ok: false, failure: 'interrupted', inputIndex: null },
+    });
+    // Unresolvable ids are skipped.
+    expect(view.kind === 'done' && view.outcome.outputs.map((r) => r.id)).toEqual(['p1']);
+    s.store.getState().markSeen('dead');
+    expect(s.store.getState().last?.seen).toBe(true);
+    mockFiles.getRows.mockImplementation((ids: string[]) =>
+      ids.map((x) => makeRow({ name: x, id: x })),
+    );
+  });
+
+  it('resolves the saved parts again once the index knows them', () => {
+    const s = setup();
+    const [id] = deadSplit(s.db);
+    mockFiles.getRows.mockImplementation(() => []);
+    s.store.getState().recoverInterrupted(id!);
+    mockFiles.getRows.mockImplementation((ids: string[]) =>
+      ids.map((x) => makeRow({ name: x, id: x })),
+    );
+    const view = s.store.getState().outcomeOf('dead');
+    expect(view.kind === 'done' && view.outcome.outputs.map((r) => r.id)).toEqual(['p1', 'gone']);
+  });
+
+  it('never replaces a job of this process, nor seeds unknown or non-tool rows', async () => {
+    const s = setup();
+    const [id] = deadSplit(s.db);
+    s.store.getState().recoverInterrupted('nope');
+    expect(s.store.getState().last).toBeNull();
+    createJob(s.db, { id: 'cmp', toolId: 'compress', inputIds: ['a'], options: {}, now: 1 });
+    s.store.getState().recoverInterrupted('cmp');
+    expect(s.store.getState().last).toBeNull();
+
+    const started = s.store.getState().start(merge, t);
+    if (!started.ok) throw new Error('expected ok');
+    s.store.getState().recoverInterrupted(id!);
+    expect(s.store.getState().last).toBeNull();
+    s.calls[0]!.resolve({ ok: true, outputs: [] });
+    await flush();
+    s.store.getState().recoverInterrupted(id!);
+    expect(s.store.getState().last?.jobId).toBe(started.jobId);
+  });
+
+  it('ignores a failing database', () => {
+    const s = setup();
+    const store = createToolJobStore({
+      getDb: () => {
+        throw new Error('closed');
+      },
+      run: s.run,
+      runDeps: () => ({}) as ToolRunDeps,
+      now: () => 1,
+      random: () => 0.5,
+    });
+    expect(() => store.getState().recoverInterrupted('dead')).not.toThrow();
+    expect(store.getState().last).toBeNull();
   });
 });
 

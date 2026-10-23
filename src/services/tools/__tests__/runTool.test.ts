@@ -73,11 +73,13 @@ function setup(rows: FileRow[]) {
     readBytes: jest.fn(nodeToolFs.readBytes),
     writeBytes: jest.fn(nodeToolFs.writeBytes),
   };
+  const recordOutput = jest.fn<void, [string, PdfFileInfo]>();
   const deps: ToolRunDeps = {
     native,
     fs: toolFs,
     getRows: (ids) => rows.filter((r) => ids.includes(r.id)),
     registerOutputs,
+    recordOutput,
     t,
     now: Date.now,
   };
@@ -92,7 +94,18 @@ function setup(rows: FileRow[]) {
     },
   };
   const run = (request: ToolRequest, jobId = 'j1') => runTool(jobId, request, deps, control);
-  return { tmp, native, toolFs, registerOutputs, published, phases, events, controller, run };
+  return {
+    tmp,
+    native,
+    toolFs,
+    registerOutputs,
+    recordOutput,
+    published,
+    phases,
+    events,
+    controller,
+    run,
+  };
 }
 
 const row = (name: string, over: Partial<FileRow> = {}) =>
@@ -342,6 +355,47 @@ describe('runTool cancel and partial publish', () => {
     expect(s.registerOutputs).toHaveBeenCalledTimes(1);
     expect(s.native.publishToolOutput).toHaveBeenCalledTimes(2);
     expect(fs.existsSync(path.join(s.tmp, 'j1'))).toBe(false);
+    // Part 1 was recorded on the job as soon as it was published, before the failure.
+    // Part 1 was recorded (and indexed) as soon as it was published, before the failure.
+    expect(s.recordOutput.mock.calls).toEqual([
+      ['j1', expect.objectContaining({ uri: `file://${s.published[0]!.path}` })],
+    ]);
+    expect(outcome.outputs[0]?.id).toBe(fileIdForUri(s.recordOutput.mock.calls[0]![1].uri));
+  });
+
+  it('records each output on the job right after its publish', async () => {
+    const r = row('two-hundred-pages.pdf');
+    const s = setup([r]);
+    const order: string[] = [];
+    const real = s.native.publishToolOutput.getMockImplementation()!;
+    s.native.publishToolOutput.mockImplementation(async (u, n) => {
+      order.push(`publish ${n}`);
+      return real(u, n);
+    });
+    s.recordOutput.mockImplementation((_j, info) => order.push(`record ${info.name}`));
+    const outcome = await s.run({
+      toolId: 'split',
+      inputIds: [r.id],
+      split: { mode: 'ranges', ranges: '1, 2' },
+    });
+    expect(outcome.ok).toBe(true);
+    const [a, b] = s.published.map((p) => p.name);
+    expect(order).toEqual([`publish ${a}`, `record ${a}`, `publish ${b}`, `record ${b}`]);
+  });
+
+  it('a failing record never fails the job', async () => {
+    const r = row('two-hundred-pages.pdf');
+    const s = setup([r]);
+    s.recordOutput.mockImplementation(() => {
+      throw new Error('db');
+    });
+    const outcome = await s.run({
+      toolId: 'split',
+      inputIds: [r.id],
+      split: { mode: 'ranges', ranges: '1, 2' },
+    });
+    expect(outcome.ok).toBe(true);
+    expect(outcome.outputs).toHaveLength(2);
   });
 });
 

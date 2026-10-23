@@ -38,6 +38,8 @@ export type ToolRunDeps = {
   fs: ToolFs;
   getRows(ids: string[]): FileRow[];
   registerOutputs(infos: PdfFileInfo[]): Promise<FileRow[]>;
+  /** Records a published output on the job row as soon as it exists (errors are ignored). */
+  recordOutput(jobId: string, info: PdfFileInfo): void;
   t: Translate;
   now(): number;
 };
@@ -216,7 +218,13 @@ export async function runTool(
       // Checked before each publish; a publish once started is never interrupted.
       throwIfCancelled(signal);
       onProgress('saving', from);
-      published.push(await as(null, null, () => native.publishToolOutput(uri, out.name)));
+      const info = await as(null, null, () => native.publishToolOutput(uri, out.name));
+      published.push(info);
+      try {
+        deps.recordOutput(jobId, info);
+      } catch {
+        // finishJob records the outputs again; only a process death loses this one.
+      }
       onProgress('saving', to);
     };
 

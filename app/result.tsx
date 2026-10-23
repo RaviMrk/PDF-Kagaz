@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { EmptyState } from '@/components/EmptyState';
 import { OutputRow } from '@/components/tools/OutputRow';
 import type { FileRow } from '@/db/schema';
-import { failureMessage } from '@/services/tools/failureMessage';
+import { jobFailureMessage } from '@/services/tools/failureMessage';
 import { useFiles } from '@/stores/filesStore';
 import { useToolJobs } from '@/stores/toolJobStore';
 import { useTheme } from '@/theme/useTheme';
@@ -117,7 +117,12 @@ export default function ResultScreen() {
       <View style={styles.section}>
         {header(t('result.failedTitle'))}
         <Text style={{ color: colors.danger }}>
-          {failureMessage(failure, useToolJobs.getState().inputNameOf(jobId, inputIndex), t)}
+          {jobFailureMessage(
+            failure,
+            useToolJobs.getState().inputNameOf(jobId, inputIndex),
+            partial.length,
+            t,
+          )}
         </Text>
         {retryFailed !== null ? (
           <Text accessibilityLiveRegion="polite" style={{ color: colors.danger }}>

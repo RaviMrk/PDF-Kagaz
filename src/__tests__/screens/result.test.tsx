@@ -203,10 +203,19 @@ describe('result screen', () => {
     );
     await open();
     expect(
-      screen.getByText('The app was closed before this finished. Nothing was saved.'),
+      screen.getByText('The app was closed before this finished. Some files were already saved.'),
     ).toBeTruthy();
     expect(screen.getByText('These files were saved before the problem:')).toBeTruthy();
     expect(screen.getByText('a merged.pdf')).toBeTruthy();
+  });
+
+  it('explains an interrupted job that saved nothing', async () => {
+    outcomeOf.mockReturnValue(
+      done({ ok: false, failure: 'interrupted', inputIndex: null, outputs: [] }),
+    );
+    await open();
+    expect(screen.getByText('The app was closed before this finished.')).toBeTruthy();
+    expect(screen.queryByText('These files were saved before the problem:')).toBeNull();
   });
 
   it('cancels a running job', async () => {

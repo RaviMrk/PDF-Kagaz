@@ -1,7 +1,9 @@
 import { and, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 
 import { toolJobs, type ToolJobRow } from '@/db/schema';
-import type { IndexDb } from '@/services/index/fileIndexRepo';
+import { upsertFile, type IndexDb } from '@/services/index/fileIndexRepo';
+import type { PdfFileInfo } from '@/services/native/pdfNative';
+import { fileIdForUri } from '@/utils/fileId';
 
 import type { ToolId } from './toolRegistry';
 
@@ -121,11 +123,54 @@ export function listJobs(db: IndexDb, limit = 20): ToolJobRow[] {
   return readRaw(db).orderBy(desc(toolJobs.startedAt)).limit(limit).all().map(toRow);
 }
 
-/** Jobs left queued/running by a process death can never finish: mark them interrupted. */
-export function failInterruptedJobs(db: IndexDb, now: number): number {
-  return db
-    .update(toolJobs)
+/**
+ * Records one published output on a job still running, right after its publish, so a process
+ * death mid-job still knows which files were saved. Closed or unknown jobs are left alone.
+ */
+export function addJobOutput(db: IndexDb, jobId: string, outputId: string): void {
+  const raw = readRaw(db)
+    .where(and(eq(toolJobs.id, jobId), inArray(toolJobs.status, ['queued', 'running'])))
+    .get();
+  if (!raw) return;
+  const outputIds = toRow(raw).outputIds;
+  if (outputIds.includes(outputId)) return;
+  db.update(toolJobs)
+    .set({ outputIds: [...outputIds, outputId] })
+    .where(and(eq(toolJobs.id, jobId), inArray(toolJobs.status, ['queued', 'running'])))
+    .run();
+}
+
+/**
+ * A published output, recorded right after its publish: indexed as an 'output' row (scans never
+ * drop those; in folder-access mode the app folder is never scanned) and its id added to the job,
+ * so after a process death the result screen can still list it.
+ */
+export function recordJobOutput(db: IndexDb, jobId: string, info: PdfFileInfo): void {
+  try {
+    upsertFile(db, info, 'output');
+  } catch {
+    // The id is still recorded; the next scan that can see the file resolves it.
+  }
+  addJobOutput(db, jobId, fileIdForUri(info.uri));
+}
+
+/**
+ * Jobs left queued/running by a process death can never finish: mark them interrupted.
+ * Returns the ids it changed, newest first.
+ */
+export function failInterruptedJobs(db: IndexDb, now: number): string[] {
+  const open = inArray(toolJobs.status, ['queued', 'running']);
+  const ids = db
+    .select({ id: toolJobs.id })
+    .from(toolJobs)
+    .where(open)
+    .orderBy(desc(toolJobs.startedAt))
+    .all()
+    .map((r) => r.id);
+  if (ids.length === 0) return [];
+  db.update(toolJobs)
     .set({ status: 'failed', error: 'interrupted', finishedAt: now })
-    .where(inArray(toolJobs.status, ['queued', 'running']))
-    .run().changes;
+    .where(and(open, inArray(toolJobs.id, ids)))
+    .run();
+  return ids;
 }
