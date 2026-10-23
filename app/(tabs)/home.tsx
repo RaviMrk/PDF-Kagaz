@@ -3,6 +3,7 @@ import { useCallback, useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
+import { AdBanner } from '@/components/AdBanner';
 import { PermissionGate } from '@/components/PermissionGate';
 import { QuickToolsGrid } from '@/components/QuickToolsGrid';
 import { ActiveJobCard } from '@/components/tools/ActiveJobCard';
@@ -69,13 +70,19 @@ function OpenedWithoutAccess() {
 
 export default function Screen() {
   return (
-    <PermissionGate withoutAccess={<OpenedWithoutAccess />}>
-      <HomeContent />
-    </PermissionGate>
+    <View style={styles.screen}>
+      <View style={styles.screen}>
+        <PermissionGate withoutAccess={<OpenedWithoutAccess />}>
+          <HomeContent />
+        </PermissionGate>
+      </View>
+      <AdBanner placement="home" />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1 },
   content: { padding: 16, gap: 24 },
   section: { gap: 12 },
   heading: { fontSize: 18, fontWeight: '600' },

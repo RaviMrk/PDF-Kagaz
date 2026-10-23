@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { EmptyState } from '@/components/EmptyState';
 import { OutputRow } from '@/components/tools/OutputRow';
 import type { FileRow } from '@/db/schema';
+import { interstitial } from '@/services/ads/interstitial';
 import { jobFailureMessage } from '@/services/tools/failureMessage';
 import { useFiles } from '@/stores/filesStore';
 import { useToolJobs } from '@/stores/toolJobStore';
@@ -120,7 +121,14 @@ export default function ResultScreen() {
         <Text style={{ color: colors.textMuted }}>{t('result.savedTo')}</Text>
         {outputs(view.outcome.outputs)}
         <View style={styles.actions}>
-          {button(t('result.done'), () => dismissAndLeave(jobId), colors.primary)}
+          {button(
+            t('result.done'),
+            () => {
+              dismissAndLeave(jobId);
+              interstitial.showAfterDone();
+            },
+            colors.primary,
+          )}
         </View>
       </View>
     );

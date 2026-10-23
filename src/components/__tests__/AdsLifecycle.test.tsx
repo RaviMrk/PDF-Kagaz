@@ -1,8 +1,13 @@
 import { act, render } from '@testing-library/react-native';
 
 import { AdsLifecycle } from '@/components/AdsLifecycle';
+import { useToolJobs } from '@/stores/toolJobStore';
 import { useSettings } from '@/stores/settingsStore';
 
+const mockPreload = jest.fn();
+jest.mock('@/services/ads/interstitial', () => ({
+  interstitial: { preload: () => mockPreload() },
+}));
 const mockStart = jest.fn(() => Promise.resolve());
 jest.mock('@/services/ads/adsStore', () => ({
   useAds: { getState: () => ({ start: () => mockStart() }) },
@@ -16,5 +21,15 @@ describe('AdsLifecycle', () => {
 
     await act(async () => useSettings.getState().setOnboardingDone(true));
     expect(mockStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('preloads the interstitial when a job starts, not when it ends', async () => {
+    await render(<AdsLifecycle />);
+    const job = { jobId: 'j', toolId: 'merge', phase: 'preparing', fraction: 0 } as const;
+    await act(async () => useToolJobs.setState({ active: job }));
+    expect(mockPreload).toHaveBeenCalledTimes(1);
+    await act(async () => useToolJobs.setState({ active: { ...job, fraction: 0.5 } }));
+    await act(async () => useToolJobs.setState({ active: null }));
+    expect(mockPreload).toHaveBeenCalledTimes(1);
   });
 });

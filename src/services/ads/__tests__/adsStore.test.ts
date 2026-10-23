@@ -144,6 +144,52 @@ describe('ads store', () => {
     expect(store.getState()).toMatchObject({ status: 'ready', canRequestAds: true });
   });
 
+  describe('overlapping consent changes', () => {
+    it('ends off when consent is withdrawn while an earlier initialize is still pending', async () => {
+      const { store, consent, instance } = setup(info({ canRequestAds: false }));
+      await store.getState().start();
+      let finishInit: () => void = () => {};
+      instance.initialize.mockReturnValue(
+        new Promise<never[]>((resolve) => {
+          finishInit = () => resolve([]);
+        }),
+      );
+      consent.getConsentInfo.mockResolvedValue(info({ canRequestAds: true }));
+      const grant = store.getState().openPrivacyOptions();
+      await new Promise((r) => setImmediate(r));
+      consent.getConsentInfo.mockResolvedValue(info({ canRequestAds: false }));
+      await store.getState().openPrivacyOptions();
+      expect(store.getState()).toMatchObject({ status: 'off', canRequestAds: false });
+      finishInit();
+      await grant;
+      expect(store.getState()).toMatchObject({ status: 'off', canRequestAds: false });
+    });
+
+    it('initializes the SDK once for two concurrent grants', async () => {
+      const { store, consent, instance } = setup(info({ canRequestAds: false }));
+      await store.getState().start();
+      consent.getConsentInfo.mockResolvedValue(info({ canRequestAds: true }));
+      await Promise.all([
+        store.getState().openPrivacyOptions(),
+        store.getState().openPrivacyOptions(),
+      ]);
+      expect(instance.initialize).toHaveBeenCalledTimes(1);
+      expect(instance.setRequestConfiguration).toHaveBeenCalledTimes(1);
+      expect(store.getState()).toMatchObject({ status: 'ready', canRequestAds: true });
+    });
+
+    it('retries the SDK start after a failed initialize', async () => {
+      const { store, consent, instance } = setup();
+      instance.initialize.mockRejectedValueOnce(new Error('init'));
+      await store.getState().start();
+      expect(store.getState().status).toBe('off');
+      consent.getConsentInfo.mockResolvedValue(info());
+      await store.getState().openPrivacyOptions();
+      expect(instance.initialize).toHaveBeenCalledTimes(2);
+      expect(store.getState().status).toBe('ready');
+    });
+  });
+
   describe('analytics consent', () => {
     it('applies the cached consent before the network form finishes, then the gathered one', async () => {
       const { store, consent, setAnalyticsConsent } = setup(

@@ -6,6 +6,7 @@ import path from 'path';
 import { queryFiles } from '@/services/files/fileQuery';
 import { makeRow } from '@/test-utils/fileRows';
 import { fakePdf } from '@/test-utils/fakePdf';
+import { useAds } from '@/services/ads/adsStore';
 import { useFiles } from '@/stores/filesStore';
 import { useSettings } from '@/stores/settingsStore';
 import { useStorage } from '@/stores/storageStore';
@@ -227,5 +228,30 @@ describe('Files tab', () => {
     });
     expect(performance.now() - start).toBeLessThan(100);
     expect(out).toHaveLength(11);
+  });
+});
+
+describe('Files banner', () => {
+  beforeEach(() => {
+    useSettings.setState({ onboardingDone: true });
+    useStorage.setState({ mode: 'full', roots: [], canRequestFullAccess: true });
+    useFiles.setState({ files: rows, status: 'idle', requestThumb: jest.fn(), refresh });
+  });
+  afterEach(async () => {
+    await act(async () => useAds.setState({ status: 'idle', canRequestAds: false }));
+  });
+
+  it('shows the advertisement container below the list when ads are ready', async () => {
+    useAds.setState({ status: 'ready', canRequestAds: true });
+    await renderFiles();
+    expect(screen.getByLabelText('Advertisement')).toBeTruthy();
+    expect(screen.getByTestId('files-list')).toBeTruthy();
+  });
+
+  it('shows no container when ads are off', async () => {
+    useAds.setState({ status: 'off', canRequestAds: false });
+    await renderFiles();
+    expect(screen.queryByLabelText('Advertisement')).toBeNull();
+    expect(screen.getByTestId('files-list')).toBeTruthy();
   });
 });

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
+import { AdBanner } from '@/components/AdBanner';
 import { EmptyState } from '@/components/EmptyState';
 import { FileActionsSheet } from '@/components/FileActionsSheet';
 import { FileRow } from '@/components/FileRow';
@@ -287,9 +288,14 @@ function FilesList() {
 
 export default function Screen() {
   return (
-    <PermissionGate>
-      <FilesList />
-    </PermissionGate>
+    <View style={styles.screen}>
+      <View style={styles.screen}>
+        <PermissionGate>
+          <FilesList />
+        </PermissionGate>
+      </View>
+      <AdBanner placement="files" />
+    </View>
   );
 }
 

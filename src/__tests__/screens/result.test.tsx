@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { renderRouter, screen } from 'expo-router/testing-library';
 import path from 'path';
 
+import { interstitial } from '@/services/ads/interstitial';
 import type { ToolOutcome } from '@/services/tools/runTool';
 import { useFiles } from '@/stores/filesStore';
 import { useSettings } from '@/stores/settingsStore';
@@ -307,5 +308,43 @@ describe('result screen', () => {
     outcomeOf.mockReturnValue({ kind: 'missing' });
     await open();
     expect(screen.getByText('This result is no longer available')).toBeTruthy();
+  });
+
+  describe('interstitial', () => {
+    let showAfterDone: jest.SpyInstance;
+    beforeEach(() => {
+      showAfterDone = jest.spyOn(interstitial, 'showAfterDone').mockReturnValue(false);
+    });
+    afterEach(() => showAfterDone.mockRestore());
+
+    it('is offered once, after leaving, when Done is pressed on a success', async () => {
+      outcomeOf.mockReturnValue(done({ ok: true, outputs: [merged] }));
+      dismiss.mockImplementation(() => {
+        expect(showAfterDone).not.toHaveBeenCalled();
+      });
+      await open();
+      await press('Done');
+      expect(dismiss).toHaveBeenCalledWith('j1');
+      expect(showAfterDone).toHaveBeenCalledTimes(1);
+    });
+
+    it('is not offered on Open, Share or Save as', async () => {
+      outcomeOf.mockReturnValue(done({ ok: true, outputs: [merged] }));
+      await open();
+      await press('Share a merged.pdf');
+      await press('Save a copy of a merged.pdf');
+      await press('Open a merged.pdf');
+      expect(showAfterDone).not.toHaveBeenCalled();
+    });
+
+    it('is not offered when a failed job is closed', async () => {
+      outcomeOf.mockReturnValue(
+        done({ ok: false, failure: 'interrupted', inputIndex: null, outputs: [] }),
+      );
+      await open();
+      await press('Close');
+      expect(dismiss).toHaveBeenCalledWith('j1');
+      expect(showAfterDone).not.toHaveBeenCalled();
+    });
   });
 });

@@ -350,6 +350,9 @@
     "imageInvalid": "An image is damaged or in a format that isn't supported",
     "unknown": "Something went wrong"
   },
+  "ads": {
+    "label": "Advertisement"
+  },
   "result": {
     "successTitle": "Done",
     "savedTo": "Saved to Documents/PDFToolkit",

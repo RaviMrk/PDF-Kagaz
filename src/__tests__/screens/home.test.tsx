@@ -6,6 +6,7 @@ import path from 'path';
 import { pdfNative } from '@/services/native/pdfNative';
 import { fakePdf } from '@/test-utils/fakePdf';
 import { makeRow } from '@/test-utils/fileRows';
+import { useAds } from '@/services/ads/adsStore';
 import { useFiles } from '@/stores/filesStore';
 import { useSettings } from '@/stores/settingsStore';
 import { useStorage } from '@/stores/storageStore';
@@ -167,5 +168,29 @@ describe('Home search refocus', () => {
     await fireEvent.press(screen.getAllByLabelText('Home')[0]!);
     await fireEvent.press(screen.getByLabelText('Search your PDFs'));
     expect(focus).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Home banner', () => {
+  beforeEach(() => {
+    useSettings.setState({ onboardingDone: true });
+    useStorage.setState({ mode: 'full', roots: [], canRequestFullAccess: true });
+    useFiles.setState({ files: [], status: 'idle', requestThumb: jest.fn() });
+  });
+  afterEach(async () => {
+    await act(async () => useAds.setState({ status: 'idle', canRequestAds: false }));
+  });
+
+  it('shows the advertisement container when ads are ready', async () => {
+    useAds.setState({ status: 'ready', canRequestAds: true });
+    await renderRouter(APP_DIR, { initialUrl: '/home' });
+    expect(screen.getByLabelText('Advertisement')).toBeTruthy();
+  });
+
+  it('shows no container and no gap when ads are off', async () => {
+    useAds.setState({ status: 'off', canRequestAds: false });
+    await renderRouter(APP_DIR, { initialUrl: '/home' });
+    expect(screen.queryByLabelText('Advertisement')).toBeNull();
+    expect(screen.getByLabelText('Search your PDFs')).toBeTruthy();
   });
 });

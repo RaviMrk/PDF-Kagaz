@@ -47,7 +47,10 @@ export type AdsState = {
  */
 export function createAdsStore(deps: AdsStoreDeps) {
   let started: Promise<void> | null = null;
-  let initialized = false;
+  // One SDK start per process, shared by overlapping grants; cleared on failure so a later grant retries.
+  let sdkStart: Promise<void> | null = null;
+  // Only the latest apply() may set the status, so a slow 'ready' never overwrites a withdrawal.
+  let applySeq = 0;
 
   return create<AdsState>()((set) => {
     function applyAnalytics(allowed: boolean) {
@@ -58,28 +61,40 @@ export function createAdsStore(deps: AdsStoreDeps) {
       }
     }
 
+    function startSdk(): Promise<void> {
+      sdkStart ??= (async () => {
+        const sdk = deps.mobileAds();
+        await sdk.setRequestConfiguration({
+          maxAdContentRating: MaxAdContentRating.PG,
+          tagForChildDirectedTreatment: false,
+          tagForUnderAgeOfConsent: false,
+        });
+        await sdk.initialize();
+      })().catch((error: unknown) => {
+        sdkStart = null;
+        throw error;
+      });
+      return sdkStart;
+    }
+
     async function apply(consent: ConsentState): Promise<void> {
+      const seq = ++applySeq;
       applyAnalytics(consent.analyticsAllowed);
       const { privacyOptionsRequired } = consent;
       if (!consent.canRequestAds) {
         set({ status: 'off', canRequestAds: false, privacyOptionsRequired });
         return;
       }
+      let next: Pick<AdsState, 'status' | 'canRequestAds'> = {
+        status: 'ready',
+        canRequestAds: true,
+      };
       try {
-        if (!initialized) {
-          const sdk = deps.mobileAds();
-          await sdk.setRequestConfiguration({
-            maxAdContentRating: MaxAdContentRating.PG,
-            tagForChildDirectedTreatment: false,
-            tagForUnderAgeOfConsent: false,
-          });
-          await sdk.initialize();
-          initialized = true;
-        }
-        set({ status: 'ready', canRequestAds: true, privacyOptionsRequired });
+        await startSdk();
       } catch {
-        set({ status: 'off', canRequestAds: false, privacyOptionsRequired });
+        next = { status: 'off', canRequestAds: false };
       }
+      if (seq === applySeq) set({ ...next, privacyOptionsRequired });
     }
 
     async function run(): Promise<void> {
