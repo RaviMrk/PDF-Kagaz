@@ -53,6 +53,11 @@ export const ImageTile = memo(function ImageTile({
   }, [sessionId, index, filter, id]);
 
   const label = kind === 'image' ? 'images.itemA11y' : 'scan.pageA11y';
+  // The long side spans the box; the aspect ratio gives the other side.
+  const size =
+    width >= height
+      ? { width: '100%' as const, aspectRatio: width / height }
+      : { height: '100%' as const, aspectRatio: width / height };
   return (
     <Pressable
       accessibilityRole="button"
@@ -66,17 +71,9 @@ export const ImageTile = memo(function ImageTile({
     >
       <View style={styles.box}>
         {uri ? (
-          <Image
-            testID="image-thumb"
-            source={{ uri }}
-            style={[styles.image, { aspectRatio: width / height }]}
-            contentFit="contain"
-          />
+          <Image testID="image-thumb" source={{ uri }} style={size} contentFit="contain" />
         ) : (
-          <View
-            testID="image-placeholder"
-            style={[styles.image, { aspectRatio: width / height, backgroundColor: colors.border }]}
-          />
+          <View testID="image-placeholder" style={[size, { backgroundColor: colors.border }]} />
         )}
       </View>
       <Text style={{ color: colors.text }}>{position}</Text>
@@ -88,5 +85,4 @@ const styles = StyleSheet.create({
   tile: { borderRadius: 8, borderWidth: 2, padding: 4, alignItems: 'center', gap: 2 },
   /** Square box: the image keeps its aspect inside it, so tall and wide photos tile evenly. */
   box: { width: '100%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
-  image: { maxWidth: '100%', maxHeight: '100%' },
 });

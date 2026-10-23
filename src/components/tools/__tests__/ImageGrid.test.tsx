@@ -103,4 +103,42 @@ describe('ImageGrid', () => {
     });
     expect(thumb).toHaveBeenCalledWith('img-s', 0, expect.any(Number), 'bw');
   });
+
+  // An expo-image view has no intrinsic size: with only maxWidth/maxHeight and an aspect ratio
+  // it lays out at 0 × 0 on a device, so the thumbnail must span the box on its long side.
+  it('gives thumbnails and placeholders a definite size on their long side', async () => {
+    const tall: ImageItem = { ...mk(3), key: 'i3', width: 300, height: 400 };
+    const items = [i0, tall];
+    const view = await render(
+      <ImageGrid
+        sessionId="img-s"
+        items={items}
+        filter="colour"
+        kind="image"
+        selectedKey={null}
+        onTileToggle={onTileToggle}
+        onReorder={onReorder}
+      />,
+    );
+    const [wide, high] = screen.getAllByTestId('image-thumb');
+    expect(wide).toHaveStyle({ width: '100%', aspectRatio: 4 / 3 });
+    expect(high).toHaveStyle({ height: '100%', aspectRatio: 3 / 4 });
+    await view.unmount();
+
+    thumb.mockRejectedValue(new Error('x'));
+    await render(
+      <ImageGrid
+        sessionId="img-s"
+        items={items}
+        filter="colour"
+        kind="image"
+        selectedKey={null}
+        onTileToggle={onTileToggle}
+        onReorder={onReorder}
+      />,
+    );
+    const [wideBox, highBox] = screen.getAllByTestId('image-placeholder');
+    expect(wideBox).toHaveStyle({ width: '100%', aspectRatio: 4 / 3 });
+    expect(highBox).toHaveStyle({ height: '100%', aspectRatio: 3 / 4 });
+  });
 });
