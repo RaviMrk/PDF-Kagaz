@@ -24,6 +24,8 @@ export async function imagesToPdf(
       page.drawImage(image, { x: p.x, y: p.y, width: p.width, height: p.height });
     } catch (e) {
       if (e instanceof PdfToolError && e.kind === 'cancelled') throw e;
+      // A load that failed because the job was cancelled is a cancel, not a damaged image.
+      throwIfCancelled(signal);
       throw new PdfToolError('invalid', i);
     }
     onProgress?.((i + 1) / (n + 1));

@@ -5,7 +5,13 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 
 import type { FileRow } from '@/db/schema';
 import type { IndexDb } from '@/services/index/fileIndexRepo';
-import type { ToolOutcome, ToolRequest, ToolRunDeps, runTool } from '@/services/tools/runTool';
+import type {
+  ImagesRequest,
+  ToolOutcome,
+  ToolRequest,
+  ToolRunDeps,
+  runTool,
+} from '@/services/tools/runTool';
 import {
   addJobOutput,
   createJob,
@@ -44,8 +50,7 @@ type Call = {
   resolve: (o: ToolOutcome) => void;
 };
 
-function setup() {
-  const db = makeDb();
+function setup(db: IndexDb = makeDb()) {
   const calls: Call[] = [];
   const run = jest.fn(
     (
@@ -63,17 +68,19 @@ function setup() {
   ) as unknown as jest.MockedFunction<typeof runTool>;
   let clock = 1_000;
   let seq = 0;
+  const cleanSession = jest.fn((_sessionId: string) => Promise.resolve());
   const store = createToolJobStore({
     getDb: () => db,
     run,
     runDeps: (t) => ({ t }) as unknown as ToolRunDeps,
     now: () => clock,
     random: () => (seq++ % 97) / 97,
+    cleanSession,
   });
   const advance = (ms: number) => {
     clock += ms;
   };
-  return { db, calls, run, store, advance };
+  return { db, calls, run, store, advance, cleanSession };
 }
 
 const t = (key: string) => key;
@@ -88,6 +95,15 @@ const outputInfo = (uri: string, name: string): PdfFileInfo => ({
 });
 const flush = () => new Promise((r) => setImmediate(r));
 const merge: ToolRequest = { toolId: 'merge', inputIds: ['a', 'b'] };
+const imagesReq: ImagesRequest = {
+  toolId: 'images-to-pdf',
+  inputIds: [],
+  sessionId: 'img-s1',
+  images: [2, 0, 1],
+  filter: 'greyscale',
+  layout: { pageSize: 'a4', orientation: 'auto', margin: 'small' },
+  name: 'Receipt',
+};
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -189,6 +205,7 @@ describe('toolJobStore', () => {
       runDeps: () => ({}) as ToolRunDeps,
       now: () => 1,
       random: () => 0.5,
+      cleanSession: jest.fn(),
     });
     expect(store.getState().start(merge, t)).toEqual({ ok: false, reason: 'db' });
     expect(store.getState().active).toBeNull();
@@ -342,6 +359,7 @@ describe('toolJobStore recovery', () => {
       runDeps: () => ({}) as ToolRunDeps,
       now: () => 1,
       random: () => 0.5,
+      cleanSession: jest.fn(),
     });
     expect(() => store.getState().recoverInterrupted('dead')).not.toThrow();
     expect(store.getState().last).toBeNull();
@@ -423,5 +441,116 @@ describe('toolJobStore helpers', () => {
     const id = newJobId(1_700_000_000_000, () => 0.5);
     expect(id).toMatch(/^[a-z0-9-]{1,64}$/);
     expect(id).toMatch(/^[a-z0-9]+-[a-z0-9]{6}$/);
+  });
+});
+
+describe('toolJobStore images and scans', () => {
+  it('optionsOf stores the session, images, filter and layout, never the name', () => {
+    const options = optionsOf(imagesReq);
+    expect(options).toEqual({
+      sessionId: 'img-s1',
+      images: [2, 0, 1],
+      filter: 'greyscale',
+      layout: { pageSize: 'a4', orientation: 'auto', margin: 'small' },
+    });
+    expect(options).not.toHaveProperty('name');
+  });
+
+  it('requestFromJob rebuilds an image request without its name', () => {
+    const db = makeDb();
+    for (const toolId of ['images-to-pdf', 'scan'] as const) {
+      const req: ImagesRequest = { ...imagesReq, toolId };
+      createJob(db, { id: toolId, toolId, inputIds: [], options: optionsOf(req), now: 1 });
+      expect(requestFromJob(getJob(db, toolId)!)).toEqual({ ...req, name: null });
+    }
+  });
+
+  it('requestFromJob refuses malformed image rows', () => {
+    const db = makeDb();
+    const base = optionsOf(imagesReq);
+    const bad: Record<string, unknown>[] = [
+      { ...base, sessionId: '../x' },
+      { ...base, sessionId: 'job-1' },
+      { ...base, filter: 'sepia' },
+      { ...base, images: [] },
+      { ...base, images: [0, -1] },
+      { ...base, images: [0.5] },
+      { ...base, images: 'all' },
+      { ...base, layout: { pageSize: 'a3', orientation: 'auto', margin: 'small' } },
+      {},
+    ];
+    bad.forEach((options, i) => {
+      createJob(db, { id: `b${i}`, toolId: 'images-to-pdf', inputIds: [], options, now: 1 });
+      expect(requestFromJob(getJob(db, `b${i}`)!)).toBeNull();
+    });
+  });
+
+  it('deletes the image session after a successful job only', async () => {
+    const s = setup();
+    s.store.getState().start(imagesReq, t);
+    s.calls[0]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    expect(s.cleanSession).not.toHaveBeenCalled();
+
+    s.store.getState().start(imagesReq, t);
+    s.calls[1]!.resolve({ ok: true, outputs: [makeRow({ name: 'Receipt.pdf' })] });
+    await flush();
+    expect(s.cleanSession.mock.calls).toEqual([['img-s1']]);
+
+    s.store.getState().start(merge, t);
+    s.calls[2]!.resolve({ ok: true, outputs: [] });
+    await flush();
+    expect(s.cleanSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a failing session cleanup', async () => {
+    const s = setup();
+    s.cleanSession.mockRejectedValueOnce(new Error('io'));
+    const started = s.store.getState().start(imagesReq, t);
+    s.calls[0]!.resolve({ ok: true, outputs: [] });
+    await flush();
+    if (!started.ok) throw new Error('expected ok');
+    expect(getJob(s.db, started.jobId)?.status).toBe('succeeded');
+    expect(s.store.getState().last?.outcome.ok).toBe(true);
+  });
+
+  it('retry of the last image job reuses its request, name included', async () => {
+    const s = setup();
+    const first = s.store.getState().start(imagesReq, t);
+    if (!first.ok) throw new Error('expected ok');
+    expect(getJob(s.db, first.jobId)?.inputIds).toEqual([]);
+    s.calls[0]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    expect(s.store.getState().last?.request).toEqual(imagesReq);
+    const again = s.store.getState().retry(first.jobId, t);
+    expect(again.ok).toBe(true);
+    expect(s.calls[1]!.request).toEqual(imagesReq);
+  });
+
+  it('retry of an image job from another process is gone, without running', async () => {
+    const s = setup();
+    const first = s.store.getState().start(imagesReq, t);
+    if (!first.ok) throw new Error('expected ok');
+    s.calls[0]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    const next = setup(s.db);
+    expect(next.store.getState().retry(first.jobId, t)).toEqual({ ok: false, reason: 'gone' });
+    expect(next.run).not.toHaveBeenCalled();
+  });
+
+  it('reads image jobs from the DB and never names an input', async () => {
+    const s = setup();
+    const started = s.store.getState().start({ ...imagesReq, toolId: 'scan' }, t);
+    if (!started.ok) throw new Error('expected ok');
+    s.calls[0]!.resolve({ ok: false, failure: 'imageInvalid', inputIndex: 1, outputs: [] });
+    await flush();
+    expect(s.store.getState().inputNameOf(started.jobId, 1)).toBeNull();
+    expect(s.store.getState().inputNameOf(started.jobId, 0)).toBeNull();
+    const fresh = setup(s.db);
+    expect(fresh.store.getState().outcomeOf(started.jobId)).toEqual({
+      kind: 'done',
+      toolId: 'scan',
+      outcome: { ok: false, failure: 'imageInvalid', inputIndex: null, outputs: [] },
+    });
   });
 });

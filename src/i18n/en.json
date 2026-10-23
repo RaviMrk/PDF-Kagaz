@@ -250,7 +250,9 @@
     "title": {
       "merge": "Merging PDFs",
       "split": "Splitting PDF",
-      "organize": "Saving pages"
+      "organize": "Saving pages",
+      "images-to-pdf": "Making PDF from images",
+      "scan": "Saving scan"
     }
   },
   "pages": {
@@ -343,6 +345,8 @@
     "cancelled": "Cancelled. Nothing more was saved.",
     "interrupted": "The app was closed before this finished.",
     "interruptedPartial": "The app was closed before this finished. Some files were already saved.",
+    "imagesGone": "The images for this PDF are no longer available. Add them again.",
+    "imageInvalid": "An image is damaged or in a format that isn't supported",
     "unknown": "Something went wrong"
   },
   "result": {

@@ -1,5 +1,14 @@
 import type { FileRow } from '@/db/schema';
-import type { PdfFileInfo, PdfNativeApi, StagedInput } from '@/services/native/pdfNative';
+import {
+  isPdfNativeError,
+  type ImageFilter,
+  type PdfFileInfo,
+  type PdfNativeApi,
+  type PreparedPage,
+  type StagedInput,
+} from '@/services/native/pdfNative';
+import type { ImageLayoutOptions } from '@/services/pdf/imageLayout';
+import { imagesToPdf } from '@/services/pdf/imagesToPdf';
 import { loadPdf } from '@/services/pdf/loadPdf';
 import { mergePdfs } from '@/services/pdf/merge';
 import { organizePdf, type PageEdit } from '@/services/pdf/organize';
@@ -8,8 +17,23 @@ import { splitPdf } from '@/services/pdf/split';
 import { fileIdForUri } from '@/utils/fileId';
 import { everyNGroups, parsePageRanges, uniqueSortedPages } from '@/utils/pageRanges';
 
-import { checkInputSizes, JS_MAX_FILE_BYTES, JS_MAX_TOTAL_BYTES } from './limits';
-import { mergedName, organisedName, splitNames, type Translate } from './outputNames';
+import {
+  checkInputSizes,
+  IMAGE_JPEG_QUALITY,
+  IMAGE_MAX_LONG_SIDE_PX,
+  IMAGES_MAX,
+  JS_MAX_FILE_BYTES,
+  JS_MAX_TOTAL_BYTES,
+} from './limits';
+import {
+  customOutputName,
+  imagesName,
+  mergedName,
+  organisedName,
+  scanName,
+  splitNames,
+  type Translate,
+} from './outputNames';
 import { knownSize, toToolFailure } from './toolFailure';
 import type { ToolFs } from './toolFs';
 import type { ToolFailure } from './toolJobRepo';
@@ -19,10 +43,29 @@ export type SplitOptions =
   | { mode: 'everyN'; n: number }
   | { mode: 'extract'; ranges: string };
 
+/**
+ * Images to PDF or a scan: session sources `images` (in page order) become one PDF. `name` is the
+ * user's typed output name (null or blank: the default name); it is never stored with the job.
+ */
+export type ImagesRequest = {
+  toolId: 'images-to-pdf' | 'scan';
+  inputIds: [];
+  sessionId: string;
+  images: number[];
+  filter: ImageFilter;
+  layout: ImageLayoutOptions;
+  name: string | null;
+};
+
 export type ToolRequest =
   | { toolId: 'merge'; inputIds: string[] }
   | { toolId: 'split'; inputIds: [string]; split: SplitOptions }
-  | { toolId: 'organize'; inputIds: [string]; pages: PageEdit[] };
+  | { toolId: 'organize'; inputIds: [string]; pages: PageEdit[] }
+  | ImagesRequest;
+
+export function isImagesRequest(request: ToolRequest): request is ImagesRequest {
+  return request.toolId === 'images-to-pdf' || request.toolId === 'scan';
+}
 
 export type ToolPhase = 'preparing' | 'processing' | 'saving';
 
@@ -33,7 +76,11 @@ export type ToolOutcome =
 export type ToolRunDeps = {
   native: Pick<
     PdfNativeApi,
-    'createToolWorkspace' | 'stageToolInput' | 'publishToolOutput' | 'cleanToolWorkspace'
+    | 'createToolWorkspace'
+    | 'stageToolInput'
+    | 'prepareImagePage'
+    | 'publishToolOutput'
+    | 'cleanToolWorkspace'
   >;
   fs: ToolFs;
   getRows(ids: string[]): FileRow[];
@@ -134,9 +181,11 @@ function monotonicProgress(report: ToolRunControl['onProgress']): ToolRunControl
 }
 
 /**
- * Runs one merge/split/organize job: inputs are staged into the job workspace first (picked
- * documents only carry a transient grant), processed from the staged copies, and every output is
- * published as soon as it is written. Originals are never written. The workspace is always cleaned.
+ * Runs one job. Merge/split/organize: inputs are staged into the job workspace first (picked
+ * documents only carry a transient grant) and processed from the staged copies. Images and scans:
+ * each session source is prepared natively as a bounded JPEG page in the job workspace, then the
+ * pages become one PDF; the image session itself is never deleted here. Every output is published
+ * as soon as it is written. Originals are never written. The job workspace is always cleaned.
  */
 export async function runTool(
   jobId: string,
@@ -173,7 +222,92 @@ export async function runTool(
       return outputs;
     })());
 
-  try {
+  let workspace = '';
+  const openWorkspace = async () => {
+    throwIfCancelled(signal);
+    workspaceUsed = true;
+    workspace = await as(null, null, () => native.createToolWorkspace(jobId));
+  };
+
+  const processing = (f: number) => onProgress('processing', f);
+  let k = 0;
+  const save = async (out: Output, from: number, to: number) => {
+    k += 1;
+    const uri = `${workspace}/out-${k}.pdf`;
+    await as('io', null, () => fs.writeBytes(uri, out.bytes));
+    // Checked before each publish; a publish once started is never interrupted.
+    throwIfCancelled(signal);
+    onProgress('saving', from);
+    const info = await as(null, null, () => native.publishToolOutput(uri, out.name));
+    published.push(info);
+    try {
+      deps.recordOutput(jobId, info);
+    } catch {
+      // finishJob records the outputs again; only a process death loses this one.
+    }
+    onProgress('saving', to);
+  };
+
+  /** Prepares session source `source` as page `index`, mapping its failure for this job. */
+  const prepare = async (request: ImagesRequest, source: number, index: number) => {
+    try {
+      return await native.prepareImagePage(
+        request.sessionId,
+        source,
+        jobId,
+        index,
+        IMAGE_MAX_LONG_SIDE_PX,
+        IMAGE_JPEG_QUALITY,
+        request.filter,
+      );
+    } catch (e) {
+      throwIfCancelled(signal);
+      // The session was deleted (another process cleaned it up at its start): add them again.
+      if (isPdfNativeError(e, 'ERR_FILE_NOT_FOUND')) throw new ToolRunFailure('imagesGone', null);
+      throw new ToolRunFailure(toToolFailure(e), index);
+    }
+  };
+
+  const runImages = async (request: ImagesRequest) => {
+    const n = request.images.length;
+    if (n < 1 || n > IMAGES_MAX) throw new ToolRunFailure('badPages', null);
+    await openWorkspace();
+
+    onProgress('preparing', 0);
+    const prepared: PreparedPage[] = [];
+    let total = 0;
+    for (const [index, source] of request.images.entries()) {
+      throwIfCancelled(signal);
+      const page = await prepare(request, source, index);
+      if (!Number.isFinite(page.sizeBytes) || page.sizeBytes < 0) {
+        throw new ToolRunFailure('unknown', index);
+      }
+      // Bounded before any byte reaches JS.
+      total += page.sizeBytes;
+      if (total > JS_MAX_TOTAL_BYTES) throw new ToolRunFailure('totalTooLarge', null);
+      prepared.push(page);
+      onProgress('preparing', (index + 1) / n);
+    }
+
+    throwIfCancelled(signal);
+    onProgress('processing', 0);
+    let bytes: Uint8Array;
+    try {
+      bytes = await imagesToPdf(
+        prepared.map((p) => () => fs.readBytes(p.uri)),
+        request.layout,
+        { signal, onProgress: processing },
+      );
+    } catch (e) {
+      if (isPdfToolError(e, 'invalid')) throw new ToolRunFailure('imageInvalid', e.inputIndex);
+      throw e;
+    }
+    pages = n;
+    const fallback = (request.toolId === 'scan' ? scanName : imagesName)(deps.now(), t);
+    await save({ bytes, name: customOutputName(request.name, fallback) }, 0, 1);
+  };
+
+  const runPdfs = async (request: Exclude<ToolRequest, ImagesRequest>) => {
     const ids = request.inputIds;
     const found = new Map(deps.getRows(ids).map((r) => [r.id, r]));
     const missing = ids.findIndex((id) => !found.has(id));
@@ -186,9 +320,7 @@ export async function runTool(
       throw new ToolRunFailure(sizes.reason, sizes.reason === 'tooLarge' ? sizes.index : null);
     }
 
-    throwIfCancelled(signal);
-    workspaceUsed = true;
-    const workspace = await as(null, null, () => native.createToolWorkspace(jobId));
+    await openWorkspace();
 
     onProgress('preparing', 0);
     const staged: StagedInput[] = [];
@@ -209,24 +341,6 @@ export async function runTool(
     }
 
     const read = (i: number) => as('io', i, () => fs.readBytes(staged[i]!.uri));
-    const processing = (f: number) => onProgress('processing', f);
-    let k = 0;
-    const save = async (out: Output, from: number, to: number) => {
-      k += 1;
-      const uri = `${workspace}/out-${k}.pdf`;
-      await as('io', null, () => fs.writeBytes(uri, out.bytes));
-      // Checked before each publish; a publish once started is never interrupted.
-      throwIfCancelled(signal);
-      onProgress('saving', from);
-      const info = await as(null, null, () => native.publishToolOutput(uri, out.name));
-      published.push(info);
-      try {
-        deps.recordOutput(jobId, info);
-      } catch {
-        // finishJob records the outputs again; only a process death loses this one.
-      }
-      onProgress('saving', to);
-    };
 
     throwIfCancelled(signal);
     onProgress('processing', 0);
@@ -261,6 +375,11 @@ export async function runTool(
           save({ bytes: part, name: names[i]! }, i / groups.length, (i + 1) / groups.length),
       });
     }
+  };
+
+  try {
+    if (isImagesRequest(request)) await runImages(request);
+    else await runPdfs(request);
 
     const outputs = await register();
     // Release builds too (counts and timing only, never names).

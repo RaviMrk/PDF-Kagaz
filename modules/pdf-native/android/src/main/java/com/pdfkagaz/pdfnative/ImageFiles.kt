@@ -12,7 +12,6 @@ import android.graphics.Paint
 import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
-import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
@@ -52,19 +51,8 @@ class ImageFiles(private val context: Context) {
       val dir = File(toolsRoot, sessionId)
       if (!dir.isDirectory && !dir.mkdirs()) throw IoCodedException()
       val target = File(dir, ToolPaths.sourceName(index))
-      val part = File(dir, ToolPaths.partName(ToolPaths.sourceName(index)))
-      val copied = try {
-        val size = open().use { input ->
-          FileOutputStream(part).use { output -> StreamCopy.copyChunks(this, input, output, cap) }
-        }
-        if (!part.renameTo(target)) throw IoCodedException()
-        size
-      } catch (e: FileNotFoundException) {
-        throw FileNotFoundCodedException(cause = e)
-      } catch (e: IOException) {
-        throw IoCodedException(cause = e)
-      } finally {
-        if (part.exists()) part.delete()
+      val copied = SessionCopy.intoFile(target, open) { input, output ->
+        StreamCopy.copyChunks(this, input, output, cap)
       }
       val bounds = decodeBounds(target)
       if (bounds == null) {

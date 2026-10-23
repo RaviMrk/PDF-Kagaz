@@ -119,6 +119,7 @@ class ToolFiles(private val context: Context) {
           if (entry.lastModified() < cutoff && entry.deleteRecursively()) count++
         }
       }
+      count += quietly { deleteScannerLeftovers(cutoff) }
       // Under the lock: never a part file or pending item of a publish or move in progress.
       AppFolderLock.withLock {
         if (StorageAccess.has(context)) count += quietly { deleteLeftoverParts(cutoff) }
@@ -273,6 +274,21 @@ class ToolFiles(private val context: Context) {
   private fun deleteLeftoverParts(cutoff: Long): Int {
     val parts = appFolder().listFiles()?.filter { it.isFile && ToolPaths.isLeftoverPart(it.name) && it.lastModified() < cutoff }
     return parts?.count { it.delete() } ?: 0
+  }
+
+  /**
+   * Scanner page JPEGs ML Kit left in cacheDir/mlkit_docscan_ui_client/ before [cutoff] (a process
+   * death before they were deleted). Files only, and only there ([ScanResults.isStaleScannerLeftover]).
+   */
+  private fun deleteScannerLeftovers(cutoff: Long): Int {
+    val root = File(context.cacheDir, ScanResults.SCANNER_CACHE_DIR)
+    if (!root.isDirectory) return 0
+    val cacheDir = context.cacheDir.canonicalPath
+    return root.walkBottomUp().count { file ->
+      file.isFile &&
+        ScanResults.isStaleScannerLeftover(cacheDir, file.canonicalPath, file.lastModified(), cutoff) &&
+        file.delete()
+    }
   }
 
   /** This app's pending items in Documents/PDFToolkit/ added before [cutoff] (API 30+). */

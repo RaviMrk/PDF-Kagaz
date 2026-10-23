@@ -3,11 +3,14 @@ import { create } from 'zustand';
 import { getDb } from '@/db/client';
 import type { ToolJobRow } from '@/db/schema';
 import type { IndexDb } from '@/services/index/fileIndexRepo';
-import { pdfNative } from '@/services/native/pdfNative';
+import { pdfNative, type ImageFilter } from '@/services/native/pdfNative';
+import { isImageLayout } from '@/services/pdf/imageLayout';
 import type { PageEdit } from '@/services/pdf/organize';
 import type { Translate } from '@/services/tools/outputNames';
 import {
+  isImagesRequest,
   runTool,
+  type ImagesRequest,
   type SplitOptions,
   type ToolOutcome,
   type ToolPhase,
@@ -38,10 +41,17 @@ export type FinishedJob = {
   inputIds: string[];
   outcome: ToolOutcome;
   seen: boolean;
+  /**
+   * The request this process ran (retry reuses it: an image job's typed name is never stored).
+   * Absent for a job recovered from a previous process.
+   */
+  request?: ToolRequest;
   /** Interrupted by a process death and loaded from its row: outcomeOf re-reads the row. */
   recovered?: true;
 };
-export type StartResult = { ok: true; jobId: string } | { ok: false; reason: 'busy' | 'db' };
+/** `gone`: an image job from another process; its image session no longer exists. */
+export type StartResult =
+  { ok: true; jobId: string } | { ok: false; reason: 'busy' | 'db' | 'gone' };
 export type JobView =
   | { kind: 'running'; job: ActiveJob }
   | { kind: 'done'; toolId: RunnableToolId; outcome: ToolOutcome }
@@ -72,6 +82,8 @@ export type ToolJobStoreDeps = {
   runDeps: (t: Translate) => Omit<ToolRunDeps, 'recordOutput'>;
   now: () => number;
   random: () => number;
+  /** Deletes an image session (after its job succeeded); errors are ignored. */
+  cleanSession: (sessionId: string) => Promise<void>;
 };
 
 const PROGRESS_INTERVAL_MS = 100;
@@ -89,11 +101,17 @@ const FAILURES: readonly ToolFailure[] = [
   'io',
   'cancelled',
   'interrupted',
+  'imagesGone',
+  'imageInvalid',
   'unknown',
 ];
 
-/** Options stored with a job: no ids or names. */
+/** Options stored with a job: no ids or names (an image job's typed name is not stored). */
 export function optionsOf(request: ToolRequest): Record<string, unknown> {
+  if (isImagesRequest(request)) {
+    const { sessionId, images, filter, layout } = request;
+    return { sessionId, images, filter, layout };
+  }
   if (request.toolId === 'split') return { split: request.split };
   if (request.toolId === 'organize') return { pages: request.pages };
   return {};
@@ -124,8 +142,31 @@ function pagesFrom(v: unknown): PageEdit[] | null {
   return pages;
 }
 
+const SESSION_ID = /^img-[a-z0-9-]{1,60}$/;
+const FILTERS: readonly ImageFilter[] = ['colour', 'greyscale', 'bw'];
+
+function imagesFrom(row: ToolJobRow): ImagesRequest | null {
+  if (row.toolId !== 'images-to-pdf' && row.toolId !== 'scan') return null;
+  const { sessionId, images, filter, layout } = row.options;
+  if (typeof sessionId !== 'string' || !SESSION_ID.test(sessionId)) return null;
+  if (!Array.isArray(images) || images.length === 0) return null;
+  if (!images.every((i) => Number.isInteger(i) && (i as number) >= 0)) return null;
+  const f = FILTERS.find((x) => x === filter);
+  if (f === undefined || !isImageLayout(layout)) return null;
+  return {
+    toolId: row.toolId,
+    inputIds: [],
+    sessionId,
+    images: [...(images as number[])],
+    filter: f,
+    layout: { pageSize: layout.pageSize, orientation: layout.orientation, margin: layout.margin },
+    name: null,
+  };
+}
+
 /** The request a stored job ran with; null for a row that cannot be run again. */
 export function requestFromJob(row: ToolJobRow): ToolRequest | null {
+  if (row.toolId === 'images-to-pdf' || row.toolId === 'scan') return imagesFrom(row);
   const ids = row.inputIds;
   if (row.toolId === 'merge')
     return ids.length >= 2 ? { toolId: 'merge', inputIds: [...ids] } : null;
@@ -148,8 +189,10 @@ export function newJobId(now: number, random: () => number): string {
   return `${Math.max(0, Math.floor(now)).toString(36)}-${n.toString(36).padStart(6, '0')}`;
 }
 
+const RUNNABLE: readonly RunnableToolId[] = ['merge', 'split', 'organize', 'images-to-pdf', 'scan'];
+
 function runnable(toolId: string): RunnableToolId | null {
-  return toolId === 'merge' || toolId === 'split' || toolId === 'organize' ? toolId : null;
+  return RUNNABLE.find((id) => id === toolId) ?? null;
 }
 
 function resultOf(outcome: ToolOutcome, now: number): JobResult {
@@ -176,6 +219,14 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
         const id = request.inputIds[outcome.inputIndex];
         if (id !== undefined) useFiles.getState().dropMissing(id);
       }
+      // The session is kept after a failure or cancel, so "Try again" can use it in this process.
+      if (outcome.ok && isImagesRequest(request)) {
+        try {
+          deps.cleanSession(request.sessionId).catch(() => {});
+        } catch {
+          // Left for cleanupToolLeftovers at the next start.
+        }
+      }
       controller = null;
       set({
         active: null,
@@ -185,6 +236,7 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
           inputIds: [...request.inputIds],
           outcome,
           seen: false,
+          request,
         },
       });
     }
@@ -248,6 +300,8 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
 
       retry(jobId, t) {
         if (get().active) return { ok: false, reason: 'busy' };
+        const { last } = get();
+        if (last?.jobId === jobId && last.request) return start(last.request, t);
         let request: ToolRequest | null = null;
         try {
           const row = getJob(deps.getDb(), jobId);
@@ -255,7 +309,10 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
         } catch {
           request = null;
         }
-        return request ? start(request, t) : { ok: false, reason: 'db' };
+        if (!request) return { ok: false, reason: 'db' };
+        // Not run by this process: its image session was deleted at this process's start.
+        if (isImagesRequest(request)) return { ok: false, reason: 'gone' };
+        return start(request, t);
       },
 
       outcomeOf(jobId) {
@@ -287,6 +344,8 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
       inputNameOf(jobId, inputIndex) {
         const { last } = get();
         if (inputIndex === null || last?.jobId !== jobId) return null;
+        // Image jobs have no indexed inputs (pages are session sources).
+        if (last.toolId === 'images-to-pdf' || last.toolId === 'scan') return null;
         const id = last.inputIds[inputIndex];
         return id === undefined ? null : (useFiles.getState().getRow(id)?.name ?? null);
       },
@@ -339,4 +398,5 @@ export const useToolJobs = createToolJobStore({
   }),
   now: Date.now,
   random: Math.random,
+  cleanSession: (sessionId) => pdfNative.cleanToolWorkspace(sessionId),
 });

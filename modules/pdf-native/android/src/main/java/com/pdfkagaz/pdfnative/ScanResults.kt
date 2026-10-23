@@ -22,4 +22,19 @@ object ScanResults {
     if (!canonicalPath.startsWith(prefix) || canonicalPath.length == prefix.length) return false
     return OWN_CACHE_DIRS.none { dir -> canonicalPath == "$prefix$dir" || canonicalPath.startsWith("$prefix$dir/") }
   }
+  /** cacheDir/<SCANNER_CACHE_DIR> is where ML Kit's scanner UI writes its page JPEGs. */
+  const val SCANNER_CACHE_DIR = "mlkit_docscan_ui_client"
+
+  /**
+   * True for a file strictly inside cacheDir/[SCANNER_CACHE_DIR]/ (any depth, no "." or ".."
+   * segments) last modified before [cutoffMs]: a scan page a previous process never deleted.
+   */
+  fun isStaleScannerLeftover(cacheDir: String, canonicalPath: String, lastModifiedMs: Long, cutoffMs: Long): Boolean {
+    if (lastModifiedMs >= cutoffMs) return false
+    val prefix = "${cacheDir.trimEnd('/')}/$SCANNER_CACHE_DIR/"
+    if (!canonicalPath.startsWith(prefix)) return false
+    val segments = canonicalPath.substring(prefix.length).split('/')
+    if (segments.any { it.isEmpty() || it == "." || it == ".." }) return false
+    return isOwnScannerFile(cacheDir, canonicalPath)
+  }
 }

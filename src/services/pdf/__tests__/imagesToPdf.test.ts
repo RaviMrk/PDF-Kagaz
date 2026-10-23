@@ -83,6 +83,19 @@ describe('imagesToPdf', () => {
     expect(e.kind).toBe('cancelled');
   });
 
+  it('reports a loader failing after an abort as cancelled, not as a damaged image', async () => {
+    const controller = new AbortController();
+    const loader = () => {
+      controller.abort();
+      return Promise.reject(new Error('read interrupted'));
+    };
+    const e = await failure(
+      imagesToPdf([landscape, loader], DEFAULT_IMAGES_LAYOUT, { signal: controller.signal }),
+    );
+    expect(e.kind).toBe('cancelled');
+    expect(e.inputIndex).toBeNull();
+  });
+
   it('passes a cancellation thrown by a loader through unchanged', async () => {
     const loader = () => Promise.reject(new PdfToolError('cancelled'));
     const e = await failure(imagesToPdf([loader], DEFAULT_IMAGES_LAYOUT));

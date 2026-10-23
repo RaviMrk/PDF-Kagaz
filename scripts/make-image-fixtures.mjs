@@ -91,8 +91,30 @@ function arrow(w, h) {
   };
 }
 
-/** Splices an EXIF APP1 segment (IFD0 with only Orientation) right after SOI. */
-function withOrientation(jpeg, orientation) {
+/**
+ * The JPEG without its APP1 (EXIF/XMP) segments. sips writes its own big-endian EXIF APP1; left in
+ * next to ours, readers such as Android's ExifInterface pick the wrong one.
+ */
+function withoutApp1(jpeg) {
+  if (jpeg[0] !== 0xff || jpeg[1] !== 0xd8) throw new Error('not a JPEG');
+  const kept = [jpeg.subarray(0, 2)];
+  let at = 2;
+  for (;;) {
+    if (jpeg[at] !== 0xff) throw new Error('bad JPEG marker');
+    const marker = jpeg[at + 1];
+    // SOS: entropy-coded data follows; everything from here on is kept as is.
+    if (marker === 0xda) break;
+    const end = at + 2 + jpeg.readUInt16BE(at + 2);
+    if (marker !== 0xe1) kept.push(jpeg.subarray(at, end));
+    at = end;
+  }
+  kept.push(jpeg.subarray(at));
+  return Buffer.concat(kept);
+}
+
+/** Replaces any APP1 segments with one EXIF APP1 (IFD0 with only Orientation) right after SOI. */
+function withOrientation(source, orientation) {
+  const jpeg = withoutApp1(source);
   const tiff = Buffer.alloc(8 + 2 + 12 + 4);
   tiff.write('II', 0, 'ascii');
   tiff.writeUInt16LE(42, 2);

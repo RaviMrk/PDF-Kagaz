@@ -32,16 +32,20 @@ describe('toolRegistry', () => {
       'ocr',
     ]);
   });
-  it('only merge, split and organize are available', () => {
+  it('merge, split, organize, images to PDF and scan are available', () => {
     expect(TOOLS.filter((t) => t.available).map((t) => t.id)).toEqual([
       'merge',
       'split',
       'organize',
+      'images-to-pdf',
+      'scan',
     ]);
   });
   it('looks tools up by id', () => {
     expect(toolById('merge')).toMatchObject({ minInputs: 2, maxInputs: 50 });
     expect(toolById('split')).toMatchObject({ minInputs: 1, maxInputs: 1 });
+    expect(toolById('images-to-pdf')).toMatchObject({ minInputs: 1, maxInputs: 100 });
+    expect(toolById('images-to-pdf')!.maxInputs).toBe(100);
     expect(toolById('nope')).toBeNull();
   });
   it('routes scan to /scan and others to the tool screen', () => {

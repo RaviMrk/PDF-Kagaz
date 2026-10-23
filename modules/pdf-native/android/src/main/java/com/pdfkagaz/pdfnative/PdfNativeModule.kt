@@ -20,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.stream.Collectors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
 class PdfNativeModule : Module() {
@@ -213,7 +214,14 @@ class PdfNativeModule : Module() {
       when (outcome) {
         ScanOutcome.Cancelled -> emptyList()
         ScanOutcome.Failed -> throw ScannerUnavailableException()
-        is ScanOutcome.Pages -> importScannedPages(sessionId, firstIndex, ScanResults.pageUris(outcome.uris, limit))
+        is ScanOutcome.Pages ->
+          try {
+            importScannedPages(sessionId, firstIndex, ScanResults.pageUris(outcome.uris, limit))
+          } finally {
+            // Every page the scanner returned, imported or not: dropped duplicates, pages over the
+            // limit and pages not reached when the import was cancelled. Process death: startup cleanup.
+            withContext(NonCancellable + Dispatchers.IO) { deleteScannerFiles(outcome.uris) }
+          }
       }
     }
 
@@ -437,12 +445,11 @@ class PdfNativeModule : Module() {
   /**
    * Imports scanner pages as src-<firstIndex + k>, in scanner order. They came from this scan's
    * result, so [UriGuard] is not applied. A page that fails is skipped; ERR_IMAGE_INVALID when all
-   * fail. The scanner's own cache files are deleted once read.
+   * fail. The caller deletes the scanner's own cache files afterwards ([deleteScannerFiles]).
    */
   private suspend fun importScannedPages(sessionId: String, firstIndex: Int, uris: List<String>): List<Map<String, Any?>> =
     withContext(Dispatchers.IO) {
       if (uris.isEmpty()) return@withContext emptyList()
-      val cacheDir = context.cacheDir.canonicalPath
       val imported = ArrayList<Map<String, Any?>>()
       uris.forEachIndexed { k, uri ->
         val parsed = Uri.parse(uri)
@@ -454,21 +461,28 @@ class PdfNativeModule : Module() {
           throw e
         } catch (e: Exception) {
           // Skipped; the caller sees which indexes came back.
-        } finally {
-          deleteScannerFile(cacheDir, parsed)
         }
       }
       if (imported.isEmpty()) throw ImageInvalidException()
       imported
     }
 
-  private fun deleteScannerFile(cacheDir: String, uri: Uri) {
-    if (uri.scheme != "file") return
-    val file = File(uri.path ?: return)
-    try {
-      if (ScanResults.isOwnScannerFile(cacheDir, file.canonicalPath)) file.delete()
+  /** Deletes the scanner's page files among [uris] (file:// inside our cache, never our own folders). */
+  private fun deleteScannerFiles(uris: List<String>) {
+    val cacheDir = try {
+      context.cacheDir.canonicalPath
     } catch (e: java.io.IOException) {
-      // Left for the system to clear with the cache.
+      return
+    }
+    for (uri in uris) {
+      val parsed = Uri.parse(uri)
+      if (parsed.scheme != "file") continue
+      val file = File(parsed.path ?: continue)
+      try {
+        if (ScanResults.isOwnScannerFile(cacheDir, file.canonicalPath)) file.delete()
+      } catch (e: java.io.IOException) {
+        // Left for the startup cleanup (cleanupToolLeftovers).
+      }
     }
   }
 

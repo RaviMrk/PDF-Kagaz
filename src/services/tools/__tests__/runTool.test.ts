@@ -5,15 +5,23 @@ import path from 'node:path';
 
 import type { FileRow } from '@/db/schema';
 import { initI18n } from '@/i18n';
-import type { PdfFileInfo } from '@/services/native/pdfNative';
+import type { ImageFilter, PdfFileInfo, PreparedPage } from '@/services/native/pdfNative';
+import type { ImageLayoutOptions } from '@/services/pdf/imageLayout';
+import * as imagesToPdfModule from '@/services/pdf/imagesToPdf';
 import * as loadPdfModule from '@/services/pdf/loadPdf';
 import { fileIdForUri } from '@/utils/fileId';
 import { makeRow } from '@/test-utils/fileRows';
 import { nativeError } from '@/test-utils/fakePdfNative';
 import { makeTempDir, nodeToolFs, tempPathOf } from '@/test-utils/nodeToolFs';
-import { loadStrict, readFixture } from '@/test-utils/pdfFixtures';
+import { inspectPages, loadStrict, readFixture } from '@/test-utils/pdfFixtures';
 
-import { runTool, type ToolPhase, type ToolRequest, type ToolRunDeps } from '../runTool';
+import {
+  runTool,
+  type ImagesRequest,
+  type ToolPhase,
+  type ToolRequest,
+  type ToolRunDeps,
+} from '../runTool';
 
 const i18n = initI18n('en');
 const t = (key: string, options?: Record<string, unknown>): string => i18n.t(key, options);
@@ -24,7 +32,8 @@ const sha = (name: string) =>
     .update(fs.readFileSync(path.join(FIXTURES, name.normalize('NFC'))))
     .digest('hex');
 
-function setup(rows: FileRow[]) {
+/** `sources[i]` is the fixture under `images/` that image session source `i` holds. */
+function setup(rows: FileRow[], sources: string[] = []) {
   const tmp = makeTempDir();
   const docs = path.join(tmp, 'Documents', 'PDFToolkit');
   fs.mkdirSync(docs, { recursive: true });
@@ -62,6 +71,24 @@ function setup(rows: FileRow[]) {
         modifiedAt: 0,
       };
     }),
+    prepareImagePage: jest.fn(
+      async (
+        _sessionId: string,
+        sourceIndex: number,
+        jobId: string,
+        pageIndex: number,
+        _maxLongSidePx: number,
+        _jpegQuality: number,
+        _filter: ImageFilter,
+      ): Promise<PreparedPage> => {
+        const name = sources[sourceIndex];
+        if (name === undefined) throw nativeError('ERR_FILE_NOT_FOUND');
+        const bytes = fs.readFileSync(path.join(FIXTURES, 'images', name));
+        const dest = path.join(tmp, jobId, `page-${pageIndex}.jpg`);
+        fs.writeFileSync(dest, bytes);
+        return { uri: `file://${dest}`, width: 1, height: 1, sizeBytes: bytes.length };
+      },
+    ),
     cleanToolWorkspace: jest.fn(async (jobId: string) => {
       fs.rmSync(path.join(tmp, jobId), { recursive: true, force: true });
     }),
@@ -74,6 +101,7 @@ function setup(rows: FileRow[]) {
     writeBytes: jest.fn(nodeToolFs.writeBytes),
   };
   const recordOutput = jest.fn<void, [string, PdfFileInfo]>();
+  const clock = { now: Date.now() };
   const deps: ToolRunDeps = {
     native,
     fs: toolFs,
@@ -81,7 +109,7 @@ function setup(rows: FileRow[]) {
     registerOutputs,
     recordOutput,
     t,
-    now: Date.now,
+    now: () => clock.now,
   };
   const phases: ToolPhase[] = [];
   const events: [ToolPhase, number][] = [];
@@ -104,6 +132,7 @@ function setup(rows: FileRow[]) {
     phases,
     events,
     controller,
+    clock,
     run,
   };
 }
@@ -539,5 +568,150 @@ describe('runTool cancellation around publishing', () => {
     expect(s.native.publishToolOutput).toHaveBeenCalledTimes(1);
     expect(s.registerOutputs).toHaveBeenCalledTimes(1);
     expect(fs.existsSync(path.join(s.tmp, 'j1'))).toBe(false);
+  });
+});
+
+describe('runTool images and scans', () => {
+  const LANDSCAPE = 'landscape-400x300.jpg';
+  const PORTRAIT = 'portrait-300x400.jpg';
+  const layout: ImageLayoutOptions = { pageSize: 'a4', orientation: 'auto', margin: 'small' };
+  const STAMP = new Date(2026, 9, 23, 14, 5).getTime();
+  const MIB = 1024 * 1024;
+  const images = (over: Partial<ImagesRequest> = {}): ImagesRequest => ({
+    toolId: 'images-to-pdf',
+    inputIds: [],
+    sessionId: 'img-s1',
+    images: [1, 0],
+    filter: 'colour',
+    layout,
+    name: null,
+    ...over,
+  });
+  const imageSetup = () => {
+    const s = setup([], [LANDSCAPE, PORTRAIT]);
+    s.clock.now = STAMP;
+    return s;
+  };
+
+  it('prepares each image in order, builds one PDF and names it', async () => {
+    const s = imageSetup();
+    const outcome = await s.run(images());
+    expect(outcome.ok).toBe(true);
+    expect(s.native.prepareImagePage.mock.calls).toEqual([
+      ['img-s1', 1, 'j1', 0, 2400, 85, 'colour'],
+      ['img-s1', 0, 'j1', 1, 2400, 85, 'colour'],
+    ]);
+    expect(s.native.createToolWorkspace).toHaveBeenCalledWith('j1');
+    expect(s.published).toHaveLength(1);
+    expect(s.published[0]!.name).toBe('Images 2026-10-23 14.05.pdf');
+    const pages = await inspectPages(new Uint8Array(fs.readFileSync(s.published[0]!.path)));
+    expect(pages.map((p) => p.size)).toEqual([
+      [595, 842],
+      [842, 595],
+    ]);
+    // The job workspace is cleaned; the image session is never touched by the runner.
+    expect(s.native.cleanToolWorkspace.mock.calls).toEqual([['j1']]);
+    expect(s.phases).toEqual(['preparing', 'processing', 'saving']);
+    expectMonotonic(s.events);
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/^\[tool\] images-to-pdf \d+ms 2 pages 1 files$/),
+    );
+  });
+
+  it('names a scan with the typed name, or the scan default when blank', async () => {
+    const named = imageSetup();
+    await named.run(images({ toolId: 'scan', name: 'Receipt' }));
+    expect(named.published.map((p) => p.name)).toEqual(['Receipt.pdf']);
+    const blank = imageSetup();
+    await blank.run(images({ toolId: 'scan', name: '  ' }));
+    expect(blank.published.map((p) => p.name)).toEqual(['Scan 2026-10-23 14.05.pdf']);
+  });
+
+  it('reports images that are gone as imagesGone, publishing nothing', async () => {
+    const s = imageSetup();
+    s.native.prepareImagePage.mockRejectedValueOnce(nativeError('ERR_FILE_NOT_FOUND'));
+    const outcome = await s.run(images());
+    expect(outcome).toEqual({ ok: false, failure: 'imagesGone', inputIndex: null, outputs: [] });
+    expect(s.native.publishToolOutput).not.toHaveBeenCalled();
+    expect(s.native.cleanToolWorkspace.mock.calls).toEqual([['j1']]);
+  });
+
+  it('reports an undecodable image with its page index', async () => {
+    const s = imageSetup();
+    const real = s.native.prepareImagePage.getMockImplementation()!;
+    s.native.prepareImagePage
+      .mockImplementationOnce(real)
+      .mockRejectedValueOnce(nativeError('ERR_IMAGE_INVALID'));
+    const outcome = await s.run(images());
+    expect(outcome).toEqual({ ok: false, failure: 'imageInvalid', inputIndex: 1, outputs: [] });
+    expect(s.native.publishToolOutput).not.toHaveBeenCalled();
+  });
+
+  it('reports a prepared JPEG pdf-lib cannot embed as imageInvalid with its page index', async () => {
+    const s = setup([], [LANDSCAPE, 'not-an-image.jpg']);
+    const outcome = await s.run(images({ images: [0, 1] }));
+    expect(outcome).toEqual({ ok: false, failure: 'imageInvalid', inputIndex: 1, outputs: [] });
+  });
+
+  it('refuses prepared pages over the total cap before building the PDF', async () => {
+    const spy = jest.spyOn(imagesToPdfModule, 'imagesToPdf');
+    const s = imageSetup();
+    const real = s.native.prepareImagePage.getMockImplementation()!;
+    const sizes = [60 * MIB, 50 * MIB];
+    s.native.prepareImagePage.mockImplementation(async (...args) => ({
+      ...(await real(...args)),
+      sizeBytes: sizes[args[3]]!,
+    }));
+    const outcome = await s.run(images());
+    expect(outcome).toEqual({
+      ok: false,
+      failure: 'totalTooLarge',
+      inputIndex: null,
+      outputs: [],
+    });
+    expect(spy).not.toHaveBeenCalled();
+    expect(s.toolFs.readBytes).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('refuses no images, or more than 100, as badPages without native calls', async () => {
+    const s = imageSetup();
+    expect(await s.run(images({ images: [] }))).toEqual({
+      ok: false,
+      failure: 'badPages',
+      inputIndex: null,
+      outputs: [],
+    });
+    expect(await s.run(images({ images: Array.from({ length: 101 }, () => 0) }))).toMatchObject({
+      ok: false,
+      failure: 'badPages',
+    });
+    expect(s.native.createToolWorkspace).not.toHaveBeenCalled();
+    expect(s.native.prepareImagePage).not.toHaveBeenCalled();
+  });
+
+  it('cancels after the first prepare: nothing more prepared or published', async () => {
+    const s = imageSetup();
+    const real = s.native.prepareImagePage.getMockImplementation()!;
+    s.native.prepareImagePage.mockImplementationOnce(async (...args) => {
+      const page = await real(...args);
+      s.controller.abort();
+      return page;
+    });
+    const outcome = await s.run(images());
+    expect(outcome).toEqual({ ok: false, failure: 'cancelled', inputIndex: null, outputs: [] });
+    expect(s.native.prepareImagePage).toHaveBeenCalledTimes(1);
+    expect(s.native.publishToolOutput).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(s.tmp, 'j1'))).toBe(false);
+  });
+
+  it('a read failing because of a cancel reads as cancelled, never as a damaged image', async () => {
+    const s = imageSetup();
+    s.toolFs.readBytes.mockImplementationOnce(async () => {
+      s.controller.abort();
+      throw new Error('read interrupted');
+    });
+    const outcome = await s.run(images());
+    expect(outcome).toEqual({ ok: false, failure: 'cancelled', inputIndex: null, outputs: [] });
   });
 });

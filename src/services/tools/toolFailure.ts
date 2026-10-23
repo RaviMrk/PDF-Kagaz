@@ -21,6 +21,8 @@ export function toToolFailure(e: unknown): ToolFailure {
         return 'encrypted';
       case 'ERR_PDF_INVALID':
         return 'invalid';
+      case 'ERR_IMAGE_INVALID':
+        return 'imageInvalid';
       default:
         return 'unknown';
     }

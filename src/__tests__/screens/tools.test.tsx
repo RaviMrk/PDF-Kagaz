@@ -27,8 +27,8 @@ const CARDS = [
   'Merge',
   'Split',
   'Organise pages',
-  'Images to PDF, coming soon',
-  'Scan, coming soon',
+  'Images to PDF',
+  'Scan',
   'PDF to images, coming soon',
   'Make searchable (OCR), coming soon',
   'Compress, coming soon',
@@ -71,6 +71,20 @@ describe('Tools tab', () => {
     const r = await renderTools();
     await fireEvent.press(screen.getByLabelText('Merge'));
     expect(r.pathname()).toBe('/tool/merge');
+  });
+
+  it('opens Images to PDF', async () => {
+    const r = await renderTools();
+    expect(screen.queryByLabelText('Images to PDF, coming soon')).toBeNull();
+    expect(screen.queryByLabelText('Scan, coming soon')).toBeNull();
+    await fireEvent.press(screen.getByLabelText('Images to PDF'));
+    expect(r.pathname()).toBe('/tool/images-to-pdf');
+  });
+
+  it('opens the scanner screen', async () => {
+    const r = await renderTools();
+    await fireEvent.press(screen.getByLabelText('Scan'));
+    expect(r.pathname()).toBe('/scan');
   });
 
   it('does nothing for a tool that is coming soon', async () => {

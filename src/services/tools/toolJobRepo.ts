@@ -21,6 +21,8 @@ export type ToolFailure =
   | 'io'
   | 'cancelled'
   | 'interrupted'
+  | 'imagesGone'
+  | 'imageInvalid'
   | 'unknown';
 
 /**

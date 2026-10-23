@@ -14,6 +14,13 @@ import { useTheme } from '@/theme/useTheme';
 
 const NOTICE_MS = 4000;
 
+const RETRY_FAILED = {
+  busy: 'toolError.busy',
+  // An image job from before a restart: its images were cleaned up at start.
+  gone: 'toolError.imagesGone',
+  db: 'toolError.unknown',
+} as const;
+
 function leave() {
   if (router.canGoBack()) router.back();
   else router.replace('/home');
@@ -46,9 +53,7 @@ export default function ResultScreen() {
 
   const retry = () => {
     const result = useToolJobs.getState().retry(jobId, t);
-    setRetryFailed(
-      result.ok ? null : result.reason === 'busy' ? 'toolError.busy' : 'toolError.unknown',
-    );
+    setRetryFailed(result.ok ? null : RETRY_FAILED[result.reason]);
     if (result.ok) router.setParams({ jobId: result.jobId });
   };
 

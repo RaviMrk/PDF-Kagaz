@@ -1,6 +1,8 @@
 import type { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { Href } from 'expo-router';
 
+import { IMAGES_MAX } from './limits';
+
 export type ToolId =
   | 'merge'
   | 'split'
@@ -16,7 +18,7 @@ export type ToolId =
   | 'page-numbers'
   | 'sign'
   | 'metadata';
-export type RunnableToolId = 'merge' | 'split' | 'organize';
+export type RunnableToolId = 'merge' | 'split' | 'organize' | 'images-to-pdf' | 'scan';
 export type ToolGroup = 'organise' | 'convert' | 'optimise' | 'security' | 'edit';
 
 export type ToolDef = {
@@ -65,8 +67,8 @@ export const TOOLS: readonly ToolDef[] = [
   def('merge', 'T-01', 'organise', 'file-multiple-outline', true, 50, 2),
   def('split', 'T-02', 'organise', 'content-cut', true),
   def('organize', 'T-03', 'organise', 'file-arrow-up-down-outline', true),
-  def('images-to-pdf', 'T-04', 'convert', 'image-multiple-outline'),
-  def('scan', 'T-05', 'convert', 'camera-outline'),
+  def('images-to-pdf', 'T-04', 'convert', 'image-multiple-outline', true, IMAGES_MAX),
+  def('scan', 'T-05', 'convert', 'camera-outline', true),
   def('compress', 'T-06', 'optimise', 'arrow-collapse-vertical'),
   def('protect', 'T-07', 'security', 'lock-outline'),
   def('unlock', 'T-08', 'security', 'lock-open-outline'),

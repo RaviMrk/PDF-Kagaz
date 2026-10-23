@@ -233,6 +233,33 @@ describe('result screen', () => {
     expect(cancel).toHaveBeenCalled();
   });
 
+  it('explains images that are no longer available, also when retry finds them gone', async () => {
+    const gone = 'The images for this PDF are no longer available. Add them again.';
+    outcomeOf.mockReturnValue({
+      kind: 'done',
+      toolId: 'images-to-pdf',
+      outcome: { ok: false, failure: 'imagesGone', inputIndex: null, outputs: [] },
+    });
+    retry.mockReturnValueOnce({ ok: false, reason: 'gone' });
+    await open();
+    expect(screen.getAllByText(gone)).toHaveLength(1);
+    await press('Try again');
+    expect(retry).toHaveBeenCalledWith('j1', expect.any(Function));
+    expect(screen.getAllByText(gone)).toHaveLength(2);
+  });
+
+  it('explains a damaged image', async () => {
+    outcomeOf.mockReturnValue({
+      kind: 'done',
+      toolId: 'scan',
+      outcome: { ok: false, failure: 'imageInvalid', inputIndex: 1, outputs: [] },
+    });
+    await open();
+    expect(
+      screen.getByText("An image is damaged or in a format that isn't supported"),
+    ).toBeTruthy();
+  });
+
   it('says when the result is gone', async () => {
     outcomeOf.mockReturnValue({ kind: 'missing' });
     await open();
