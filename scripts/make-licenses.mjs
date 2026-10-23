@@ -11,6 +11,11 @@ const out = (f) => path.join(root, 'src/config', f);
 
 // Packages Expo and React Native pull in for building, bundling or testing only. They never reach
 // the APK, so they are not attributed. In-repo module and dev flags are handled separately.
+// Bundled into the JS bundle despite matching a tooling prefix (verified against the Metro
+// source map of `expo export --platform android --dump-sourcemap`): Babel helpers and Metro's
+// require() runtime.
+const BUNDLED = new Set(['@babel/runtime', 'metro-runtime']);
+
 const TOOLING = [
   '@expo/cli',
   '@babel/',
@@ -42,6 +47,7 @@ const TOOLING = [
 ];
 // A trailing "/" or "-" means prefix; anything else is an exact name (or a name followed by "-").
 const isTooling = (name) =>
+  !BUNDLED.has(name) &&
   TOOLING.some((p) =>
     /[/-]$/.test(p) ? name.startsWith(p) : name === p || name.startsWith(`${p}-`),
   );

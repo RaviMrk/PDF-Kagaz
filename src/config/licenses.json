@@ -1,5 +1,11 @@
 [
   {
+    "name": "@babel/runtime",
+    "version": "7.29.10",
+    "license": "MIT",
+    "text": "8f08c824b2bb"
+  },
+  {
     "name": "@cantoo/pdf-lib",
     "version": "2.11.1",
     "license": "MIT",
@@ -1684,6 +1690,18 @@
     "version": "2.0.0",
     "license": "MIT",
     "text": "e9c49f7790ad"
+  },
+  {
+    "name": "metro-runtime",
+    "version": "0.84.5",
+    "license": "MIT",
+    "text": "5f628e73f781"
+  },
+  {
+    "name": "metro-runtime",
+    "version": "0.84.6",
+    "license": "MIT",
+    "text": "5f628e73f781"
   },
   {
     "name": "micromatch",

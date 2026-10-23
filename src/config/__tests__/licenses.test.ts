@@ -34,7 +34,12 @@ describe('generated licence list', () => {
   });
 
   it('excludes build-time tooling', () => {
-    expect(list.filter((e) => /^(jest-|@jest\/|@types\/|metro|@babel\/)/.test(e.name))).toEqual([]);
+    const allowed = new Set(['@babel/runtime', 'metro-runtime']);
+    expect(
+      list.filter(
+        (e) => /^(jest-|@jest\/|@types\/|metro|@babel\/)/.test(e.name) && !allowed.has(e.name),
+      ),
+    ).toEqual([]);
   });
 
   it('includes the libraries the app ships', () => {
@@ -47,6 +52,8 @@ describe('generated licence list', () => {
       '@shopify/flash-list',
       '@cantoo/pdf-lib',
       'expo-router',
+      '@babel/runtime',
+      'metro-runtime',
     ]) {
       expect(names.has(lib)).toBe(true);
     }
