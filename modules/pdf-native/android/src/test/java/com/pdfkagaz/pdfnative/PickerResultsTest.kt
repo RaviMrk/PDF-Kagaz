@@ -31,4 +31,10 @@ class PickerResultsTest {
     assertEquals(50, uris.size)
     assertEquals(clip.take(50), uris)
   }
+
+  @Test
+  fun maxOverloadKeepsUpToTheGivenCount() {
+    assertEquals(100, PickerResults.urisOf(null, (1..120).map { "content://m/$it" }, 100).size)
+    assertEquals(50, PickerResults.urisOf(null, (1..120).map { "content://m/$it" }).size)
+  }
 }

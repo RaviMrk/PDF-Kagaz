@@ -41,3 +41,7 @@ class TooLargeException(message: String = "File is too large for this tool", cau
 /** An image that cannot be decoded, or whose bounds are zero or negative. */
 class ImageInvalidException(message: String = "Image is damaged or in an unsupported format", cause: Throwable? = null) :
   CodedException("ERR_IMAGE_INVALID", message, cause)
+
+/** Play services missing or outdated, the ML Kit scanner unsupported or not downloaded, or its launch failed. */
+class ScannerUnavailableException(message: String = "Document scanner is not available", cause: Throwable? = null) :
+  CodedException("ERR_SCANNER_UNAVAILABLE", message, cause)

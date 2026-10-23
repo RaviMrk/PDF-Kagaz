@@ -169,11 +169,15 @@ class PdfNativeModule : Module() {
     lateinit var folderPicker: AppContextActivityResultLauncher<FolderPickerInput, Uri?>
     lateinit var createDocument: AppContextActivityResultLauncher<CreateDocumentInput, Uri?>
     lateinit var openDocuments: AppContextActivityResultLauncher<OpenDocumentsInput, List<String>>
+    lateinit var pickImagesLauncher: AppContextActivityResultLauncher<PickImagesInput, List<String>>
+    lateinit var scanLauncher: AppContextActivityResultLauncher<ScanLaunchInput, ScanOutcome>
 
     RegisterActivityContracts {
       folderPicker = registerForActivityResult(FolderPickerContract(this@PdfNativeModule))
       createDocument = registerForActivityResult(CreateDocumentContract())
       openDocuments = registerForActivityResult(OpenDocumentsContract())
+      pickImagesLauncher = registerForActivityResult(PickImagesContract())
+      scanLauncher = registerForActivityResult(scanContract)
     }
 
     AsyncFunction("saveCopyAs") Coroutine { uri: String, suggestedName: String ->
@@ -190,6 +194,27 @@ class PdfNativeModule : Module() {
       val picked = launchPicker { openDocuments.launch(OpenDocumentsInput(multiple)) }
       if (picked.isEmpty()) return@Coroutine emptyList<String>()
       RenderSupport.mapErrors { withContext(Dispatchers.IO) { allowedPicks(picked) } }
+    }
+
+    AsyncFunction("pickImages") Coroutine { max: Int ->
+      val picked = launchPicker { pickImagesLauncher.launch(PickImagesInput(max.coerceIn(1, ImageLimits.IMAGES_MAX))) }
+      if (picked.isEmpty()) return@Coroutine emptyList<String>()
+      RenderSupport.mapErrors { withContext(Dispatchers.IO) { allowedPicks(picked) } }
+    }
+
+    AsyncFunction("scanDocument") Coroutine { sessionId: String, firstIndex: Int, pageLimit: Int ->
+      if (!ToolPaths.isImageSessionId(sessionId) || firstIndex < 0) throw InvalidNameException()
+      val limit = pageLimit.coerceIn(1, ImageLimits.IMAGES_MAX)
+      val outcome = launchPicker {
+        val activity = appContext.currentActivity ?: throw NoActivityException()
+        scanContract.pendingSender = documentScanner.startIntent(activity, limit)
+        scanLauncher.launch(ScanLaunchInput(SystemClock.elapsedRealtime()))
+      }
+      when (outcome) {
+        ScanOutcome.Cancelled -> emptyList()
+        ScanOutcome.Failed -> throw ScannerUnavailableException()
+        is ScanOutcome.Pages -> importScannedPages(sessionId, firstIndex, ScanResults.pageUris(outcome.uris, limit))
+      }
     }
 
     AsyncFunction("pickFolder") Coroutine { ->
@@ -239,6 +264,11 @@ class PdfNativeModule : Module() {
   private val imageFiles by lazy { ImageFiles(context) }
 
   private val imageThumbnails by lazy { ImageThumbnails(context) }
+
+  private val documentScanner by lazy { DocumentScanner(context) }
+
+  /** Registered once; its pendingSender carries the scanner's IntentSender into each launch. */
+  private val scanContract = ScanDocumentContract()
 
   // region scan
 
@@ -402,6 +432,44 @@ class PdfNativeModule : Module() {
     }
     if (allowed.isEmpty()) throw PermissionDeniedException()
     return allowed
+  }
+
+  /**
+   * Imports scanner pages as src-<firstIndex + k>, in scanner order. They came from this scan's
+   * result, so [UriGuard] is not applied. A page that fails is skipped; ERR_IMAGE_INVALID when all
+   * fail. The scanner's own cache files are deleted once read.
+   */
+  private suspend fun importScannedPages(sessionId: String, firstIndex: Int, uris: List<String>): List<Map<String, Any?>> =
+    withContext(Dispatchers.IO) {
+      if (uris.isEmpty()) return@withContext emptyList()
+      val cacheDir = context.cacheDir.canonicalPath
+      val imported = ArrayList<Map<String, Any?>>()
+      uris.forEachIndexed { k, uri ->
+        val parsed = Uri.parse(uri)
+        try {
+          imported += imageFiles.importStream(sessionId, firstIndex + k, ImageLimits.IMAGE_MAX_BYTES) {
+            context.contentResolver.openInputStream(parsed) ?: throw FileNotFoundCodedException()
+          }
+        } catch (e: CancellationException) {
+          throw e
+        } catch (e: Exception) {
+          // Skipped; the caller sees which indexes came back.
+        } finally {
+          deleteScannerFile(cacheDir, parsed)
+        }
+      }
+      if (imported.isEmpty()) throw ImageInvalidException()
+      imported
+    }
+
+  private fun deleteScannerFile(cacheDir: String, uri: Uri) {
+    if (uri.scheme != "file") return
+    val file = File(uri.path ?: return)
+    try {
+      if (ScanResults.isOwnScannerFile(cacheDir, file.canonicalPath)) file.delete()
+    } catch (e: java.io.IOException) {
+      // Left for the system to clear with the cache.
+    }
   }
 
   // endregion

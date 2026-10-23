@@ -126,6 +126,20 @@ export interface PdfNativeApi {
    * picked document was refused.
    */
   pickPdfDocuments(multiple: boolean): Promise<string[]>;
+  /**
+   * System photo picker, images only (`max` clamped to 1..IMAGES_MAX); resolves [] when cancelled.
+   * No media permission is used and no persistable grant is taken. Picks this app may not read are
+   * dropped; rejects with ERR_PERMISSION_DENIED when every picked image was refused.
+   */
+  pickImages(max: number): Promise<string[]>;
+  /**
+   * Google Play services document scanner (`pageLimit` clamped to 1..IMAGES_MAX). The scanned pages
+   * are imported into the image session as sources `firstIndex`, `firstIndex + 1`… and returned in
+   * scanner order; a page that fails to import is skipped. Resolves [] when cancelled. Rejects with
+   * ERR_SCANNER_UNAVAILABLE (Play services or the scanner module missing), ERR_IMAGE_INVALID (no
+   * page could be imported) or ERR_INVALID_NAME (not an image session).
+   */
+  scanDocument(sessionId: string, firstIndex: number, pageLimit: number): Promise<ImportedImage[]>;
   addScanProgressListener(cb: (e: ScanProgressEvent) => void): { remove(): void };
   /** PDFs shared to the app while it is running (ACTION_VIEW is left to Linking). */
   addIncomingPdfListener(cb: (e: IncomingPdfEvent) => void): { remove(): void };
@@ -144,6 +158,7 @@ export const PDF_NATIVE_ERROR_CODES = [
   'ERR_VOLUME_UNAVAILABLE',
   'ERR_TOO_LARGE',
   'ERR_IMAGE_INVALID',
+  'ERR_SCANNER_UNAVAILABLE',
 ] as const;
 
 export type PdfNativeErrorCode = (typeof PDF_NATIVE_ERROR_CODES)[number];
@@ -223,6 +238,9 @@ export const pdfNative: PdfNativeApi = {
   releaseToolDocument: () => PdfNative.releaseToolDocument(),
   saveCopyAs: (uri, suggestedName) => PdfNative.saveCopyAs(uri, suggestedName),
   pickPdfDocuments: (multiple) => PdfNative.pickPdfDocuments(multiple),
+  pickImages: (max) => PdfNative.pickImages(max),
+  scanDocument: (sessionId, firstIndex, pageLimit) =>
+    PdfNative.scanDocument(sessionId, firstIndex, pageLimit),
   addScanProgressListener: (cb) => PdfNative.addListener('onScanProgress', cb),
   addIncomingPdfListener: (cb) => PdfNative.addListener('onIncomingPdf', cb),
 };

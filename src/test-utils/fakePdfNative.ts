@@ -101,6 +101,8 @@ function createNativeFns(): jest.Mocked<NativeFns> {
     releaseToolDocument: jest.fn().mockResolvedValue(undefined),
     saveCopyAs: jest.fn().mockResolvedValue(true),
     pickPdfDocuments: jest.fn().mockResolvedValue([]),
+    pickImages: jest.fn().mockResolvedValue([]),
+    scanDocument: jest.fn().mockResolvedValue([]),
   };
 }
 

@@ -12,8 +12,10 @@ import android.graphics.Paint
 import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
+import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -35,16 +37,30 @@ class ImageFiles(private val context: Context) {
       val source = UriGuard(context).requireAllowed(Uri.parse(uri))
       val stat = RenderSupport.statOrThrow(context, source)
       if (ToolLimits.exceedsKnownSize(stat.sizeBytes, cap)) throw TooLargeException()
+      importStream(sessionId, index, cap) { StreamCopy.openGuarded(context, source) }
+    }
+  }
+
+  /**
+   * The import routine for a trusted stream (already guarded, or a scanner result): copies what
+   * [open] returns into the session as src-<index> under [cap] bytes (negative: no cap), then checks
+   * it decodes (ERR_IMAGE_INVALID). Returns index, display-oriented size and copied bytes.
+   */
+  suspend fun importStream(sessionId: String, index: Int, cap: Long, open: () -> InputStream): Map<String, Any?> =
+    withContext(Dispatchers.IO) {
+      if (!ToolPaths.isImageSessionId(sessionId) || index < 0) throw InvalidNameException()
       val dir = File(toolsRoot, sessionId)
       if (!dir.isDirectory && !dir.mkdirs()) throw IoCodedException()
       val target = File(dir, ToolPaths.sourceName(index))
       val part = File(dir, ToolPaths.partName(ToolPaths.sourceName(index)))
       val copied = try {
-        val size = StreamCopy.openGuarded(context, source).use { input ->
+        val size = open().use { input ->
           FileOutputStream(part).use { output -> StreamCopy.copyChunks(this, input, output, cap) }
         }
         if (!part.renameTo(target)) throw IoCodedException()
         size
+      } catch (e: FileNotFoundException) {
+        throw FileNotFoundCodedException(cause = e)
       } catch (e: IOException) {
         throw IoCodedException(cause = e)
       } finally {
@@ -58,7 +74,6 @@ class ImageFiles(private val context: Context) {
       val (w, h) = ExifTransform.orientedSize(bounds.first, bounds.second, orientationOf(target))
       mapOf("index" to index, "width" to w, "height" to h, "sizeBytes" to copied)
     }
-  }
 
   /** Prepares src-<sourceIndex> as <job>/page-<pageIndex>.jpg: bounded, upright, filtered, on white. */
   suspend fun prepare(

@@ -19,5 +19,8 @@ android {
 
 dependencies {
   implementation 'androidx.exifinterface:exifinterface:1.4.2'
+  // The version :app resolves (releaseRuntimeClasspath); PickMultipleVisualMedia needs >= 1.7.0.
+  implementation "androidx.activity:activity:1.8.2"
+  implementation 'com.google.android.gms:play-services-mlkit-document-scanner:16.0.0'
   testImplementation 'junit:junit:4.13.2'
 }

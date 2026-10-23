@@ -189,6 +189,20 @@ describe('pdfNative', () => {
     expect(mockedModule.pickPdfDocuments).toHaveBeenLastCalledWith(false);
   });
 
+  it('forwards pickImages and scanDocument with every argument', async () => {
+    await expect(pdfNative.pickImages(100)).resolves.toEqual([]);
+    expect(mockedModule.pickImages).toHaveBeenCalledWith(100);
+    mockedModule.pickImages.mockResolvedValueOnce(['content://media/picker/1']);
+    await expect(pdfNative.pickImages(3)).resolves.toEqual(['content://media/picker/1']);
+    expect(mockedModule.pickImages).toHaveBeenLastCalledWith(3);
+
+    await expect(pdfNative.scanDocument('img-a', 3, 97)).resolves.toEqual([]);
+    expect(mockedModule.scanDocument).toHaveBeenCalledWith('img-a', 3, 97);
+    const pages = [{ index: 3, width: 1240, height: 1754, sizeBytes: 2000 }];
+    mockedModule.scanDocument.mockResolvedValueOnce(pages);
+    await expect(pdfNative.scanDocument('img-a', 3, 97)).resolves.toEqual(pages);
+  });
+
   it('recognises native errors by code', () => {
     expect(isPdfNativeError(nativeError('ERR_PDF_ENCRYPTED'), 'ERR_PDF_ENCRYPTED')).toBe(true);
     expect(isPdfNativeError(nativeError('ERR_PDF_ENCRYPTED'), 'ERR_PDF_INVALID')).toBe(false);
@@ -197,5 +211,8 @@ describe('pdfNative', () => {
     expect(isPdfNativeError(nativeError('ERR_IO'), 'ERR_IO')).toBe(true);
     expect(isPdfNativeError(nativeError('ERR_TOO_LARGE'), 'ERR_TOO_LARGE')).toBe(true);
     expect(isPdfNativeError(nativeError('ERR_IMAGE_INVALID'), 'ERR_IMAGE_INVALID')).toBe(true);
+    expect(
+      isPdfNativeError(nativeError('ERR_SCANNER_UNAVAILABLE'), 'ERR_SCANNER_UNAVAILABLE'),
+    ).toBe(true);
   });
 });

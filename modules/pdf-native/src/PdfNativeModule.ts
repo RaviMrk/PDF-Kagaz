@@ -71,6 +71,10 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
   saveCopyAs(uri: string, suggestedName: string): Promise<boolean>;
   /** ACTION_OPEN_DOCUMENT for PDFs; [] when cancelled; ERR_PERMISSION_DENIED when every pick is refused. */
   pickPdfDocuments(multiple: boolean): Promise<string[]>;
+  /** System photo picker, images only (max clamped to 1..100); [] when cancelled. */
+  pickImages(max: number): Promise<string[]>;
+  /** ML Kit document scanner; pages imported as src-<firstIndex + k>; [] when cancelled. */
+  scanDocument(sessionId: string, firstIndex: number, pageLimit: number): Promise<ImportedImage[]>;
 }
 
 export default requireNativeModule<PdfNativeModule>('PdfNative');

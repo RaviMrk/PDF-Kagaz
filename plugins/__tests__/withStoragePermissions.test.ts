@@ -69,6 +69,25 @@ describe('app.config', () => {
     return require('../../app.config').default({ config: appJson.expo });
   }
 
+  const MEDIA_AND_CAMERA = [
+    'android.permission.CAMERA',
+    'android.permission.READ_MEDIA_IMAGES',
+    'android.permission.READ_MEDIA_VIDEO',
+    'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
+  ];
+
+  it.each(['play-saf', undefined])(
+    'blocks camera and media permissions for variant %s (photo picker, Play scanner)',
+    (variant) => {
+      if (variant === undefined) delete process.env.APP_VARIANT;
+      else process.env.APP_VARIANT = variant;
+      const cfg = load();
+      for (const permission of MEDIA_AND_CAMERA) {
+        expect(cfg.android.blockedPermissions).toContain(permission);
+      }
+    },
+  );
+
   it('blocks MANAGE and disables all-files access for play-saf', () => {
     process.env.APP_VARIANT = 'play-saf';
     const cfg = load();
