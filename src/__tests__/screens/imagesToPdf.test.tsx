@@ -39,6 +39,19 @@ async function open(url = '/tool/images-to-pdf') {
   await act(async () => {});
   return { pathname: () => pending.getPathname(), unmount: view.unmount };
 }
+async function openPushed() {
+  const pending = renderRouter(APP_DIR, { initialUrl: '/tools' });
+  await pending;
+  await act(async () => {});
+  await act(async () => router.push('/tool/images-to-pdf'));
+  await act(async () => {});
+  await act(async () => {});
+  return { pathname: () => pending.getPathname() };
+}
+const discardNow = async () => {
+  const buttons = alert.mock.calls[0]![2] as { text: string; onPress?: () => void }[];
+  await act(async () => buttons.find((b) => b.text === 'Discard')!.onPress!());
+};
 const press = async (label: string | RegExp) => {
   await fireEvent.press(screen.getByLabelText(label));
   await act(async () => {});
@@ -178,9 +191,76 @@ describe('images to PDF screen', () => {
     expect(cleanup).toHaveBeenCalledWith(expect.stringMatching(/^img-/));
   });
 
+  it('sizes the next pick by the count and numbers it from the next free index', async () => {
+    await open();
+    await press(/^Image 2 of 3/);
+    await press('Remove image 2');
+    pick.mockResolvedValue(['content://picker/new']);
+    await press('Add images');
+    expect(pick).toHaveBeenLastCalledWith(98);
+    expect(pdfNative.importImage).toHaveBeenLastCalledWith(
+      'content://picker/new',
+      expect.stringMatching(/^img-/),
+      3,
+      expect.any(Number),
+    );
+    expect(screen.getByText('3 images')).toBeTruthy();
+  });
+
+  it('can add again after failed imports freed capacity', async () => {
+    pick.mockResolvedValue(uris(100));
+    const imp = jest.spyOn(pdfNative, 'importImage');
+    for (let i = 0; i < 5; i += 1) imp.mockRejectedValueOnce(nativeError('ERR_IMAGE_INVALID'));
+    imp.mockImplementation((_u, _s, index) =>
+      Promise.resolve({ index, width: 4, height: 3, sizeBytes: 1 }),
+    );
+    await open();
+    expect(screen.getByText('95 images')).toBeTruthy();
+    pick.mockResolvedValue(uris(5));
+    await press('Add images');
+    expect(pick).toHaveBeenLastCalledWith(5);
+    expect(screen.getByText('100 images')).toBeTruthy();
+  });
+
+  it('prompts once for header Back, then leaves on Discard', async () => {
+    const r = await openPushed();
+    await press('Back');
+    expect(alert).toHaveBeenCalledTimes(1);
+    await discardNow();
+    await flush();
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(r.pathname()).toBe('/tools');
+    expect(cleanup).toHaveBeenCalledWith(expect.stringMatching(/^img-/));
+  });
+
+  it('prompts once for a gesture back (beforeRemove), then leaves on Discard', async () => {
+    const r = await openPushed();
+    await act(async () => router.back());
+    expect(alert).toHaveBeenCalledTimes(1);
+    await discardNow();
+    await flush();
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(r.pathname()).toBe('/tools');
+  });
+
+  it('retries opening the session when the add button is used after a failed open', async () => {
+    const create = jest
+      .spyOn(pdfNative, 'createToolWorkspace')
+      .mockRejectedValueOnce(nativeError('ERR_IO'))
+      .mockResolvedValue('file:///ws');
+    await open();
+    expect(screen.getByText('Something went wrong')).toBeTruthy();
+    expect(pick).not.toHaveBeenCalled();
+    await press('Add images');
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(pick).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('3 images')).toBeTruthy();
+  });
+
   it('keeps the session when unmounted after Run', async () => {
     const r = await open();
     await press('Make PDF');
+    expect(start).toHaveBeenCalledTimes(1);
     cleanup.mockClear();
     await act(async () => r.unmount());
     expect(cleanup).not.toHaveBeenCalled();

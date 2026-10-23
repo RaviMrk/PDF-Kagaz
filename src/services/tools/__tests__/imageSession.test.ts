@@ -54,14 +54,14 @@ describe('imageSession', () => {
 
   it('asks the picker for the remaining capacity only', async () => {
     const { native, deps } = fakes();
-    await addPickedImages('img-a', 97, deps);
+    await addPickedImages('img-a', 97, 97, deps);
     expect(native.pickImages).toHaveBeenCalledWith(3);
   });
 
   it('imports picks in order at consecutive indices and keys them', async () => {
     const { native, deps } = fakes();
     native.pickImages.mockResolvedValueOnce(uris(2));
-    const result = await addPickedImages('img-a', 4, deps);
+    const result = await addPickedImages('img-a', 4, 4, deps);
     expect(native.importImage.mock.calls).toEqual([
       ['content://picker/0', 'img-a', 4, 52_428_800],
       ['content://picker/1', 'img-a', 5, 52_428_800],
@@ -79,7 +79,7 @@ describe('imageSession', () => {
   it('drops picks over the limit and says so', async () => {
     const { native, deps } = fakes();
     native.pickImages.mockResolvedValueOnce(uris(5));
-    const result = await addPickedImages('img-a', 97, deps);
+    const result = await addPickedImages('img-a', 97, 97, deps);
     expect(native.importImage.mock.calls.map((c) => [c[0], c[2]])).toEqual([
       ['content://picker/0', 97],
       ['content://picker/1', 98],
@@ -95,15 +95,32 @@ describe('imageSession', () => {
     native.importImage
       .mockImplementationOnce((_u, _s, i) => Promise.resolve(imported(i)))
       .mockRejectedValueOnce(nativeError('ERR_IMAGE_INVALID'));
-    const result = await addPickedImages('img-a', 97, deps);
+    const result = await addPickedImages('img-a', 97, 97, deps);
     expect(result.items).toHaveLength(2);
     expect(result.items.map((i) => i.index)).toEqual([97, 99]);
     expect(result.failed).toBe(1);
   });
 
+  it('sizes the picker by the count and numbers imports from the next free index', async () => {
+    const { native, deps } = fakes();
+    native.pickImages.mockResolvedValueOnce(uris(2));
+    const result = await addPickedImages('img-a', 3, 2, deps);
+    expect(native.pickImages).toHaveBeenCalledWith(98);
+    expect(result.items.map((i) => i.index)).toEqual([3, 4]);
+  });
+
+  it('can add into freed capacity after failed imports', async () => {
+    const { native, deps } = fakes();
+    native.pickImages.mockResolvedValueOnce(uris(5));
+    const result = await addPickedImages('img-a', 100, 95, deps);
+    expect(native.pickImages).toHaveBeenCalledWith(5);
+    expect(result.items).toHaveLength(5);
+    expect(result.limited).toBe(false);
+  });
+
   it('never opens the picker when the session is full', async () => {
     const { native, deps } = fakes();
-    expect(await addPickedImages('img-a', 100, deps)).toEqual({
+    expect(await addPickedImages('img-a', 100, 100, deps)).toEqual({
       items: [],
       failed: 0,
       limited: true,
@@ -114,7 +131,7 @@ describe('imageSession', () => {
   it('treats a failing picker as nothing picked', async () => {
     const { native, deps } = fakes();
     native.pickImages.mockRejectedValueOnce(nativeError('ERR_PERMISSION_DENIED'));
-    expect(await addPickedImages('img-a', 0, deps)).toEqual({
+    expect(await addPickedImages('img-a', 0, 0, deps)).toEqual({
       items: [],
       failed: 0,
       limited: false,

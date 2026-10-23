@@ -66,6 +66,7 @@ export function ImagesToPdfFlow() {
   const starting = useRef(false);
   const busyAdding = useRef(false);
   const opened = useRef(false);
+  const ready = useRef(false);
   const discarding = useRef(false);
   const deleted = useRef(false);
   // Deletes the session at most once, and never after a job took it over.
@@ -80,8 +81,20 @@ export function ImagesToPdfFlow() {
     busyAdding.current = true;
     setAdding(true);
     setNotices([]);
+    // A session that failed to open on entry is opened again before the picker.
+    if (!ready.current) {
+      ready.current = await openImageSession(sessionId);
+      if (!ready.current) {
+        busyAdding.current = false;
+        if (alive.current) {
+          setNotices([t('toolError.unknown')]);
+          setAdding(false);
+        }
+        return;
+      }
+    }
     const current = itemsRef.current;
-    const result = await addPickedImages(sessionId, nextSourceIndex(current));
+    const result = await addPickedImages(sessionId, nextSourceIndex(current), current.length);
     busyAdding.current = false;
     if (!alive.current) {
       // Left while importing: these files landed after the session was deleted.
@@ -101,14 +114,7 @@ export function ImagesToPdfFlow() {
     alive.current = true;
     if (!opened.current) {
       opened.current = true;
-      void openImageSession(sessionId).then((ok) => {
-        if (!alive.current) return;
-        if (ok) void add();
-        else {
-          setNotices([t('toolError.unknown')]);
-          setAdding(false);
-        }
-      });
+      void add();
     }
     return () => {
       alive.current = false;

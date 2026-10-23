@@ -53,16 +53,17 @@ export async function openImageSession(
 export type PickedImages = { items: ImageItem[]; failed: number; limited: boolean };
 
 /**
- * Opens the photo picker for the remaining capacity and imports the picks in order, as sources
- * `current`, `current + 1`… (a failed import's index is simply never used). Picks over the limit
+ * Opens the photo picker for the remaining capacity (`count` items are in the session) and imports the picks in order, as sources
+ * `nextIndex`, `nextIndex + 1`… (a failed import's index is simply never used). Picks over the limit
  * are dropped (`limited`); images that cannot be imported are counted in `failed`, never thrown.
  */
 export async function addPickedImages(
   sessionId: string,
-  current: number,
+  nextIndex: number,
+  count: number,
   deps: ImageSessionDeps = DEFAULT_DEPS,
 ): Promise<PickedImages> {
-  const remaining = IMAGES_MAX - current;
+  const remaining = IMAGES_MAX - count;
   if (remaining <= 0) return { items: [], failed: 0, limited: true };
   let uris: string[];
   try {
@@ -75,7 +76,9 @@ export async function addPickedImages(
   let failed = 0;
   for (const [k, uri] of uris.slice(0, remaining).entries()) {
     try {
-      items.push(item(await deps.native.importImage(uri, sessionId, current + k, IMAGE_MAX_BYTES)));
+      items.push(
+        item(await deps.native.importImage(uri, sessionId, nextIndex + k, IMAGE_MAX_BYTES)),
+      );
     } catch {
       failed += 1;
     }
