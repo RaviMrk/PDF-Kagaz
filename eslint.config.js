@@ -36,7 +36,18 @@ const FIREBASE_ADAPTER = {
   source: '/(^|\\/)firebaseTelemetry(\\.ts)?$/',
   message: 'Only src/services/telemetry/telemetry.ts loads the Firebase adapter (lazily).',
 };
-const RESTRICTED_MODULES = [SORTABLES, ADS, FIREBASE, FIREBASE_ADAPTER];
+// Ads reach a screen only through these: the banner on Home and Files, the interstitial from the
+// result screen (shown) and the ads lifecycle (preloaded). A shared component cannot pull ads into
+// the reader, tools, scan or Settings.
+const AD_BANNER = {
+  source: '/(^|\\/)AdBanner$/',
+  message: 'AdBanner may only be used by app/(tabs)/home.tsx and app/(tabs)/files.tsx.',
+};
+const INTERSTITIAL = {
+  source: '/(^|\\/)interstitial$/',
+  message: 'The interstitial is used only by app/result.tsx and src/components/AdsLifecycle.tsx.',
+};
+const RESTRICTED_MODULES = [SORTABLES, ADS, FIREBASE, FIREBASE_ADAPTER, AD_BANNER, INTERSTITIAL];
 
 const importRule = ({ name, message }) => ['error', { paths: [{ name, message }] }];
 // Every way a module can be pulled in: import, re-export, export-all, import(), require() and
@@ -73,6 +84,18 @@ const restrictionBlocks = () => [
   {
     files: ['src/components/**'],
     rules: { 'no-restricted-syntax': restrictedSyntax([SORTABLES]) },
+  },
+  {
+    files: ['src/components/AdsLifecycle.tsx'],
+    rules: { 'no-restricted-syntax': restrictedSyntax([SORTABLES, INTERSTITIAL]) },
+  },
+  {
+    files: ['app/(tabs)/home.tsx', 'app/(tabs)/files.tsx'],
+    rules: { 'no-restricted-syntax': restrictedSyntax([AD_BANNER]) },
+  },
+  {
+    files: ['app/result.tsx'],
+    rules: { 'no-restricted-syntax': restrictedSyntax([INTERSTITIAL]) },
   },
   {
     files: ['src/components/AdBanner.tsx'],

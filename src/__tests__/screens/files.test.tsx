@@ -244,6 +244,8 @@ describe('Files banner', () => {
   it('shows the advertisement container below the list when ads are ready', async () => {
     useAds.setState({ status: 'ready', canRequestAds: true });
     await renderFiles();
+    const { fakeBannerProps } = jest.requireMock('react-native-google-mobile-ads');
+    await act(async () => fakeBannerProps().onAdLoaded());
     expect(screen.getByLabelText('Advertisement')).toBeTruthy();
     expect(screen.getByTestId('files-list')).toBeTruthy();
   });

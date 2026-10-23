@@ -319,11 +319,18 @@ describe('result screen', () => {
 
     it('is offered once, after leaving, when Done is pressed on a success', async () => {
       outcomeOf.mockReturnValue(done({ ok: true, outputs: [merged] }));
-      dismiss.mockImplementation(() => {
-        expect(showAfterDone).not.toHaveBeenCalled();
+      const order: string[] = [];
+      jest.spyOn(router, 'canGoBack').mockReturnValue(true);
+      const back = jest.spyOn(router, 'back').mockImplementation(() => order.push('back'));
+      showAfterDone.mockImplementation(() => {
+        order.push('show');
+        return false;
       });
       await open();
       await press('Done');
+      back.mockRestore();
+      jest.mocked(router.canGoBack).mockRestore();
+      expect(order).toEqual(['back', 'show']);
       expect(dismiss).toHaveBeenCalledWith('j1');
       expect(showAfterDone).toHaveBeenCalledTimes(1);
     });

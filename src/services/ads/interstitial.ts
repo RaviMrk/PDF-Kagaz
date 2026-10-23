@@ -49,9 +49,14 @@ export function createInterstitialController(deps: InterstitialDeps) {
       }
     },
 
+    /** Forget the current ad (consent withdrawn). */
+    drop(): void {
+      ad = null;
+    },
+
     showAfterDone(): boolean {
       const current = ad;
-      if (!current?.loaded) return false;
+      if (!current?.loaded || !deps.canRequestAds()) return false;
       const now = deps.now();
       const last = deps.kv.getNumber(LAST_SHOWN_KEY) ?? null;
       if (!canShowInterstitial(last, now)) {
@@ -77,4 +82,9 @@ export const interstitial = createInterstitialController({
   now: Date.now,
   canRequestAds: () => useAds.getState().canRequestAds,
   unitId: getAdsConfig().interstitial,
+});
+
+// A loaded ad must not outlive consent: drop it as soon as ads go off.
+useAds.subscribe((state) => {
+  if (!state.canRequestAds) interstitial.drop();
 });

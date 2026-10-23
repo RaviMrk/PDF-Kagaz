@@ -138,6 +138,26 @@ describe('interstitial controller', () => {
     await new Promise((r) => setImmediate(r));
   });
 
+  it('shows nothing when consent was withdrawn after the ad loaded', () => {
+    const { controller, ads, flags, kv } = setup();
+    controller.preload();
+    ads[0]!.emit(AdEventType.LOADED);
+    flags.canRequestAds = false;
+    expect(controller.showAfterDone()).toBe(false);
+    expect(ads[0]!.show).not.toHaveBeenCalled();
+    expect(kv.getNumber(KEY)).toBeUndefined();
+  });
+
+  it('drops a loaded ad on request', () => {
+    const { controller, ads, create } = setup();
+    controller.preload();
+    ads[0]!.emit(AdEventType.LOADED);
+    controller.drop();
+    expect(controller.showAfterDone()).toBe(false);
+    controller.preload();
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
   it('drops a failed ad so the next preload creates again', () => {
     const { controller, ads, create } = setup();
     controller.preload();

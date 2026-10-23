@@ -2,48 +2,84 @@
 import fs from 'fs';
 import path from 'path';
 
-const APP = path.join(__dirname, '../../app');
+const ROOT = path.join(__dirname, '../..');
+const rel = (f: string) => path.relative(ROOT, f).split(path.sep).join('/');
 
-function filesUnder(target: string): string[] {
-  const full = path.join(APP, target);
-  if (!fs.existsSync(full)) return [];
-  if (fs.statSync(full).isFile()) return [full];
-  return fs.readdirSync(full, { withFileTypes: true }).flatMap((e) => {
-    const rel = path.join(target, e.name);
-    return e.isDirectory() ? filesUnder(rel) : [path.join(APP, rel)];
+function walk(dir: string): string[] {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) return e.name === '__tests__' || e.name === 'test-utils' ? [] : walk(full);
+    return /\.(tsx?|jsx?)$/.test(e.name) ? [full] : [];
   });
 }
 
-describe('ad placement', () => {
-  const adFree = [
-    'reader',
-    'tool',
-    'scan.tsx',
-    'onboarding.tsx',
-    'licenses.tsx',
-    '(tabs)/settings.tsx',
-    '(tabs)/tools.tsx',
-  ];
+const sources = [...walk(path.join(ROOT, 'src')), ...walk(path.join(ROOT, 'app'))];
+const read = (f: string) => fs.readFileSync(f, 'utf8');
+const importing = (re: RegExp) => sources.filter((f) => re.test(read(f))).map(rel);
 
-  it.each(adFree)('app/%s has no banner and no ads service', (target) => {
-    for (const file of filesUnder(target)) {
-      const src = fs.readFileSync(file, 'utf8');
-      expect(`${file}: ${/AdBanner|services\/ads/.test(src)}`).toBe(`${file}: false`);
-    }
+describe('ad placement', () => {
+  it('imports AdBanner only from Home and Files', () => {
+    expect(importing(/['"][^'"]*\/AdBanner['"]/).sort()).toEqual([
+      'app/(tabs)/files.tsx',
+      'app/(tabs)/home.tsx',
+    ]);
   });
 
-  it('app/ uses AdBanner only in Home and Files, and the ads service only in result', () => {
-    const all = fs
-      .readdirSync(APP, { recursive: true, encoding: 'utf8' })
-      .map((f) => path.join(APP, f))
-      .filter((f) => fs.statSync(f).isFile());
-    const rel = (f: string) => path.relative(APP, f);
-    const withBanner = all.filter((f) => /AdBanner/.test(fs.readFileSync(f, 'utf8'))).map(rel);
-    expect(withBanner.sort()).toEqual([
-      path.join('(tabs)', 'files.tsx'),
-      path.join('(tabs)', 'home.tsx'),
+  it('imports the interstitial only from the result screen and the ads lifecycle', () => {
+    expect(importing(/['"][^'"]*ads\/interstitial['"]/).sort()).toEqual([
+      'app/result.tsx',
+      'src/components/AdsLifecycle.tsx',
     ]);
-    const withAds = all.filter((f) => /services\/ads/.test(fs.readFileSync(f, 'utf8'))).map(rel);
-    expect(withAds).toEqual(['result.tsx']);
+  });
+
+  it('imports the ads package only from the ads service and AdBanner', () => {
+    const allowed = (f: string) =>
+      f.startsWith('src/services/ads/') || f === 'src/components/AdBanner.tsx';
+    expect(importing(/react-native-google-mobile-ads/).filter((f) => !allowed(f))).toEqual([]);
+  });
+
+  describe('ad-free screens', () => {
+    const adFree = [
+      'app/reader/[id].tsx',
+      'app/tool/[toolId].tsx',
+      'app/tool/organize/[id].tsx',
+      'app/scan.tsx',
+      'app/signature.tsx',
+      'app/open.tsx',
+      'app/onboarding.tsx',
+      'app/(tabs)/settings.tsx',
+      'app/(tabs)/tools.tsx',
+    ];
+    const futureRoutes = ['app/licenses.tsx'];
+
+    it.each(adFree)('%s exists and does not touch ads', (target) => {
+      const full = path.join(ROOT, target);
+      expect(fs.existsSync(full)).toBe(true);
+      expect(/AdBanner|services\/ads/.test(read(full))).toBe(false);
+    });
+
+    it.each(futureRoutes)('%s (when it exists) does not touch ads', (target) => {
+      const full = path.join(ROOT, target);
+      if (fs.existsSync(full)) expect(/AdBanner|services\/ads/.test(read(full))).toBe(false);
+    });
+
+    it('lists every route file under app/ as ad-free, Home/Files/result or a layout', () => {
+      const known = new Set([
+        ...adFree,
+        ...futureRoutes,
+        'app/(tabs)/home.tsx',
+        'app/(tabs)/files.tsx',
+        'app/result.tsx',
+        'app/(tabs)/_layout.tsx',
+        'app/_layout.tsx',
+        'app/index.tsx',
+        'app/+native-intent.tsx',
+      ]);
+      expect(
+        walk(path.join(ROOT, 'app'))
+          .map(rel)
+          .filter((f) => !known.has(f)),
+      ).toEqual([]);
+    });
   });
 });

@@ -184,6 +184,8 @@ describe('Home banner', () => {
   it('shows the advertisement container when ads are ready', async () => {
     useAds.setState({ status: 'ready', canRequestAds: true });
     await renderRouter(APP_DIR, { initialUrl: '/home' });
+    const { fakeBannerProps } = jest.requireMock('react-native-google-mobile-ads');
+    await act(async () => fakeBannerProps().onAdLoaded());
     expect(screen.getByLabelText('Advertisement')).toBeTruthy();
   });
 
@@ -192,5 +194,15 @@ describe('Home banner', () => {
     await renderRouter(APP_DIR, { initialUrl: '/home' });
     expect(screen.queryByLabelText('Advertisement')).toBeNull();
     expect(screen.getByLabelText('Search your PDFs')).toBeTruthy();
+  });
+
+  it('leaves no container behind when the banner fails to load', async () => {
+    useAds.setState({ status: 'ready', canRequestAds: true });
+    await renderRouter(APP_DIR, { initialUrl: '/home' });
+    expect(screen.getByTestId('ad-banner-home')).toBeTruthy();
+    const { fakeBannerProps } = jest.requireMock('react-native-google-mobile-ads');
+    await act(async () => fakeBannerProps().onAdFailedToLoad());
+    expect(screen.queryByTestId('ad-banner-home')).toBeNull();
+    expect(screen.queryByLabelText('Advertisement')).toBeNull();
   });
 });

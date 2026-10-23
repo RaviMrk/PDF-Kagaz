@@ -15,6 +15,10 @@ const FILES = [
   'src/services/tools/toolFs.ts',
   'scripts/make-fixtures.mjs',
   'src/components/AdBanner.tsx',
+  'src/components/AdsLifecycle.tsx',
+  'app/(tabs)/home.tsx',
+  'app/(tabs)/files.tsx',
+  'app/result.tsx',
   'src/services/ads/x.ts',
   'src/services/telemetry/telemetry.ts',
   'src/services/telemetry/firebaseTelemetry.ts',
@@ -40,11 +44,40 @@ const SORTABLES_USES: Record<string, string> = {
 
 // Ads and Firebase: [code, file, allowed?]
 const ADS = 'react-native-google-mobile-ads';
+// Every way AdBanner can be pulled in.
+const AD_BANNER_FORMS = [
+  `import { AdBanner } from '@/components/AdBanner'; export const a = AdBanner;`,
+  `export { AdBanner } from './AdBanner';`,
+  `export * from '@/components/AdBanner';`,
+  `export const a = require('@/components/AdBanner');`,
+  `export const a = () => import('@/components/AdBanner');`,
+  `import a = require('@/components/AdBanner'); export { a };`,
+];
 const ZONE_CASES: [string, string, boolean][] = [
   [`import '${ADS}';`, 'app/index.tsx', false],
   [`import '${ADS}';`, 'src/components/Button.tsx', false],
   [`import '${ADS}';`, 'src/services/ads/x.ts', true],
   [`import '${ADS}';`, 'src/components/AdBanner.tsx', true],
+  ...AD_BANNER_FORMS.flatMap((code): [string, string, boolean][] => [
+    [code, 'app/(tabs)/home.tsx', true],
+    [code, 'app/(tabs)/files.tsx', true],
+    [code, 'app/(tabs)/settings.tsx', false],
+    [code, 'app/reader/[id].tsx', false],
+    [code, 'src/components/FileRow.tsx', false],
+    [code, 'src/components/PermissionGate.tsx', false],
+  ]),
+  [`import { interstitial } from '@/services/ads/interstitial';`, 'app/result.tsx', true],
+  [`import { interstitial } from '@/services/ads/interstitial';`, 'app/scan.tsx', false],
+  [
+    `import { interstitial } from '@/services/ads/interstitial';`,
+    'src/components/AdsLifecycle.tsx',
+    true,
+  ],
+  [
+    `import { interstitial } from '@/services/ads/interstitial';`,
+    'src/components/FileRow.tsx',
+    false,
+  ],
   [
     `export const a = require('@react-native-firebase/app');`,
     'src/services/telemetry/telemetry.ts',
@@ -139,24 +172,30 @@ const PDF = '@cantoo/pdf-lib';
 const FS = 'expo-file-system';
 const FB = '/^@react-native-firebase\\//';
 // The Firebase adapter module itself (only telemetry.ts loads it).
+const AB = '/(^|\\/)AdBanner$/';
+const INT = '/(^|\\/)interstitial$/';
 const FBA = '/(^|\\/)firebaseTelemetry(\\.ts)?$/';
 describe('import restrictions', () => {
   it.each([
-    ['app/index.tsx', [PDF, FS, SORT, ADS, FB, FBA]],
-    ['src/components/Button.tsx', [PDF, FS, ADS, FB, FBA]],
-    ['src/components/AdBanner.tsx', [PDF, FS, FB, FBA]],
-    ['src/services/ads/x.ts', [PDF, FS, SORT, FB, FBA]],
-    ['src/services/telemetry/telemetry.ts', [PDF, FS, SORT, ADS, FB]],
-    ['src/services/telemetry/firebaseTelemetry.ts', [PDF, FS, SORT, ADS, FBA]],
+    ['app/index.tsx', [PDF, FS, SORT, ADS, FB, FBA, AB, INT]],
+    ['src/components/Button.tsx', [PDF, FS, ADS, FB, FBA, AB, INT]],
+    ['src/components/AdBanner.tsx', [PDF, FS, FB, FBA, AB, INT]],
+    ['src/components/AdsLifecycle.tsx', [PDF, FS, ADS, FB, FBA, AB]],
+    ['app/(tabs)/home.tsx', [PDF, FS, SORT, ADS, FB, FBA, INT]],
+    ['app/(tabs)/files.tsx', [PDF, FS, SORT, ADS, FB, FBA, INT]],
+    ['app/result.tsx', [PDF, FS, SORT, ADS, FB, FBA, AB]],
+    ['src/services/ads/x.ts', [PDF, FS, SORT, FB, FBA, AB, INT]],
+    ['src/services/telemetry/telemetry.ts', [PDF, FS, SORT, ADS, FB, AB, INT]],
+    ['src/services/telemetry/firebaseTelemetry.ts', [PDF, FS, SORT, ADS, FBA, AB, INT]],
     // Tests, test utilities and the Jest setup may import ads, Firebase and sortables (mocks).
     ['src/components/__tests__/Button.test.tsx', [FS]],
     ['src/test-utils/pdfFixtures.ts', [FS]],
-    ['src/services/pdf/merge.ts', [FS, SORT, ADS, FB, FBA]],
+    ['src/services/pdf/merge.ts', [FS, SORT, ADS, FB, FBA, AB, INT]],
     ['src/services/pdf/__tests__/merge.test.ts', [FS]],
-    ['src/services/tools/toolFs.ts', [PDF, SORT, ADS, FB, FBA]],
+    ['src/services/tools/toolFs.ts', [PDF, SORT, ADS, FB, FBA, AB, INT]],
     ['jest.setup.js', [PDF]],
     // expo-file-system is enforced for TypeScript files only (plugin availability)
-    ['scripts/make-fixtures.mjs', [SORT, ADS, FB, FBA]],
+    ['scripts/make-fixtures.mjs', [SORT, ADS, FB, FBA, AB, INT]],
   ])('%s restricts %j', (file, expected) => {
     expect(restricted(file)).toEqual([...expected].sort());
   });
