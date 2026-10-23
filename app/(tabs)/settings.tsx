@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text } from 'react-native';
+import { router } from 'expo-router';
 import { getLocales } from 'expo-localization';
 import { useTranslation } from 'react-i18next';
 
@@ -8,6 +9,7 @@ import { AdPrivacyRow } from '@/components/settings/AdPrivacyRow';
 import { SettingsSection } from '@/components/settings/SettingsSection';
 import { SwitchRow } from '@/components/settings/SwitchRow';
 import { ScannedFoldersSection } from '@/components/ScannedFoldersSection';
+import { appVersion, privacyPolicyUrl } from '@/config/appInfo';
 import { resolveLanguage } from '@/i18n';
 import { clearAppCache } from '@/services/files/clearCache';
 import type { ImageQuality } from '@/services/tools/limits';
@@ -71,6 +73,8 @@ export default function SettingsScreen() {
       setCacheResult(t('settings.clearCacheDone', { size: formatBytes(result.bytes) }));
     else if (result.reason === 'failed') setCacheResult(t('settings.clearCacheFailed'));
   };
+  const { version, build } = appVersion();
+  const policyUrl = privacyPolicyUrl();
   const modeKey =
     mode === 'full' ? 'storage.modeFull' : mode === 'saf' ? 'storage.modeSaf' : 'storage.modeNone';
 
@@ -168,6 +172,36 @@ export default function SettingsScreen() {
           onValueChange={(on) => useSettings.getState().setCrashReportsEnabled(on)}
         />
         <Text style={[styles.note, { color: colors.textMuted }]}>{t('settings.offlineNote')}</Text>
+      </SettingsSection>
+      <SettingsSection title={t('settings.sectionAbout')}>
+        <Text style={[styles.label, { color: colors.text }]}>
+          {t('settings.version', { version, build })}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('settings.licenses')}
+          onPress={() => router.push('/licenses')}
+          style={styles.row}
+        >
+          <Text style={[styles.label, { color: colors.primary }]}>{t('settings.licenses')}</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('settings.privacyPolicy')}
+          accessibilityState={{ disabled: !policyUrl }}
+          disabled={!policyUrl}
+          onPress={() => policyUrl && void Linking.openURL(policyUrl).catch(() => {})}
+          style={[styles.row, !policyUrl && styles.dim]}
+        >
+          <Text style={[styles.label, { color: colors.primary }]}>
+            {t('settings.privacyPolicy')}
+          </Text>
+          {!policyUrl ? (
+            <Text style={[styles.note, { color: colors.textMuted }]}>
+              {t('settings.privacyPolicyMissing')}
+            </Text>
+          ) : null}
+        </Pressable>
       </SettingsSection>
     </ScrollView>
   );

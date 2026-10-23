@@ -1,5 +1,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { I18nextProvider } from 'react-i18next';
+import { Linking } from 'react-native';
+import { renderRouter } from 'expo-router/testing-library';
+import path from 'path';
 
 import SettingsScreen from '../../../app/(tabs)/settings';
 import { initI18n } from '@/i18n';
@@ -11,10 +14,26 @@ import { formatBytes } from '@/utils/fileSize';
 
 const mockClearCaches = jest.fn();
 jest.mock('@/services/native/pdfNative', () => ({
-  pdfNative: { clearCaches: () => mockClearCaches() },
+  pdfNative: {
+    clearCaches: () => mockClearCaches(),
+    takeIncomingPdf: () => Promise.resolve(null),
+    addIncomingPdfListener: () => ({ remove: () => {} }),
+  },
 }));
 jest.mock('expo-localization', () => ({ getLocales: () => [{ languageCode: 'en' }] }));
 
+jest.setTimeout(20000);
+jest.mock('@/db/useDatabaseReady', () => ({
+  useDatabaseReady: () => ({ success: true, error: undefined }),
+}));
+jest.mock('@/services/files/useFileIndexLifecycle', () => ({ useFileIndexLifecycle: jest.fn() }));
+let mockPolicyUrl: string | null = null;
+jest.mock('@/config/appInfo', () => ({
+  appVersion: () => ({ version: '1.0.0', build: '7' }),
+  privacyPolicyUrl: () => mockPolicyUrl,
+}));
+
+const APP_DIR = path.join(__dirname, '../../../app');
 const openPrivacyOptions = jest.fn();
 const i18n = initI18n('en');
 
@@ -132,5 +151,43 @@ describe('Settings sections', () => {
     expect(spy).not.toHaveBeenCalled();
     expect(mockClearCaches).not.toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+describe('Settings about section', () => {
+  let openURL: jest.SpyInstance;
+  beforeEach(() => {
+    mockPolicyUrl = null;
+    useSettings.setState({ onboardingDone: true });
+    openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+  });
+  afterEach(() => openURL.mockRestore());
+
+  it('shows the version and build', async () => {
+    await renderRouter(APP_DIR, { initialUrl: '/settings' });
+    expect(screen.getByText('Version 1.0.0 (7)')).toBeTruthy();
+  });
+
+  it('opens the licences screen', async () => {
+    const pending = renderRouter(APP_DIR, { initialUrl: '/settings' });
+    await pending;
+    await fireEvent.press(screen.getByLabelText('Open-source licences'));
+    await act(async () => {});
+    expect(pending.getPathname()).toBe('/licenses');
+  });
+
+  it('shows the policy as unavailable without a URL', async () => {
+    await renderRouter(APP_DIR, { initialUrl: '/settings' });
+    expect(screen.getByText('Available soon')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('Privacy policy'));
+    expect(openURL).not.toHaveBeenCalled();
+  });
+
+  it('opens the policy URL when configured', async () => {
+    mockPolicyUrl = 'https://example.org/privacy';
+    await renderRouter(APP_DIR, { initialUrl: '/settings' });
+    expect(screen.queryByText('Available soon')).toBeNull();
+    await fireEvent.press(screen.getByLabelText('Privacy policy'));
+    expect(openURL).toHaveBeenCalledWith('https://example.org/privacy');
   });
 });

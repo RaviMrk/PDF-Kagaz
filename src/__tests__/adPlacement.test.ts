@@ -70,8 +70,8 @@ describe('ad placement', () => {
       'app/onboarding.tsx',
       'app/(tabs)/settings.tsx',
       'app/(tabs)/tools.tsx',
+      'app/licenses.tsx',
     ];
-    const futureRoutes = ['app/licenses.tsx'];
 
     it.each(adFree)('%s exists and does not touch ads', (target) => {
       const full = path.join(ROOT, target);
@@ -79,15 +79,9 @@ describe('ad placement', () => {
       expect(/AdBanner|services\/ads/.test(read(full))).toBe(false);
     });
 
-    it.each(futureRoutes)('%s (when it exists) does not touch ads', (target) => {
-      const full = path.join(ROOT, target);
-      if (fs.existsSync(full)) expect(/AdBanner|services\/ads/.test(read(full))).toBe(false);
-    });
-
     it('lists every route file under app/ as ad-free, Home/Files/result or a layout', () => {
       const known = new Set([
         ...adFree,
-        ...futureRoutes,
         'app/(tabs)/home.tsx',
         'app/(tabs)/files.tsx',
         'app/result.tsx',

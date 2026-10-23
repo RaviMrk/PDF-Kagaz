@@ -48,7 +48,12 @@
     "analyticsHint": "Which tools are used and whether they worked. Never file names or contents.",
     "crashReports": "Send crash reports",
     "crashReportsHint": "Helps fix crashes. Never includes your files.",
-    "offlineNote": "Your files are processed on this phone and never uploaded."
+    "offlineNote": "Your files are processed on this phone and never uploaded.",
+    "sectionAbout": "About",
+    "version": "Version {{version}} ({{build}})",
+    "licenses": "Open-source licences",
+    "privacyPolicy": "Privacy policy",
+    "privacyPolicyMissing": "Available soon"
   },
   "errors": {
     "dbInit": "Couldn't open the app's database.",
@@ -471,5 +476,12 @@
     "marginSmall": "Small",
     "marginLarge": "Large",
     "name": "File name"
+  },
+  "licenses": {
+    "title": "Open-source licences",
+    "native": "Android libraries",
+    "js": "JavaScript libraries",
+    "item": "{{name}} {{version}} · {{license}}",
+    "back": "Back"
   }
 }

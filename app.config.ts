@@ -54,6 +54,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       appVariant: variant,
       allFilesAccessEnabled: allFilesAccess,
       firebaseEnabled,
+      privacyPolicyUrl: process.env.PRIVACY_POLICY_URL ?? null,
       ads: {
         banner: ads.banner,
         interstitial: ads.interstitial,

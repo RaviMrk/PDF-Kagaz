@@ -12,6 +12,7 @@
     "babel-preset-expo": "~57.0.0",
     "drizzle-orm": "^0.45.4",
     "expo": "~57.0.30",
+    "expo-application": "~57.0.3",
     "expo-asset": "~57.0.20",
     "expo-build-properties": "~57.0.22",
     "expo-constants": "~57.0.22",
@@ -74,7 +75,8 @@
     "format:check": "prettier --check .",
     "fixtures:generate": "node scripts/make-fixtures.mjs",
     "fixtures:large": "node scripts/make-large-fixture.mjs",
-    "fixtures:images": "node scripts/make-image-fixtures.mjs"
+    "fixtures:images": "node scripts/make-image-fixtures.mjs",
+    "licenses": "node scripts/make-licenses.mjs"
   },
   "private": true,
   "jest": {
