@@ -2,9 +2,11 @@ import { NativeModule, requireNativeModule } from 'expo';
 
 import type {
   FolderChange,
+  ImportedImage,
   PdfFileInfo,
   PdfNativeModuleEvents,
   PickedFolder,
+  PreparedPage,
   ReaderFile,
   ScanResult,
   StagedInput,
@@ -37,6 +39,27 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
   releaseIncomingGrant(uri: string): Promise<void>;
   createToolWorkspace(jobId: string): Promise<string>;
   stageToolInput(uri: string, jobId: string, index: number, maxBytes: number): Promise<StagedInput>;
+  importImage(
+    uri: string,
+    sessionId: string,
+    index: number,
+    maxBytes: number,
+  ): Promise<ImportedImage>;
+  prepareImagePage(
+    sessionId: string,
+    sourceIndex: number,
+    jobId: string,
+    pageIndex: number,
+    maxLongSidePx: number,
+    jpegQuality: number,
+    filter: string,
+  ): Promise<PreparedPage>;
+  renderImageThumbnail(
+    sessionId: string,
+    index: number,
+    width: number,
+    filter: string,
+  ): Promise<string>;
   publishToolOutput(tempUri: string, fileName: string): Promise<PdfFileInfo>;
   cleanToolWorkspace(jobId: string): Promise<void>;
   cleanupToolLeftovers(olderThanMs: number): Promise<number>;

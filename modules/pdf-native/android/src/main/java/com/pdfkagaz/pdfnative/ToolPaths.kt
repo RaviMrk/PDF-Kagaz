@@ -17,6 +17,15 @@ object ToolPaths {
 
   fun isValidJobId(id: String): Boolean = JOB_ID.matches(id)
 
+  /** Image sessions are workspaces whose id starts with "img-" (picked or scanned sources). */
+  fun isImageSessionId(id: String): Boolean = isValidJobId(id) && id.startsWith("img-")
+
+  /** Imported source number [index] of an image session. */
+  fun sourceName(index: Int): String = "src-$index"
+
+  /** Prepared JPEG page number [index] of an image job. */
+  fun pageName(index: Int): String = "page-$index.jpg"
+
   /** True for a file strictly inside [toolsRoot]/<job>/ (not the root, a job dir, or deeper). */
   fun isWorkspaceFile(toolsRoot: String, canonicalPath: String): Boolean {
     val prefix = toolsRoot.trimEnd('/') + "/"

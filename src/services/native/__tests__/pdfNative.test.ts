@@ -155,6 +155,24 @@ describe('pdfNative', () => {
     expect(mockedModule.releaseToolDocument).toHaveBeenCalledTimes(1);
   });
 
+  it('forwards the image pipeline with every argument in order', async () => {
+    await expect(pdfNative.importImage('content://x/1', 'img-a', 2, 52428800)).resolves.toEqual({
+      index: 2,
+      width: 400,
+      height: 300,
+      sizeBytes: 1000,
+    });
+    expect(mockedModule.importImage).toHaveBeenCalledWith('content://x/1', 'img-a', 2, 52428800);
+    await expect(
+      pdfNative.prepareImagePage('img-a', 2, 'j1', 0, 2400, 85, 'bw'),
+    ).resolves.toMatchObject({ uri: 'file:///data/cache/tools/j1/page-0.jpg' });
+    expect(mockedModule.prepareImagePage).toHaveBeenCalledWith('img-a', 2, 'j1', 0, 2400, 85, 'bw');
+    await expect(pdfNative.renderImageThumbnail('img-a', 2, 160, 'greyscale')).resolves.toBe(
+      'file:///tool-thumbs/img-a-2.jpg',
+    );
+    expect(mockedModule.renderImageThumbnail).toHaveBeenCalledWith('img-a', 2, 160, 'greyscale');
+  });
+
   it('resolves saveCopyAs with the module value (false when the picker was cancelled)', async () => {
     const u = 'file:///storage/emulated/0/Documents/PDFToolkit/a.pdf';
     await expect(pdfNative.saveCopyAs(u, 'a.pdf')).resolves.toBe(true);
@@ -178,5 +196,6 @@ describe('pdfNative', () => {
     expect(isPdfNativeError(new Error('x'))).toBe(false);
     expect(isPdfNativeError(nativeError('ERR_IO'), 'ERR_IO')).toBe(true);
     expect(isPdfNativeError(nativeError('ERR_TOO_LARGE'), 'ERR_TOO_LARGE')).toBe(true);
+    expect(isPdfNativeError(nativeError('ERR_IMAGE_INVALID'), 'ERR_IMAGE_INVALID')).toBe(true);
   });
 });

@@ -2,9 +2,12 @@ import PdfNative from '../../../modules/pdf-native';
 import type {
   FolderChange,
   FolderStamp,
+  ImageFilter,
+  ImportedImage,
   IncomingPdfEvent,
   PdfFileInfo,
   PickedFolder,
+  PreparedPage,
   ReaderFile,
   ScanProgressEvent,
   ScanResult,
@@ -14,9 +17,12 @@ import type {
 export type {
   FolderChange,
   FolderStamp,
+  ImageFilter,
+  ImportedImage,
   IncomingPdfEvent,
   PdfFileInfo,
   PickedFolder,
+  PreparedPage,
   ReaderFile,
   ScanProgressEvent,
   ScanResult,
@@ -62,6 +68,36 @@ export interface PdfNativeApi {
    * rejects with ERR_TOO_LARGE, whatever size the source reports.
    */
   stageToolInput(uri: string, jobId: string, index: number, maxBytes: number): Promise<StagedInput>;
+  /**
+   * Copies a picked or scanned image into the image session (`img-…`) as source `index`, under
+   * `maxBytes` (ERR_TOO_LARGE); undecodable → ERR_IMAGE_INVALID. Sizes are display-oriented (EXIF).
+   */
+  importImage(
+    uri: string,
+    sessionId: string,
+    index: number,
+    maxBytes: number,
+  ): Promise<ImportedImage>;
+  /**
+   * Writes source `sourceIndex` as an upright, filtered JPEG on white (long side clamped to
+   * 256..4096, quality to 50..95) to `page-<pageIndex>.jpg` in the job workspace.
+   */
+  prepareImagePage(
+    sessionId: string,
+    sourceIndex: number,
+    jobId: string,
+    pageIndex: number,
+    maxLongSidePx: number,
+    jpegQuality: number,
+    filter: ImageFilter,
+  ): Promise<PreparedPage>;
+  /** Cached filtered JPEG thumbnail (long side `width`, clamped to 1..512) of an image source. */
+  renderImageThumbnail(
+    sessionId: string,
+    index: number,
+    width: number,
+    filter: ImageFilter,
+  ): Promise<string>;
   /** Publishes a workspace file to Documents/PDFToolkit under a free name (never overwrites). */
   publishToolOutput(tempUri: string, fileName: string): Promise<PdfFileInfo>;
   /** Deletes a job workspace; idempotent. */
@@ -107,6 +143,7 @@ export const PDF_NATIVE_ERROR_CODES = [
   'ERR_IO',
   'ERR_VOLUME_UNAVAILABLE',
   'ERR_TOO_LARGE',
+  'ERR_IMAGE_INVALID',
 ] as const;
 
 export type PdfNativeErrorCode = (typeof PDF_NATIVE_ERROR_CODES)[number];
@@ -155,6 +192,28 @@ export const pdfNative: PdfNativeApi = {
   createToolWorkspace: (jobId) => PdfNative.createToolWorkspace(jobId),
   stageToolInput: (uri, jobId, index, maxBytes) =>
     PdfNative.stageToolInput(uri, jobId, index, maxBytes),
+  importImage: (uri, sessionId, index, maxBytes) =>
+    PdfNative.importImage(uri, sessionId, index, maxBytes),
+  prepareImagePage: (
+    sessionId,
+    sourceIndex,
+    jobId,
+    pageIndex,
+    maxLongSidePx,
+    jpegQuality,
+    filter,
+  ) =>
+    PdfNative.prepareImagePage(
+      sessionId,
+      sourceIndex,
+      jobId,
+      pageIndex,
+      maxLongSidePx,
+      jpegQuality,
+      filter,
+    ),
+  renderImageThumbnail: (sessionId, index, width, filter) =>
+    PdfNative.renderImageThumbnail(sessionId, index, width, filter),
   publishToolOutput: (tempUri, fileName) => PdfNative.publishToolOutput(tempUri, fileName),
   cleanToolWorkspace: (jobId) => PdfNative.cleanToolWorkspace(jobId),
   cleanupToolLeftovers: (olderThanMs) => PdfNative.cleanupToolLeftovers(olderThanMs),

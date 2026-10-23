@@ -76,4 +76,14 @@ class ToolPathsTest {
     assertEquals(edge, ToolPaths.fitName(edge))
     assertEquals("a".repeat(ToolPaths.MAX_BASE_BYTES) + ".pdf", ToolPaths.fitName("a".repeat(300) + ".pdf"))
   }
+
+  @Test
+  fun imageSessionsAreImgPrefixedJobIds() {
+    assertTrue(ToolPaths.isImageSessionId("img-lq3x9-ab12cd"))
+    assertFalse(ToolPaths.isImageSessionId("lq3x9-ab12cd"))
+    assertFalse(ToolPaths.isImageSessionId("img-../x"))
+    assertEquals("src-3", ToolPaths.sourceName(3))
+    assertEquals("page-0.jpg", ToolPaths.pageName(0))
+    assertTrue(ToolPaths.isWorkspaceFile(root, "$root/img-a/src-3"))
+  }
 }

@@ -37,3 +37,7 @@ class VolumeUnavailableException(message: String = "Storage volume is not availa
 /** The input is over the size cap of the tool it was given to. */
 class TooLargeException(message: String = "File is too large for this tool", cause: Throwable? = null) :
   CodedException("ERR_TOO_LARGE", message, cause)
+
+/** An image that cannot be decoded, or whose bounds are zero or negative. */
+class ImageInvalidException(message: String = "Image is damaged or in an unsupported format", cause: Throwable? = null) :
+  CodedException("ERR_IMAGE_INVALID", message, cause)

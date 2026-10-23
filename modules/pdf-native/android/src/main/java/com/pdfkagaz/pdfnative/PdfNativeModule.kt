@@ -130,6 +130,18 @@ class PdfNativeModule : Module() {
       toolFiles.stage(uri, jobId, index, maxBytes)
     }
 
+    AsyncFunction("importImage") Coroutine { uri: String, sessionId: String, index: Int, maxBytes: Double ->
+      imageFiles.import(uri, sessionId, index, maxBytes)
+    }
+
+    AsyncFunction("prepareImagePage") Coroutine { sessionId: String, sourceIndex: Int, jobId: String, pageIndex: Int, maxLongSidePx: Int, jpegQuality: Int, filter: String ->
+      imageFiles.prepare(sessionId, sourceIndex, jobId, pageIndex, maxLongSidePx, jpegQuality, filter)
+    }
+
+    AsyncFunction("renderImageThumbnail") Coroutine { sessionId: String, index: Int, width: Int, filter: String ->
+      imageThumbnails.render(sessionId, index, width, filter)
+    }
+
     AsyncFunction("publishToolOutput") Coroutine { tempUri: String, fileName: String ->
       toolFiles.publish(tempUri, fileName)
     }
@@ -223,6 +235,10 @@ class PdfNativeModule : Module() {
   private val toolFiles by lazy { ToolFiles(context) }
 
   private val toolThumbnails by lazy { ToolThumbnails(context) }
+
+  private val imageFiles by lazy { ImageFiles(context) }
+
+  private val imageThumbnails by lazy { ImageThumbnails(context) }
 
   // region scan
 

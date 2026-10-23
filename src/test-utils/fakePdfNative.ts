@@ -1,4 +1,5 @@
 import type {
+  ImageFilter,
   IncomingPdfEvent,
   PdfFileInfo,
   PdfNativeApi,
@@ -57,6 +58,30 @@ function createNativeFns(): jest.Mocked<NativeFns> {
     createToolWorkspace: jest.fn((id: string) => Promise.resolve(`file:///data/cache/tools/${id}`)),
     stageToolInput: jest.fn((_uri: string, id: string, i: number, _maxBytes: number) =>
       Promise.resolve({ uri: `file:///data/cache/tools/${id}/in-${i}.pdf`, sizeBytes: 1000 }),
+    ),
+    importImage: jest.fn((_uri: string, _session: string, index: number, _maxBytes: number) =>
+      Promise.resolve({ index, width: 400, height: 300, sizeBytes: 1000 }),
+    ),
+    prepareImagePage: jest.fn(
+      (
+        _session: string,
+        _source: number,
+        jobId: string,
+        page: number,
+        _maxLongSide: number,
+        _quality: number,
+        _filter: ImageFilter,
+      ) =>
+        Promise.resolve({
+          uri: `file:///data/cache/tools/${jobId}/page-${page}.jpg`,
+          width: 400,
+          height: 300,
+          sizeBytes: 1000,
+        }),
+    ),
+    renderImageThumbnail: jest.fn(
+      (session: string, index: number, _width: number, _filter: ImageFilter) =>
+        Promise.resolve(`file:///tool-thumbs/${session}-${index}.jpg`),
     ),
     publishToolOutput: jest.fn((_temp: string, name: string) =>
       Promise.resolve({

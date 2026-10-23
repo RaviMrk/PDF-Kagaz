@@ -314,32 +314,10 @@ class ToolFiles(private val context: Context) {
   private fun jobDir(jobId: String): File? = if (ToolPaths.isValidJobId(jobId)) File(toolsRoot, jobId) else null
 
 
-  /** file:// opened then verified, content:// own providers refused ([UriGuard]); read-only. */
-  private fun openGuarded(uri: Uri): InputStream =
-    try {
-      UriGuard(context).openInput(uri)
-    } catch (e: java.io.FileNotFoundException) {
-      throw FileNotFoundCodedException(cause = e)
-    } catch (e: SecurityException) {
-      throw PermissionDeniedException(cause = e)
-    } catch (e: IllegalArgumentException) {
-      // Unknown document id.
-      throw FileNotFoundCodedException(cause = e)
-    }
+  private fun openGuarded(uri: Uri): InputStream = StreamCopy.openGuarded(context, uri)
 
-  /** Copies in [BUFFER_BYTES] chunks, cancellable; ERR_TOO_LARGE once more than [cap] bytes arrive. */
-  private fun CoroutineScope.copyChunks(input: InputStream, output: OutputStream, cap: Long): Long {
-    val buffer = ByteArray(BUFFER_BYTES)
-    var copied = 0L
-    while (true) {
-      ensureActive()
-      val read = input.read(buffer)
-      if (read < 0) return copied
-      copied += read
-      if (ToolLimits.exceedsCopied(copied, cap)) throw TooLargeException()
-      output.write(buffer, 0, read)
-    }
-  }
+  private fun CoroutineScope.copyChunks(input: InputStream, output: OutputStream, cap: Long): Long =
+    StreamCopy.copyChunks(this, input, output, cap)
 
   /** Checks for cancellation before every read, so a MediaStore write stops when its job is cancelled. */
   private class CancellableInput(input: InputStream, private val scope: CoroutineScope) : FilterInputStream(input) {
@@ -354,8 +332,6 @@ class ToolFiles(private val context: Context) {
     File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), MediaStoreFiles.APP_FOLDER)
 
   companion object {
-    /** Copy chunk size of staging, publishing and saving a copy. */
-    const val BUFFER_BYTES = 256 * 1024
     private const val PDF_SUFFIX = ".pdf"
 
     /**

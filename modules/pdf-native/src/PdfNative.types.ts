@@ -38,6 +38,15 @@ export type ReaderFile = { uri: string; copied: boolean; sizeBytes: number };
  */
 export type StagedInput = { uri: string; sizeBytes: number };
 
+/** Colour filter of an image page: as scanned, greyscale, or high-contrast black and white. */
+export type ImageFilter = 'colour' | 'greyscale' | 'bw';
+
+/** A source copied into an image session; width and height are display-oriented (after EXIF). */
+export type ImportedImage = { index: number; width: number; height: number; sizeBytes: number };
+
+/** A prepared page JPEG in a job workspace (`file://` uri); size is in pixels, upright. */
+export type PreparedPage = { uri: string; width: number; height: number; sizeBytes: number };
+
 export type PickedFolder = { uri: string; label: string };
 
 /** A PDF shared to the app (ACTION_SEND) while it is running; `uri` is the shared stream. */
