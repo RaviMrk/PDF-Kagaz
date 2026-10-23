@@ -1,3 +1,4 @@
+import { pdfNative } from '@/services/native/pdfNative';
 import { fireEvent } from '@testing-library/react-native';
 import { renderRouter, screen } from 'expo-router/testing-library';
 import path from 'path';
@@ -82,6 +83,7 @@ describe('Tools tab', () => {
   });
 
   it('opens the scanner screen', async () => {
+    jest.spyOn(pdfNative, 'scanDocument').mockReturnValue(new Promise(() => {}));
     const r = await renderTools();
     await fireEvent.press(screen.getByLabelText('Scan'));
     expect(r.pathname()).toBe('/scan');

@@ -3,6 +3,7 @@ import { TextInput } from 'react-native';
 import { renderRouter, screen } from 'expo-router/testing-library';
 import path from 'path';
 
+import { pdfNative } from '@/services/native/pdfNative';
 import { fakePdf } from '@/test-utils/fakePdf';
 import { makeRow } from '@/test-utils/fileRows';
 import { useFiles } from '@/stores/filesStore';
@@ -81,6 +82,8 @@ describe('Home tab', () => {
   });
 
   it('opens the scanner from the quick tools', async () => {
+    // The scanner stays open, so the screen does not leave on its own.
+    jest.spyOn(pdfNative, 'scanDocument').mockReturnValue(new Promise(() => {}));
     const pending = renderRouter(APP_DIR, { initialUrl: '/home' });
     await pending;
     await fireEvent.press(screen.getByLabelText('Scan'));

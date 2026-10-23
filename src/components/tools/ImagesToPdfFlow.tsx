@@ -84,12 +84,16 @@ export function ImagesToPdfFlow() {
     // A session that failed to open on entry is opened again before the picker.
     if (!ready.current) {
       ready.current = await openImageSession(sessionId);
+      if (!alive.current) {
+        // Left while opening: the workspace landed after the session was deleted.
+        busyAdding.current = false;
+        if (!started.current) discardImageSession(sessionId);
+        return;
+      }
       if (!ready.current) {
         busyAdding.current = false;
-        if (alive.current) {
-          setNotices([t('toolError.unknown')]);
-          setAdding(false);
-        }
+        setNotices([t('toolError.unknown')]);
+        setAdding(false);
         return;
       }
     }

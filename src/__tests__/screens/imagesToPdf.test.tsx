@@ -257,6 +257,19 @@ describe('images to PDF screen', () => {
     expect(screen.getByText('3 images')).toBeTruthy();
   });
 
+  it('does not open the picker when left while the session is opening', async () => {
+    let finish!: (v: string) => void;
+    jest
+      .spyOn(pdfNative, 'createToolWorkspace')
+      .mockReturnValue(new Promise<string>((res) => (finish = res)));
+    const r = await open();
+    await act(async () => r.unmount());
+    cleanup.mockClear();
+    await act(async () => finish('file:///ws'));
+    expect(pick).not.toHaveBeenCalled();
+    expect(cleanup).toHaveBeenCalledWith(expect.stringMatching(/^img-/));
+  });
+
   it('keeps the session when unmounted after Run', async () => {
     const r = await open();
     await press('Make PDF');
@@ -267,6 +280,7 @@ describe('images to PDF screen', () => {
   });
 
   it('redirects /tool/scan to /scan', async () => {
+    jest.spyOn(pdfNative, 'scanDocument').mockReturnValue(new Promise(() => {}));
     const r = await open('/tool/scan');
     expect(r.pathname()).toBe('/scan');
   });
