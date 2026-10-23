@@ -1,6 +1,7 @@
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
+import { BottomSheet } from '@/components/BottomSheet';
 import type { FileRow } from '@/db/schema';
 import { useTheme } from '@/theme/useTheme';
 import { formatDate } from '@/utils/date';
@@ -34,28 +35,28 @@ export function FileInfoSheet({ file, onClose }: { file: FileRow; onClose: () =>
     [t('files.infoLocation'), locationOf(file)],
   ];
   return (
-    <Modal transparent animationType="slide" visible onRequestClose={onClose}>
-      <Pressable accessibilityLabel={t('files.close')} onPress={onClose} style={styles.backdrop} />
-      <View style={[styles.sheet, { backgroundColor: colors.background }]}>
-        <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>
-          {t('files.info')}
-        </Text>
-        {rows.map(([label, value]) => (
-          <View key={label} accessible style={styles.row}>
-            <Text style={[styles.label, { color: colors.textMuted }]}>{label}</Text>
-            <Text selectable style={[styles.value, { color: colors.text }]}>
-              {value}
-            </Text>
-          </View>
-        ))}
-      </View>
-    </Modal>
+    <BottomSheet
+      onRequestClose={onClose}
+      onScrimPress={onClose}
+      scrimLabel={t('files.close')}
+      gap={8}
+    >
+      <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>
+        {t('files.info')}
+      </Text>
+      {rows.map(([label, value]) => (
+        <View key={label} accessible style={styles.row}>
+          <Text style={[styles.label, { color: colors.textMuted }]}>{label}</Text>
+          <Text selectable style={[styles.value, { color: colors.text }]}>
+            {value}
+          </Text>
+        </View>
+      ))}
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
-  sheet: { padding: 16, gap: 8, borderTopLeftRadius: 16, borderTopRightRadius: 16 },
   title: { fontSize: 18, fontWeight: '600', marginBottom: 4 },
   row: { gap: 2, minHeight: 48, justifyContent: 'center' },
   label: { fontSize: 12 },

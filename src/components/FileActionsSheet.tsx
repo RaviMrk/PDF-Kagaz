@@ -1,8 +1,9 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
+import { BottomSheet } from '@/components/BottomSheet';
 import { FileInfoSheet } from '@/components/FileInfoSheet';
 import { RenameDialog } from '@/components/RenameDialog';
 import type { FileRow } from '@/db/schema';
@@ -111,51 +112,46 @@ function Sheet({ file, onClose }: { file: FileRow; onClose: () => void }) {
   if (panel === 'info') return <FileInfoSheet file={file} onClose={() => setPanel('actions')} />;
 
   return (
-    <Modal transparent animationType="slide" visible onRequestClose={dismiss}>
-      <Pressable accessibilityLabel={t('files.close')} onPress={dismiss} style={styles.backdrop} />
-      <View style={[styles.sheet, { backgroundColor: colors.background }]}>
-        <Text numberOfLines={2} style={[styles.title, { color: colors.text }]}>
-          {displayName(file.name)}
+    <BottomSheet onRequestClose={dismiss} onScrimPress={dismiss} scrimLabel={t('files.close')}>
+      <Text numberOfLines={2} style={[styles.title, { color: colors.text }]}>
+        {displayName(file.name)}
+      </Text>
+      {errorKey ? (
+        <Text accessibilityLiveRegion="polite" style={[styles.error, { color: colors.danger }]}>
+          {t(errorKey)}
         </Text>
-        {errorKey ? (
-          <Text accessibilityLiveRegion="polite" style={[styles.error, { color: colors.danger }]}>
-            {t(errorKey)}
-          </Text>
-        ) : null}
-        {item(
-          'favorite',
-          file.isFavorite ? 'star-off-outline' : 'star-outline',
-          file.isFavorite ? t('files.unfavorite') : t('files.favorite'),
-          () => {
-            useFiles.getState().toggleFavorite(file.id);
-            finish();
-          },
-        )}
-        {item('rename', 'pencil-outline', t('files.rename'), () => setPanel('rename'))}
-        {item(
-          'duplicate',
-          'content-copy',
-          t('files.duplicate'),
-          () => void run('duplicate', () => useFiles.getState().duplicate(file.id)),
-        )}
-        {inAppFolder(file)
-          ? null
-          : item(
-              'move',
-              'folder-move-outline',
-              t('files.moveToApp'),
-              () => void run('move', () => useFiles.getState().moveToAppFolder(file.id)),
-            )}
-        {item('info', 'information-outline', t('files.info'), () => setPanel('info'))}
-        {item('delete', 'delete-outline', t('files.delete'), confirmDelete)}
-      </View>
-    </Modal>
+      ) : null}
+      {item(
+        'favorite',
+        file.isFavorite ? 'star-off-outline' : 'star-outline',
+        file.isFavorite ? t('files.unfavorite') : t('files.favorite'),
+        () => {
+          useFiles.getState().toggleFavorite(file.id);
+          finish();
+        },
+      )}
+      {item('rename', 'pencil-outline', t('files.rename'), () => setPanel('rename'))}
+      {item(
+        'duplicate',
+        'content-copy',
+        t('files.duplicate'),
+        () => void run('duplicate', () => useFiles.getState().duplicate(file.id)),
+      )}
+      {inAppFolder(file)
+        ? null
+        : item(
+            'move',
+            'folder-move-outline',
+            t('files.moveToApp'),
+            () => void run('move', () => useFiles.getState().moveToAppFolder(file.id)),
+          )}
+      {item('info', 'information-outline', t('files.info'), () => setPanel('info'))}
+      {item('delete', 'delete-outline', t('files.delete'), confirmDelete)}
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
-  sheet: { padding: 16, borderTopLeftRadius: 16, borderTopRightRadius: 16 },
   title: { fontSize: 18, fontWeight: '600', marginBottom: 8 },
   error: { marginBottom: 8 },
   item: { flexDirection: 'row', alignItems: 'center', gap: 16, minHeight: 48 },

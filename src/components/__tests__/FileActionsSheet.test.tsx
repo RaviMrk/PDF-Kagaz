@@ -1,11 +1,17 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { Alert } from 'react-native';
+import { Alert, StyleSheet } from 'react-native';
 import { I18nextProvider } from 'react-i18next';
 
 import { FileActionsSheet } from '@/components/FileActionsSheet';
 import { initI18n } from '@/i18n';
 import { useFiles } from '@/stores/filesStore';
 import { makeRow } from '@/test-utils/fileRows';
+
+jest.mock('react-native-safe-area-context', () => ({
+  ...jest.requireActual('react-native-safe-area-context'),
+  // A 3-button navigation bar under an edge-to-edge window.
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 48, left: 0 }),
+}));
 
 const file = makeRow({ name: 'Report.pdf' });
 const remove = jest.fn(() => Promise.resolve(null));
@@ -145,5 +151,10 @@ describe('FileActionsSheet', () => {
     expect(screen.queryByText('This file no longer exists')).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Duplicate').props.accessibilityState.disabled).toBeFalsy();
+  });
+  it('keeps its actions above the navigation bar', async () => {
+    await renderSheet();
+    const panel = StyleSheet.flatten(screen.getByTestId('bottom-sheet-panel').props.style);
+    expect(panel.paddingBottom).toBe(16 + 48);
   });
 });

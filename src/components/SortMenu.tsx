@@ -1,8 +1,9 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
+import { BottomSheet } from '@/components/BottomSheet';
 import type { SortDir, SortKey } from '@/services/files/fileQuery';
 import { useTheme } from '@/theme/useTheme';
 
@@ -55,33 +56,30 @@ export function SortMenu({ sortKey, sortDir, onChange }: Props) {
       >
         <MaterialCommunityIcons name="sort" size={24} color={colors.text} />
       </Pressable>
-      <Modal transparent animationType="fade" visible={open} onRequestClose={() => setOpen(false)}>
-        <Pressable
-          accessibilityLabel={t('files.cancel')}
-          onPress={() => setOpen(false)}
-          style={styles.backdrop}
-        />
-        <View style={[styles.sheet, { backgroundColor: colors.background }]}>
-          <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>
-            {t('files.sortBy')}
-          </Text>
-          {KEYS.map(([key, label]) =>
-            option(t(label), key === sortKey, () => onChange(key, sortDir)),
-          )}
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          {DIRS.map(([dir, label]) =>
-            option(t(label), dir === sortDir, () => onChange(sortKey, dir)),
-          )}
-        </View>
-      </Modal>
+      <BottomSheet
+        visible={open}
+        animationType="fade"
+        onRequestClose={() => setOpen(false)}
+        onScrimPress={() => setOpen(false)}
+        scrimLabel={t('files.cancel')}
+      >
+        <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>
+          {t('files.sortBy')}
+        </Text>
+        {KEYS.map(([key, label]) =>
+          option(t(label), key === sortKey, () => onChange(key, sortDir)),
+        )}
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+        {DIRS.map(([dir, label]) =>
+          option(t(label), dir === sortDir, () => onChange(sortKey, dir)),
+        )}
+      </BottomSheet>
     </>
   );
 }
 
 const styles = StyleSheet.create({
   button: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
-  sheet: { padding: 16, borderTopLeftRadius: 16, borderTopRightRadius: 16 },
   title: { fontSize: 18, fontWeight: '600', marginBottom: 8 },
   option: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 48 },
   optionText: { fontSize: 16 },

@@ -1,10 +1,17 @@
 import { fireEvent, render as rtlRender, screen } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import type { ReactElement } from 'react';
 import { I18nextProvider } from 'react-i18next';
 
 import { ProgressSheet } from '@/components/tools/ProgressSheet';
 import { initI18n } from '@/i18n';
 import type { ToolPhase } from '@/services/tools/runTool';
+
+jest.mock('react-native-safe-area-context', () => ({
+  ...jest.requireActual('react-native-safe-area-context'),
+  // A 3-button navigation bar under an edge-to-edge window.
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 48, left: 0 }),
+}));
 
 const i18n = initI18n('en');
 const render = (ui: ReactElement) => rtlRender(<I18nextProvider i18n={i18n}>{ui}</I18nextProvider>);
@@ -57,5 +64,10 @@ describe('ProgressSheet', () => {
     await fireEvent(screen.getByTestId('progress-modal'), 'requestClose');
     expect(onHide).toHaveBeenCalledTimes(1);
     expect(onCancel).not.toHaveBeenCalled();
+  });
+  it('keeps its buttons above the navigation bar', async () => {
+    await render(sheet('processing', 0.5));
+    const panel = StyleSheet.flatten(screen.getByTestId('bottom-sheet-panel').props.style);
+    expect(panel.paddingBottom).toBe(20 + 48);
   });
 });
