@@ -378,7 +378,21 @@
     "selectHint": "Tap an image to move or remove it. Long-press to drag.",
     "moveEarlierNone": "Move selected image earlier",
     "moveLaterNone": "Move selected image later",
-    "removeNone": "Remove selected image"
+    "removeNone": "Remove selected image",
+    "emptyTitle": "Add the photos you want in the PDF",
+    "add": "Add images",
+    "adding": "Adding images…",
+    "count": "{{count}} images",
+    "count_one": "{{count}} image",
+    "addFailed": "{{count}} images couldn't be added",
+    "addFailed_one": "{{count}} image couldn't be added",
+    "limitReached": "A PDF can have up to {{max}} images. Only the first ones were added.",
+    "limitHint": "You've added the most images one PDF can have",
+    "run": "Make PDF",
+    "discardTitle": "Discard these images?",
+    "discardBody": "The images you added won't be kept.",
+    "discard": "Discard",
+    "keep": "Keep editing"
   },
   "scan": {
     "page": "Page {{n}}",

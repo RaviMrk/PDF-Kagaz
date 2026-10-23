@@ -1,10 +1,11 @@
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { EmptyState } from '@/components/EmptyState';
+import { ImagesToPdfFlow } from '@/components/tools/ImagesToPdfFlow';
 import { MergeOptions } from '@/components/tools/MergeOptions';
 import { PickFilesList } from '@/components/tools/PickFilesList';
 import { ProgressSheet } from '@/components/tools/ProgressSheet';
@@ -36,10 +37,12 @@ function leave() {
 export default function ToolScreen() {
   const { t } = useTranslation();
   const { toolId, inputs } = useLocalSearchParams<{ toolId: string; inputs?: string }>();
+  if (toolId === 'scan') return <Redirect href="/scan" />;
   const tool = toolById(toolId ?? '');
   if (!tool || !tool.available) {
     return <EmptyState icon="toolbox-outline" title={t('placeholder.comingSoon')} />;
   }
+  if (tool.id === 'images-to-pdf') return <ImagesToPdfFlow />;
   return <ToolFlow key={tool.id} tool={tool} inputIds={parseInputsParam(inputs)} />;
 }
 
