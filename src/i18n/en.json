@@ -368,5 +368,41 @@
     "failedTitle": "Couldn't finish",
     "partial": "These files were saved before the problem:",
     "notFoundJob": "This result is no longer available"
+  },
+  "images": {
+    "item": "Image {{n}}",
+    "itemA11y": "Image {{n}} of {{total}}",
+    "moveEarlier": "Move image {{n}} earlier",
+    "moveLater": "Move image {{n}} later",
+    "remove": "Remove image {{n}}",
+    "selectHint": "Tap an image to move or remove it. Long-press to drag."
+  },
+  "scan": {
+    "page": "Page {{n}}",
+    "pageA11y": "Page {{n}} of {{total}}",
+    "moveEarlier": "Move page {{n}} earlier",
+    "moveLater": "Move page {{n}} later",
+    "remove": "Remove page {{n}}",
+    "selectHint": "Tap a page to move or remove it. Long-press to drag.",
+    "filter": "Filter",
+    "filterColour": "Colour",
+    "filterGreyscale": "Greyscale",
+    "filterBw": "Black & white"
+  },
+  "layout": {
+    "pageSize": "Page size",
+    "a4": "A4",
+    "letter": "Letter",
+    "fit": "Fit to image",
+    "orientation": "Orientation",
+    "auto": "Auto",
+    "portrait": "Portrait",
+    "landscape": "Landscape",
+    "fitHint": "Fit to image gives each page the shape of its image",
+    "margins": "Margins",
+    "marginNone": "None",
+    "marginSmall": "Small",
+    "marginLarge": "Large",
+    "name": "File name"
   }
 }

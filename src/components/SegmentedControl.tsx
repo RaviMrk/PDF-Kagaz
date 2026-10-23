@@ -6,12 +6,22 @@ type Props<K extends string> = {
   options: { key: K; label: string }[];
   value: K;
   onChange: (key: K) => void;
+  /** Dims and blocks every option. */
+  disabled?: boolean;
 };
 
-export function SegmentedControl<K extends string>({ options, value, onChange }: Props<K>) {
+export function SegmentedControl<K extends string>({
+  options,
+  value,
+  onChange,
+  disabled = false,
+}: Props<K>) {
   const { colors } = useTheme();
   return (
-    <View accessibilityRole="tablist" style={[styles.row, { backgroundColor: colors.surface }]}>
+    <View
+      accessibilityRole="tablist"
+      style={[styles.row, { backgroundColor: colors.surface }, disabled && styles.dim]}
+    >
       {options.map((o) => {
         const selected = o.key === value;
         return (
@@ -19,7 +29,8 @@ export function SegmentedControl<K extends string>({ options, value, onChange }:
             key={o.key}
             accessibilityRole="tab"
             accessibilityLabel={o.label}
-            accessibilityState={{ selected }}
+            accessibilityState={{ selected, disabled }}
+            disabled={disabled}
             onPress={() => onChange(o.key)}
             style={[styles.segment, selected && { backgroundColor: colors.primary }]}
           >
@@ -38,6 +49,7 @@ export function SegmentedControl<K extends string>({ options, value, onChange }:
 }
 
 const styles = StyleSheet.create({
+  dim: { opacity: 0.4 },
   row: { flexDirection: 'row', borderRadius: 24, padding: 2, flex: 1 },
   segment: {
     flex: 1,
