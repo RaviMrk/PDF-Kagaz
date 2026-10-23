@@ -1,6 +1,7 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
 import { googleServicesPath, isFirebaseEnabled } from './firebaseConfig';
+import { resolveAdsConfig } from './src/config/adsIds';
 
 type IntentFilter = NonNullable<NonNullable<ExpoConfig['android']>['intentFilters']>[number];
 
@@ -16,6 +17,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const blocked = config.android?.blockedPermissions ?? [];
   // Crashlytics and Analytics only when the user's google-services.json exists.
   const firebaseEnabled = isFirebaseEnabled();
+  // Google's test IDs unless APP_ENV=production; throws when production lacks real IDs.
+  const ads = resolveAdsConfig(process.env);
 
   return {
     ...config,
@@ -33,6 +36,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ...(config.plugins ?? []),
       ['./plugins/withStoragePermissions', { allFilesAccess }],
       './plugins/withPdfIntentFilters',
+      [
+        'react-native-google-mobile-ads',
+        {
+          androidAppId: ads.appId,
+          delayAppMeasurementInit: true,
+          optimizeInitialization: true,
+          optimizeAdLoading: true,
+        },
+      ],
       ...(firebaseEnabled
         ? ['@react-native-firebase/app', '@react-native-firebase/crashlytics']
         : []),
@@ -42,6 +54,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       appVariant: variant,
       allFilesAccessEnabled: allFilesAccess,
       firebaseEnabled,
+      ads: {
+        banner: ads.banner,
+        interstitial: ads.interstitial,
+        debugGeography: ads.debugGeography,
+        testDeviceIds: ads.testDeviceIds,
+      },
     },
   };
 };

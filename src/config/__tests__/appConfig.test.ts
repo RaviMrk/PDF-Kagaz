@@ -25,6 +25,48 @@ describe('app.config', () => {
     expect(android.blockedPermissions).toContain('android.permission.SYSTEM_ALERT_WINDOW');
   });
 
+  it('blocks the vibrate permission the ads SDK would add', () => {
+    expect(appConfig({ config: appJson.expo }).android.blockedPermissions).toContain(
+      'android.permission.VIBRATE',
+    );
+  });
+
+  describe('AdMob', () => {
+    const saved = process.env.APP_ENV;
+    afterEach(() => {
+      if (saved === undefined) delete process.env.APP_ENV;
+      else process.env.APP_ENV = saved;
+    });
+
+    const adsPlugin = (plugins: unknown[]) =>
+      plugins.find((p) => Array.isArray(p) && p[0] === 'react-native-google-mobile-ads');
+
+    it("configures the ads plugin with Google's test app ID outside production", () => {
+      delete process.env.APP_ENV;
+      const config = appConfig({ config: appJson.expo });
+      expect(adsPlugin(config.plugins)).toEqual([
+        'react-native-google-mobile-ads',
+        {
+          androidAppId: 'ca-app-pub-3940256099942544~3347511713',
+          delayAppMeasurementInit: true,
+          optimizeInitialization: true,
+          optimizeAdLoading: true,
+        },
+      ]);
+      expect(config.extra.ads).toEqual({
+        banner: 'ca-app-pub-3940256099942544/9214589741',
+        interstitial: 'ca-app-pub-3940256099942544/1033173712',
+        debugGeography: 'disabled',
+        testDeviceIds: [],
+      });
+    });
+
+    it('refuses a production config without real AdMob IDs', () => {
+      process.env.APP_ENV = 'production';
+      expect(() => appConfig({ config: appJson.expo })).toThrow(/real AdMob IDs/);
+    });
+  });
+
   describe('Firebase', () => {
     const saved = process.env.GOOGLE_SERVICES_JSON;
     afterEach(() => {

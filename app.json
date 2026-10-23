@@ -23,7 +23,8 @@
         "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
         "android.permission.ACCESS_WIFI_STATE",
         "android.permission.DOWNLOAD_WITHOUT_NOTIFICATION",
-        "android.permission.SYSTEM_ALERT_WINDOW"
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.VIBRATE"
       ],
       "predictiveBackGestureEnabled": false
     },

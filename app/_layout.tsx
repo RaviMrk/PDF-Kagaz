@@ -6,6 +6,7 @@ import { I18nextProvider } from 'react-i18next';
 import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { AdsLifecycle } from '@/components/AdsLifecycle';
 import { DbGate } from '@/components/DbGate';
 import { IncomingPdfs } from '@/components/IncomingPdfs';
 import { IndexLifecycle } from '@/components/IndexLifecycle';
@@ -31,6 +32,7 @@ export default function RootLayout() {
         <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
         <TelemetryLifecycle />
         <DbGate>
+          <AdsLifecycle />
           <IndexLifecycle />
           <ToolJobLifecycle />
           <IncomingPdfs />

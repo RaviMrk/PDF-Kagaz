@@ -63,3 +63,70 @@ jest.mock(
   },
   { virtual: true },
 );
+
+// Google Mobile Ads has no native side under Jest. Enum values match the package (17.4.0);
+// BannerAd is a host stub whose props tests read through `fakeBannerProps`.
+jest.mock('react-native-google-mobile-ads', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  const AdEventType = {
+    LOADED: 'loaded',
+    ERROR: 'error',
+    OPENED: 'opened',
+    CLICKED: 'clicked',
+    PAID: 'paid',
+    CLOSED: 'closed',
+    IMPRESSION: 'impression',
+  };
+  const banner = { props: null };
+  function BannerAd(props) {
+    banner.props = props;
+    return React.createElement(View, { testID: 'banner-ad' });
+  }
+  const mobileAdsInstance = {
+    initialize: jest.fn(() => Promise.resolve([])),
+    setRequestConfiguration: jest.fn(() => Promise.resolve()),
+  };
+  return {
+    __esModule: true,
+    default: jest.fn(() => mobileAdsInstance),
+    AdsConsent: {
+      gatherConsent: jest.fn(),
+      getConsentInfo: jest.fn(),
+      showPrivacyOptionsForm: jest.fn(),
+    },
+    AdsConsentDebugGeography: { DISABLED: 0, EEA: 1, NOT_EEA: 2, REGULATED_US_STATE: 3, OTHER: 4 },
+    AdsConsentStatus: {
+      UNKNOWN: 'UNKNOWN',
+      REQUIRED: 'REQUIRED',
+      NOT_REQUIRED: 'NOT_REQUIRED',
+      OBTAINED: 'OBTAINED',
+    },
+    AdsConsentPrivacyOptionsRequirementStatus: {
+      UNKNOWN: 'UNKNOWN',
+      REQUIRED: 'REQUIRED',
+      NOT_REQUIRED: 'NOT_REQUIRED',
+    },
+    MaxAdContentRating: { G: 'G', PG: 'PG', T: 'T', MA: 'MA' },
+    TestIds: {
+      ADAPTIVE_BANNER: 'ca-app-pub-3940256099942544/9214589741',
+      BANNER: 'ca-app-pub-3940256099942544/6300978111',
+      INTERSTITIAL: 'ca-app-pub-3940256099942544/1033173712',
+    },
+    BannerAd,
+    BannerAdSize: {
+      ANCHORED_ADAPTIVE_BANNER: 'ANCHORED_ADAPTIVE_BANNER',
+      LARGE_ANCHORED_ADAPTIVE_BANNER: 'LARGE_ANCHORED_ADAPTIVE_BANNER',
+    },
+    AdEventType,
+    InterstitialAd: {
+      createForAdRequest: jest.fn(() => ({
+        loaded: false,
+        load: jest.fn(),
+        show: jest.fn(() => Promise.resolve()),
+        addAdEventListener: jest.fn(() => jest.fn()),
+      })),
+    },
+    fakeBannerProps: () => banner.props,
+  };
+});
