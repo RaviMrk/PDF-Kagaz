@@ -65,6 +65,17 @@ const ZONE_CASES: [string, string, boolean][] = [
     'src/services/telemetry/firebaseTelemetry.ts',
     true,
   ],
+  [
+    `import { firebaseTelemetry } from '@/services/telemetry/firebaseTelemetry'; export const a = firebaseTelemetry;`,
+    'app/index.tsx',
+    false,
+  ],
+  [
+    `export const a = require('./firebaseTelemetry');`,
+    'src/services/telemetry/toolEvent.ts',
+    false,
+  ],
+  [`export const a = require('./firebaseTelemetry');`, 'src/services/telemetry/telemetry.ts', true],
 ];
 
 const SCRIPT = `
@@ -127,23 +138,25 @@ function restricted(file: string): string[] {
 const PDF = '@cantoo/pdf-lib';
 const FS = 'expo-file-system';
 const FB = '/^@react-native-firebase\\//';
+// The Firebase adapter module itself (only telemetry.ts loads it).
+const FBA = '/(^|\\/)firebaseTelemetry(\\.ts)?$/';
 describe('import restrictions', () => {
   it.each([
-    ['app/index.tsx', [PDF, FS, SORT, ADS, FB]],
-    ['src/components/Button.tsx', [PDF, FS, ADS, FB]],
-    ['src/components/AdBanner.tsx', [PDF, FS, FB]],
-    ['src/services/ads/x.ts', [PDF, FS, SORT, FB]],
+    ['app/index.tsx', [PDF, FS, SORT, ADS, FB, FBA]],
+    ['src/components/Button.tsx', [PDF, FS, ADS, FB, FBA]],
+    ['src/components/AdBanner.tsx', [PDF, FS, FB, FBA]],
+    ['src/services/ads/x.ts', [PDF, FS, SORT, FB, FBA]],
     ['src/services/telemetry/telemetry.ts', [PDF, FS, SORT, ADS, FB]],
-    ['src/services/telemetry/firebaseTelemetry.ts', [PDF, FS, SORT, ADS]],
+    ['src/services/telemetry/firebaseTelemetry.ts', [PDF, FS, SORT, ADS, FBA]],
     // Tests, test utilities and the Jest setup may import ads, Firebase and sortables (mocks).
     ['src/components/__tests__/Button.test.tsx', [FS]],
     ['src/test-utils/pdfFixtures.ts', [FS]],
-    ['src/services/pdf/merge.ts', [FS, SORT, ADS, FB]],
+    ['src/services/pdf/merge.ts', [FS, SORT, ADS, FB, FBA]],
     ['src/services/pdf/__tests__/merge.test.ts', [FS]],
-    ['src/services/tools/toolFs.ts', [PDF, SORT, ADS, FB]],
+    ['src/services/tools/toolFs.ts', [PDF, SORT, ADS, FB, FBA]],
     ['jest.setup.js', [PDF]],
     // expo-file-system is enforced for TypeScript files only (plugin availability)
-    ['scripts/make-fixtures.mjs', [SORT, ADS, FB]],
+    ['scripts/make-fixtures.mjs', [SORT, ADS, FB, FBA]],
   ])('%s restricts %j', (file, expected) => {
     expect(restricted(file)).toEqual([...expected].sort());
   });

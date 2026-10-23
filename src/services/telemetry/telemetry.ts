@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 
+import { globalErrorEnv, installErrorScrubber } from './errorScrubber';
 import type { ToolEvent } from './toolEvent';
 
 export type CollectionPrefs = { analytics: boolean; crashes: boolean };
@@ -8,6 +9,8 @@ export type CollectionPrefs = { analytics: boolean; crashes: boolean };
 export type TelemetryAdapter = {
   setCollection(prefs: CollectionPrefs): Promise<void>;
   log(event: ToolEvent): void;
+  /** A non-fatal error, already scrubbed (see errorScrubber). */
+  recordError(error: Error): void;
 };
 
 export type Telemetry = TelemetryAdapter & {
@@ -22,6 +25,7 @@ export const noopTelemetry: Telemetry = {
   setCollection: () => Promise.resolve(),
   setAnalyticsConsent: () => Promise.resolve(),
   log: () => {},
+  recordError: () => {},
 };
 
 /**
@@ -72,7 +76,23 @@ export function createTelemetry(
         // Telemetry never affects the app.
       }
     },
+    recordError(error) {
+      if (!prefs.crashes) return;
+      try {
+        backend.recordError(error);
+      } catch {
+        // Telemetry never affects the app.
+      }
+    },
   };
 }
 
-export const telemetry = createTelemetry(Constants.expoConfig?.extra?.firebaseEnabled === true);
+const firebaseEnabled = Constants.expoConfig?.extra?.firebaseEnabled === true;
+
+export const telemetry = createTelemetry(firebaseEnabled);
+
+// Installed after the adapter loaded (Crashlytics' own handler), so ours is outermost and every
+// handler after it, native crash report included, only sees scrubbed messages.
+if (firebaseEnabled) {
+  installErrorScrubber({ ...globalErrorEnv(), record: (error) => telemetry.recordError(error) });
+}

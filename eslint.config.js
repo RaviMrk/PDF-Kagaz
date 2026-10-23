@@ -32,7 +32,11 @@ const FIREBASE = {
   source: '/^@react-native-firebase\\//',
   message: 'Firebase is used only by src/services/telemetry/firebaseTelemetry.ts.',
 };
-const RESTRICTED_MODULES = [SORTABLES, ADS, FIREBASE];
+const FIREBASE_ADAPTER = {
+  source: '/(^|\\/)firebaseTelemetry(\\.ts)?$/',
+  message: 'Only src/services/telemetry/telemetry.ts loads the Firebase adapter (lazily).',
+};
+const RESTRICTED_MODULES = [SORTABLES, ADS, FIREBASE, FIREBASE_ADAPTER];
 
 const importRule = ({ name, message }) => ['error', { paths: [{ name, message }] }];
 // Every way a module can be pulled in: import, re-export, export-all, import(), require() and
@@ -78,6 +82,10 @@ const restrictionBlocks = () => [
   {
     files: ['src/services/telemetry/firebaseTelemetry.ts'],
     rules: { 'no-restricted-syntax': restrictedSyntax([FIREBASE]) },
+  },
+  {
+    files: ['src/services/telemetry/telemetry.ts'],
+    rules: { 'no-restricted-syntax': restrictedSyntax([FIREBASE_ADAPTER]) },
   },
   // Tests and their setup mock these packages.
   {

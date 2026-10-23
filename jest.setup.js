@@ -52,9 +52,14 @@ jest.mock(
 );
 jest.mock(
   '@react-native-firebase/crashlytics',
-  () => ({
-    getCrashlytics: jest.fn(() => ({})),
-    setCrashlyticsCollectionEnabled: jest.fn(() => Promise.resolve(null)),
-  }),
+  () => {
+    const crashlytics = {};
+    return {
+      getCrashlytics: jest.fn(() => crashlytics),
+      setCrashlyticsCollectionEnabled: jest.fn(() => Promise.resolve(null)),
+      deleteUnsentReports: jest.fn(() => Promise.resolve()),
+      recordError: jest.fn(),
+    };
+  },
   { virtual: true },
 );

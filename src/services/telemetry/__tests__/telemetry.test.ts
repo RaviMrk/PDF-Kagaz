@@ -22,6 +22,7 @@ function fakeAdapter(): jest.Mocked<TelemetryAdapter> {
   return {
     setCollection: jest.fn((_prefs: CollectionPrefs) => Promise.resolve()),
     log: jest.fn((_event: ToolEvent) => {}),
+    recordError: jest.fn((_error: Error) => {}),
   };
 }
 
@@ -111,5 +112,22 @@ describe('createTelemetry', () => {
     );
     await expect(noopTelemetry.setAnalyticsConsent(true)).resolves.toBe(undefined);
     expect(() => noopTelemetry.log(event)).not.toThrow();
+  });
+
+  it('records errors only while crash reports are on, never throwing', async () => {
+    const adapter = fakeAdapter();
+    const telemetry = createTelemetry(true, () => adapter);
+    const error = new Error('x');
+    telemetry.recordError(error);
+    expect(adapter.recordError).toHaveBeenCalledWith(error);
+    await telemetry.setCollection({ analytics: true, crashes: false });
+    telemetry.recordError(error);
+    expect(adapter.recordError).toHaveBeenCalledTimes(1);
+    await telemetry.setCollection({ analytics: false, crashes: true });
+    adapter.recordError.mockImplementation(() => {
+      throw new Error('boom');
+    });
+    expect(() => telemetry.recordError(error)).not.toThrow();
+    expect(() => noopTelemetry.recordError(error)).not.toThrow();
   });
 });
