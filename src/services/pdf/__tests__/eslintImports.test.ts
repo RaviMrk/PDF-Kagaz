@@ -14,6 +14,11 @@ const FILES = [
   'src/services/pdf/__tests__/merge.test.ts',
   'src/services/tools/toolFs.ts',
   'scripts/make-fixtures.mjs',
+  'src/components/AdBanner.tsx',
+  'src/services/ads/x.ts',
+  'src/services/telemetry/telemetry.ts',
+  'src/services/telemetry/firebaseTelemetry.ts',
+  'jest.setup.js',
 ];
 
 // ESLint loads its config through a dynamic import, which Jest's VM cannot do, so ask a child
@@ -33,6 +38,35 @@ const SORTABLES_USES: Record<string, string> = {
   'import-equals require': `import a = require('${SORT}'); export { a };`,
 };
 
+// Ads and Firebase: [code, file, allowed?]
+const ADS = 'react-native-google-mobile-ads';
+const ZONE_CASES: [string, string, boolean][] = [
+  [`import '${ADS}';`, 'app/index.tsx', false],
+  [`import '${ADS}';`, 'src/components/Button.tsx', false],
+  [`import '${ADS}';`, 'src/services/ads/x.ts', true],
+  [`import '${ADS}';`, 'src/components/AdBanner.tsx', true],
+  [
+    `export const a = require('@react-native-firebase/app');`,
+    'src/services/telemetry/telemetry.ts',
+    false,
+  ],
+  [
+    `export const a = require('@react-native-firebase/app');`,
+    'src/services/telemetry/firebaseTelemetry.ts',
+    true,
+  ],
+  [
+    `import { getAnalytics } from '@react-native-firebase/analytics'; export const a = getAnalytics;`,
+    'app/index.tsx',
+    false,
+  ],
+  [
+    `import { getAnalytics } from '@react-native-firebase/analytics'; export const a = getAnalytics;`,
+    'src/services/telemetry/firebaseTelemetry.ts',
+    true,
+  ],
+];
+
 const SCRIPT = `
 const { ESLint } = require('eslint');
 const eslint = new ESLint();
@@ -47,18 +81,28 @@ const eslint = new ESLint();
       lint[name][filePath] = r.messages.filter((m) => m.ruleId === 'no-restricted-syntax').length;
     }
   }
-  process.stdout.write(JSON.stringify({ configs, lint }));
+  const zones = [];
+  for (const [code, filePath] of ${JSON.stringify(ZONE_CASES)}) {
+    const [r] = await eslint.lintText(code, { filePath });
+    zones.push(r.messages.filter((m) => m.ruleId === 'no-restricted-syntax').length);
+  }
+  process.stdout.write(JSON.stringify({ configs, lint, zones }));
 })();`;
 
-const { configs, lint } = JSON.parse(
+const { configs, lint, zones } = JSON.parse(
   execFileSync(process.execPath, ['-e', SCRIPT], {
     cwd: path.join(__dirname, '..', '..', '..', '..'),
     encoding: 'utf8',
     maxBuffer: 256 * 1024 * 1024,
   }),
-) as { configs: Record<string, Config>; lint: Record<string, Record<string, number>> };
+) as {
+  configs: Record<string, Config>;
+  lint: Record<string, Record<string, number>>;
+  zones: number[];
+};
 
-const SELECTOR_MODULE = /value='([^']+)'/;
+// A module name (`value='x'`) or a module pattern (`value=/x/`).
+const SELECTOR_MODULE = /value=(?:'([^']+)'|(\/.+\/))\]/;
 const isOn = (rule?: unknown[]) => rule !== undefined && rule[0] !== 0 && rule[0] !== 'off';
 
 function restricted(file: string): string[] {
@@ -73,7 +117,8 @@ function restricted(file: string): string[] {
   if (isOn(syntax)) {
     for (const s of (syntax ?? []).slice(1) as { selector: string }[]) {
       const m = SELECTOR_MODULE.exec(s.selector);
-      if (m?.[1]) names.add(m[1]);
+      const name = m?.[1] ?? m?.[2];
+      if (name) names.add(name);
     }
   }
   return [...names].sort();
@@ -81,17 +126,24 @@ function restricted(file: string): string[] {
 
 const PDF = '@cantoo/pdf-lib';
 const FS = 'expo-file-system';
+const FB = '/^@react-native-firebase\\//';
 describe('import restrictions', () => {
   it.each([
-    ['app/index.tsx', [PDF, FS, SORT]],
-    ['src/components/Button.tsx', [PDF, FS]],
+    ['app/index.tsx', [PDF, FS, SORT, ADS, FB]],
+    ['src/components/Button.tsx', [PDF, FS, ADS, FB]],
+    ['src/components/AdBanner.tsx', [PDF, FS, FB]],
+    ['src/services/ads/x.ts', [PDF, FS, SORT, FB]],
+    ['src/services/telemetry/telemetry.ts', [PDF, FS, SORT, ADS, FB]],
+    ['src/services/telemetry/firebaseTelemetry.ts', [PDF, FS, SORT, ADS]],
+    // Tests, test utilities and the Jest setup may import ads, Firebase and sortables (mocks).
     ['src/components/__tests__/Button.test.tsx', [FS]],
-    ['src/test-utils/pdfFixtures.ts', [FS, SORT]],
-    ['src/services/pdf/merge.ts', [FS, SORT]],
-    ['src/services/pdf/__tests__/merge.test.ts', [FS, SORT]],
-    ['src/services/tools/toolFs.ts', [PDF, SORT]],
+    ['src/test-utils/pdfFixtures.ts', [FS]],
+    ['src/services/pdf/merge.ts', [FS, SORT, ADS, FB]],
+    ['src/services/pdf/__tests__/merge.test.ts', [FS]],
+    ['src/services/tools/toolFs.ts', [PDF, SORT, ADS, FB]],
+    ['jest.setup.js', [PDF]],
     // expo-file-system is enforced for TypeScript files only (plugin availability)
-    ['scripts/make-fixtures.mjs', [SORT]],
+    ['scripts/make-fixtures.mjs', [SORT, ADS, FB]],
   ])('%s restricts %j', (file, expected) => {
     expect(restricted(file)).toEqual([...expected].sort());
   });
@@ -104,4 +156,14 @@ describe('react-native-sortables import forms', () => {
   it.each(Object.keys(SORTABLES_USES))('%s is allowed in src/components', (name) => {
     expect(lint[name]?.[ALLOWED_FILE]).toBe(0);
   });
+});
+
+describe('ads and Firebase zones', () => {
+  it.each(ZONE_CASES.map(([code, file, allowed], i) => [i, code, file, allowed] as const))(
+    '#%d %s in %s allowed=%s',
+    (i, _code, _file, allowed) => {
+      if (allowed) expect(zones[i]).toBe(0);
+      else expect(zones[i]).toBeGreaterThan(0);
+    },
+  );
 });

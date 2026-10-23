@@ -24,7 +24,13 @@ import type { PdfFileInfo } from '@/services/native/pdfNative';
 import { fileIdForUri } from '@/utils/fileId';
 import { makeRow } from '@/test-utils/fileRows';
 
-import { createToolJobStore, newJobId, optionsOf, requestFromJob } from '../toolJobStore';
+import {
+  createToolJobStore,
+  newJobId,
+  optionsOf,
+  requestFromJob,
+  type ToolJobStoreDeps,
+} from '../toolJobStore';
 
 const mockFiles = {
   dropMissing: jest.fn(),
@@ -50,7 +56,7 @@ type Call = {
   resolve: (o: ToolOutcome) => void;
 };
 
-function setup(db: IndexDb = makeDb()) {
+function setup(db: IndexDb = makeDb(), extra: Partial<ToolJobStoreDeps> = {}) {
   const calls: Call[] = [];
   const run = jest.fn(
     (
@@ -76,6 +82,7 @@ function setup(db: IndexDb = makeDb()) {
     now: () => clock,
     random: () => (seq++ % 97) / 97,
     cleanSession,
+    ...extra,
   });
   const advance = (ms: number) => {
     clock += ms;
@@ -189,6 +196,32 @@ describe('toolJobStore', () => {
     expect(again.jobId).not.toBe(first.jobId);
     expect(s.calls[1]!.request).toEqual(split);
     expect(s.store.getState().retry('unknown-job', t)).toEqual({ ok: false, reason: 'busy' });
+  });
+
+  it('reports each finished job once with its request, outcome and duration', async () => {
+    const onJobFinished = jest.fn();
+    const s = setup(undefined, { onJobFinished });
+    s.store.getState().start(merge, t);
+    s.advance(1_349);
+    const outcome: ToolOutcome = { ok: false, failure: 'notFound', inputIndex: 0, outputs: [] };
+    s.calls[0]!.resolve(outcome);
+    await flush();
+    expect(onJobFinished).toHaveBeenCalledTimes(1);
+    expect(onJobFinished).toHaveBeenCalledWith(merge, outcome, 1_349);
+  });
+
+  it('a throwing onJobFinished does not break the finished job', async () => {
+    const onJobFinished = jest.fn(() => {
+      throw new Error('telemetry');
+    });
+    const s = setup(undefined, { onJobFinished });
+    const started = s.store.getState().start(merge, t);
+    if (!started.ok) throw new Error('expected ok');
+    s.calls[0]!.resolve({ ok: true, outputs: [] });
+    await flush();
+    expect(onJobFinished).toHaveBeenCalledTimes(1);
+    expect(s.store.getState().last).toMatchObject({ jobId: started.jobId, seen: false });
+    expect(s.store.getState().active).toBeNull();
   });
 
   it('retry of an unknown job reports db', () => {

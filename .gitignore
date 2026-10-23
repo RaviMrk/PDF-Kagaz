@@ -50,3 +50,6 @@ modules/pdf-native/android/build/
 
 # 50 MB reader fixture (npm run fixtures:large)
 __fixtures__/large/
+
+# Firebase config (user-supplied; EAS file env var GOOGLE_SERVICES_JSON)
+google-services.json

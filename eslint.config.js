@@ -18,25 +18,37 @@ const FILE_SYSTEM = {
   allowed: ['src/services/tools/toolFs.ts'],
   message: 'Tool file access goes through src/services/tools/toolFs.ts.',
 };
+// no-restricted-syntax zones: each package is allowed only where its zone lifts it. One rule key
+// holds every entry, so a zone lists what it still restricts via restrictedSyntax(except).
 const SORTABLES = {
-  name: 'react-native-sortables',
-  allowed: ['src/components/**'],
+  source: "'react-native-sortables'",
   message: 'react-native-sortables may only be used inside src/components.',
 };
+const ADS = {
+  source: "'react-native-google-mobile-ads'",
+  message: 'Ads go through src/services/ads/* and src/components/AdBanner.tsx.',
+};
+const FIREBASE = {
+  source: '/^@react-native-firebase\\//',
+  message: 'Firebase is used only by src/services/telemetry/firebaseTelemetry.ts.',
+};
+const RESTRICTED_MODULES = [SORTABLES, ADS, FIREBASE];
 
 const importRule = ({ name, message }) => ['error', { paths: [{ name, message }] }];
 // Every way a module can be pulled in: import, re-export, export-all, import(), require() and
 // `import x = require()`.
-const syntaxRule = ({ name, message }) => [
+const selectorsFor = ({ source, message }) =>
+  [
+    `ImportDeclaration[source.value=${source}]`,
+    `ExportNamedDeclaration[source.value=${source}]`,
+    `ExportAllDeclaration[source.value=${source}]`,
+    `ImportExpression[source.value=${source}]`,
+    `CallExpression[callee.name='require'][arguments.0.value=${source}]`,
+    `TSExternalModuleReference[expression.value=${source}]`,
+  ].map((selector) => ({ selector, message }));
+const restrictedSyntax = (except) => [
   'error',
-  ...[
-    `ImportDeclaration[source.value='${name}']`,
-    `ExportNamedDeclaration[source.value='${name}']`,
-    `ExportAllDeclaration[source.value='${name}']`,
-    `ImportExpression[source.value='${name}']`,
-    `CallExpression[callee.name='require'][arguments.0.value='${name}']`,
-    `TSExternalModuleReference[expression.value='${name}']`,
-  ].map((selector) => ({ selector, message })),
+  ...RESTRICTED_MODULES.filter((m) => !except.includes(m)).flatMap(selectorsFor),
 ];
 
 const restrictionBlocks = () => [
@@ -44,7 +56,7 @@ const restrictionBlocks = () => [
     files: SOURCE_FILES,
     rules: {
       'no-restricted-imports': importRule(PDF_LIB),
-      'no-restricted-syntax': syntaxRule(SORTABLES),
+      'no-restricted-syntax': restrictedSyntax([]),
     },
   },
   {
@@ -54,7 +66,24 @@ const restrictionBlocks = () => [
   },
   { files: PDF_LIB.allowed, rules: { 'no-restricted-imports': 'off' } },
   { files: FILE_SYSTEM.allowed, rules: { '@typescript-eslint/no-restricted-imports': 'off' } },
-  { files: SORTABLES.allowed, rules: { 'no-restricted-syntax': 'off' } },
+  {
+    files: ['src/components/**'],
+    rules: { 'no-restricted-syntax': restrictedSyntax([SORTABLES]) },
+  },
+  {
+    files: ['src/components/AdBanner.tsx'],
+    rules: { 'no-restricted-syntax': restrictedSyntax([SORTABLES, ADS]) },
+  },
+  { files: ['src/services/ads/**'], rules: { 'no-restricted-syntax': restrictedSyntax([ADS]) } },
+  {
+    files: ['src/services/telemetry/firebaseTelemetry.ts'],
+    rules: { 'no-restricted-syntax': restrictedSyntax([FIREBASE]) },
+  },
+  // Tests and their setup mock these packages.
+  {
+    files: ['**/__tests__/**', 'src/test-utils/**', 'jest.setup.js'],
+    rules: { 'no-restricted-syntax': 'off' },
+  },
 ];
 
 module.exports = defineConfig([
@@ -63,6 +92,11 @@ module.exports = defineConfig([
   {
     files: ['jest.setup.js'],
     languageOptions: { globals: { jest: 'readonly' } },
+  },
+  {
+    // CommonJS config read by Node (app.config.ts, autolinking).
+    files: ['firebaseConfig.js', 'react-native.config.js'],
+    languageOptions: { globals: { __dirname: 'readonly' } },
   },
   ...restrictionBlocks(),
   {

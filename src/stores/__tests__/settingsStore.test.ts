@@ -103,6 +103,21 @@ describe('settingsStore reader prefs', () => {
     expect(createSettingsStore(kv).getState().imageQuality).toBe('standard');
   });
 
+  it('defaults analytics and crash reports to on and persists each opt-out separately', () => {
+    const kv = createMemoryStore();
+    const store = createSettingsStore(kv);
+    expect(store.getState().analyticsEnabled).toBe(true);
+    expect(store.getState().crashReportsEnabled).toBe(true);
+    store.getState().setAnalyticsEnabled(false);
+    expect(kv.getBoolean('analyticsEnabled')).toBe(false);
+    let reloaded = createSettingsStore(kv).getState();
+    expect(reloaded).toMatchObject({ analyticsEnabled: false, crashReportsEnabled: true });
+    reloaded.setCrashReportsEnabled(false);
+    reloaded.setAnalyticsEnabled(true);
+    reloaded = createSettingsStore(kv).getState();
+    expect(reloaded).toMatchObject({ analyticsEnabled: true, crashReportsEnabled: false });
+  });
+
   it('getNumber round-trips a number and ignores other types', () => {
     const kv = createMemoryStore();
     expect(kv.getNumber('t')).toBeUndefined();

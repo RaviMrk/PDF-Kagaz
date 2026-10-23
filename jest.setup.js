@@ -30,3 +30,31 @@ jest.mock('react-native-sortables', () => require('./src/test-utils/fakeSortable
 // Reanimated and Worklets need their native runtime; under Jest both use the packages' own mocks.
 jest.mock('react-native-worklets', () => require('react-native-worklets/src/mock'));
 jest.mock('react-native-reanimated', () => require('react-native-reanimated/mock'));
+
+// Firebase native modules do not exist under Jest (and are not linked without
+// google-services.json); virtual so the mocks hold even if the packages are absent.
+jest.mock(
+  '@react-native-firebase/app',
+  () => ({ getApp: jest.fn(() => ({ name: '[DEFAULT]' })) }),
+  { virtual: true },
+);
+jest.mock(
+  '@react-native-firebase/analytics',
+  () => {
+    const instance = { logEvent: jest.fn(() => Promise.resolve()) };
+    return {
+      getAnalytics: jest.fn(() => instance),
+      logEvent: jest.fn(),
+      setAnalyticsCollectionEnabled: jest.fn(() => Promise.resolve()),
+    };
+  },
+  { virtual: true },
+);
+jest.mock(
+  '@react-native-firebase/crashlytics',
+  () => ({
+    getCrashlytics: jest.fn(() => ({})),
+    setCrashlyticsCollectionEnabled: jest.fn(() => Promise.resolve(null)),
+  }),
+  { virtual: true },
+);

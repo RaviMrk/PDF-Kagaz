@@ -24,6 +24,12 @@ export type SettingsState = {
   readerKeepAwake: boolean;
   readerHorizontal: boolean;
   imageQuality: ImageQuality;
+  /** Anonymous tool-usage events (also need ads consent); on by default. */
+  analyticsEnabled: boolean;
+  /** Crash reports; on by default. */
+  crashReportsEnabled: boolean;
+  setAnalyticsEnabled: (on: boolean) => void;
+  setCrashReportsEnabled: (on: boolean) => void;
   setImageQuality: (quality: ImageQuality) => void;
   setTheme: (theme: ThemePref) => void;
   setReaderTheme: (theme: ReaderTheme) => void;
@@ -70,6 +76,16 @@ export function createSettingsStore(kv: KeyValueStore) {
     readerKeepAwake: kv.getBoolean('readerKeepAwake') ?? false,
     readerHorizontal: kv.getBoolean('readerHorizontal') ?? false,
     imageQuality: readImageQuality(kv),
+    analyticsEnabled: kv.getBoolean('analyticsEnabled') ?? true,
+    crashReportsEnabled: kv.getBoolean('crashReportsEnabled') ?? true,
+    setAnalyticsEnabled: (analyticsEnabled) => {
+      kv.set('analyticsEnabled', analyticsEnabled);
+      set({ analyticsEnabled });
+    },
+    setCrashReportsEnabled: (crashReportsEnabled) => {
+      kv.set('crashReportsEnabled', crashReportsEnabled);
+      set({ crashReportsEnabled });
+    },
     setImageQuality: (imageQuality) => {
       kv.set('imageQuality', imageQuality);
       set({ imageQuality });

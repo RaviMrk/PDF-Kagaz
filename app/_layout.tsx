@@ -9,6 +9,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { DbGate } from '@/components/DbGate';
 import { IncomingPdfs } from '@/components/IncomingPdfs';
 import { IndexLifecycle } from '@/components/IndexLifecycle';
+import { TelemetryLifecycle } from '@/components/TelemetryLifecycle';
 import { ToolJobLifecycle } from '@/components/ToolJobLifecycle';
 import { initI18n, resolveLanguage } from '@/i18n';
 import { useSettings } from '@/stores/settingsStore';
@@ -28,6 +29,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={[styles.root, { backgroundColor: colors.background }]}>
       <I18nextProvider i18n={i18n}>
         <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+        <TelemetryLifecycle />
         <DbGate>
           <IndexLifecycle />
           <ToolJobLifecycle />

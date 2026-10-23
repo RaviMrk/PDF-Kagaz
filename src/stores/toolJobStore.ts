@@ -19,6 +19,8 @@ import {
 } from '@/services/tools/runTool';
 import { IMAGE_QUALITIES } from '@/services/tools/limits';
 import { expoToolFs } from '@/services/tools/toolFs';
+import { telemetry } from '@/services/telemetry/telemetry';
+import { pagesOf, toolFinishedEvent } from '@/services/telemetry/toolEvent';
 import {
   createJob,
   finishJob,
@@ -90,6 +92,8 @@ export type ToolJobStoreDeps = {
   random: () => number;
   /** Deletes an image session (after its job succeeded); errors are ignored. */
   cleanSession: (sessionId: string) => Promise<void>;
+  /** Told about every job this process finishes (telemetry); errors are ignored. */
+  onJobFinished?: (request: ToolRequest, outcome: ToolOutcome, durationMs: number) => void;
 };
 
 const PROGRESS_INTERVAL_MS = 100;
@@ -232,7 +236,7 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
       }
     }
 
-    function finish(jobId: string, request: ToolRequest, outcome: ToolOutcome) {
+    function finish(jobId: string, request: ToolRequest, outcome: ToolOutcome, startedAt: number) {
       try {
         finishJob(deps.getDb(), jobId, resultOf(outcome, deps.now()));
       } catch {
@@ -263,11 +267,17 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
           request,
         },
       });
+      try {
+        deps.onJobFinished?.(request, outcome, deps.now() - startedAt);
+      } catch {
+        // Telemetry never affects a job.
+      }
     }
 
     function start(request: ToolRequest, t: Translate): StartResult {
       if (get().active) return { ok: false, reason: 'busy' };
-      const jobId = newJobId(deps.now(), deps.random);
+      const startedAt = deps.now();
+      const jobId = newJobId(startedAt, deps.random);
       try {
         createJob(deps.getDb(), {
           id: jobId,
@@ -309,7 +319,7 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
         } catch {
           outcome = { ok: false, failure: 'unknown', inputIndex: null, outputs: [] };
         }
-        finish(jobId, request, outcome);
+        finish(jobId, request, outcome, startedAt);
       })();
       return { ok: true, jobId };
     }
@@ -437,4 +447,6 @@ export const useToolJobs = createToolJobStore({
   now: Date.now,
   random: Math.random,
   cleanSession: (sessionId) => pdfNative.cleanToolWorkspace(sessionId),
+  onJobFinished: (request, outcome, ms) =>
+    telemetry.log(toolFinishedEvent(request, outcome, ms, pagesOf(outcome))),
 });

@@ -5,6 +5,9 @@
   "dependencies": {
     "@cantoo/pdf-lib": "^2.11.1",
     "@expo/vector-icons": "^15.0.2",
+    "@react-native-firebase/analytics": "27.0.0",
+    "@react-native-firebase/app": "27.0.0",
+    "@react-native-firebase/crashlytics": "27.0.0",
     "@shopify/flash-list": "2.0.2",
     "babel-preset-expo": "~57.0.0",
     "drizzle-orm": "^0.45.4",
