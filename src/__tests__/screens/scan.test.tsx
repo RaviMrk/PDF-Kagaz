@@ -68,7 +68,7 @@ describe('scan screen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     fakeSortables.reset();
-    useSettings.setState({ onboardingDone: true });
+    useSettings.setState({ onboardingDone: true, imageQuality: 'standard' });
     useStorage.setState({ mode: 'full', roots: [], canRequestFullAccess: true });
     useFiles.setState({ files: [], status: 'idle', requestThumb: jest.fn() });
     start = jest.fn((): StartResult => ({ ok: true, jobId: 'j1' }));
@@ -107,7 +107,18 @@ describe('scan screen', () => {
         filter: 'bw',
         layout: { pageSize: 'fit', orientation: 'auto', margin: 'none' },
         name: null,
+        quality: 'standard',
       },
+      expect.any(Function),
+    );
+  });
+
+  it('saves with the image quality chosen in Settings', async () => {
+    useSettings.setState({ imageQuality: 'high' });
+    await open();
+    await press('Save PDF');
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({ quality: 'high' }),
       expect.any(Function),
     );
   });

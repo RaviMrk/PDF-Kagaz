@@ -91,4 +91,24 @@ describe('settingsStore reader prefs', () => {
     kv.set('readerTheme', 'purple');
     expect(createSettingsStore(kv).getState().readerTheme).toBe('normal');
   });
+
+  it('defaults the image quality to standard, persists a choice and ignores unknown values', () => {
+    const kv = createMemoryStore();
+    const store = createSettingsStore(kv);
+    expect(store.getState().imageQuality).toBe('standard');
+    store.getState().setImageQuality('high');
+    expect(kv.getString('imageQuality')).toBe('high');
+    expect(createSettingsStore(kv).getState().imageQuality).toBe('high');
+    kv.set('imageQuality', 'ultra');
+    expect(createSettingsStore(kv).getState().imageQuality).toBe('standard');
+  });
+
+  it('getNumber round-trips a number and ignores other types', () => {
+    const kv = createMemoryStore();
+    expect(kv.getNumber('t')).toBeUndefined();
+    kv.set('t', 180000);
+    expect(kv.getNumber('t')).toBe(180000);
+    kv.set('s', 'x');
+    expect(kv.getNumber('s')).toBeUndefined();
+  });
 });

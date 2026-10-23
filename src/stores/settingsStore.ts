@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 import type { KeyValueStore } from '@/services/prefs/KeyValueStore';
 import type { SortDir, SortKey } from '@/services/files/fileQuery';
+import { IMAGE_QUALITIES, type ImageQuality } from '@/services/tools/limits';
 import { mmkvStore } from '@/services/prefs/mmkvStore';
 
 export type ThemePref = 'system' | 'light' | 'dark';
@@ -22,6 +23,8 @@ export type SettingsState = {
   readerTheme: ReaderTheme;
   readerKeepAwake: boolean;
   readerHorizontal: boolean;
+  imageQuality: ImageQuality;
+  setImageQuality: (quality: ImageQuality) => void;
   setTheme: (theme: ThemePref) => void;
   setReaderTheme: (theme: ReaderTheme) => void;
   setReaderKeepAwake: (on: boolean) => void;
@@ -39,6 +42,11 @@ function readTheme(kv: KeyValueStore): ThemePref {
 function readReaderTheme(kv: KeyValueStore): ReaderTheme {
   const stored = kv.getString('readerTheme');
   return READER_THEMES.find((t) => t === stored) ?? 'normal';
+}
+
+function readImageQuality(kv: KeyValueStore): ImageQuality {
+  const stored = kv.getString('imageQuality');
+  return IMAGE_QUALITIES.find((q) => q === stored) ?? 'standard';
 }
 
 function readSortKey(kv: KeyValueStore): SortKey {
@@ -61,6 +69,11 @@ export function createSettingsStore(kv: KeyValueStore) {
     readerTheme: readReaderTheme(kv),
     readerKeepAwake: kv.getBoolean('readerKeepAwake') ?? false,
     readerHorizontal: kv.getBoolean('readerHorizontal') ?? false,
+    imageQuality: readImageQuality(kv),
+    setImageQuality: (imageQuality) => {
+      kv.set('imageQuality', imageQuality);
+      set({ imageQuality });
+    },
     setReaderTheme: (readerTheme) => {
       kv.set('readerTheme', readerTheme);
       set({ readerTheme });

@@ -11,6 +11,10 @@ export function createMemoryStore(): KeyValueStore {
       const v = data.get(key);
       return typeof v === 'boolean' ? v : undefined;
     },
+    getNumber: (key) => {
+      const v = data.get(key);
+      return typeof v === 'number' ? v : undefined;
+    },
     set: (key, value) => {
       data.set(key, value);
     },

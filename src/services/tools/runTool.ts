@@ -19,10 +19,8 @@ import { everyNGroups, parsePageRanges, uniqueSortedPages } from '@/utils/pageRa
 
 import {
   checkInputSizes,
-  IMAGE_JPEG_QUALITY,
-  IMAGE_MAX_LONG_SIDE_PX,
-  IMAGE_SMALLER_JPEG_QUALITY,
-  IMAGE_SMALLER_LONG_SIDE_PX,
+  IMAGE_QUALITY_PRESETS,
+  type ImageQuality,
   IMAGE_TOTAL_BUDGET,
   IMAGES_MAX,
   JS_MAX_FILE_BYTES,
@@ -58,6 +56,7 @@ export type ImagesRequest = {
   filter: ImageFilter;
   layout: ImageLayoutOptions;
   name: string | null;
+  quality: ImageQuality;
 };
 
 export type ToolRequest =
@@ -289,11 +288,12 @@ export async function runTool(
 
     onProgress('preparing', 0);
     const prepared: PreparedPage[] = [];
+    const preset = IMAGE_QUALITY_PRESETS[request.quality];
     const budget = JS_MAX_TOTAL_BYTES * IMAGE_TOTAL_BUDGET;
     let total = 0;
     for (const [index, source] of request.images.entries()) {
       throwIfCancelled(signal);
-      let page = await prepare(request, source, index, IMAGE_MAX_LONG_SIDE_PX, IMAGE_JPEG_QUALITY);
+      let page = await prepare(request, source, index, preset.longSidePx, preset.jpegQuality);
       // Over its share of what is left: prepared once more, smaller (it overwrites the same page).
       if (page.sizeBytes > (budget - total) / (n - index)) {
         throwIfCancelled(signal);
@@ -301,8 +301,8 @@ export async function runTool(
           request,
           source,
           index,
-          IMAGE_SMALLER_LONG_SIDE_PX,
-          IMAGE_SMALLER_JPEG_QUALITY,
+          preset.smallerLongSidePx,
+          preset.smallerJpegQuality,
         );
       }
       // Bounded before any byte reaches JS.

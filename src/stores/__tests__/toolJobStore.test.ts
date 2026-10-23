@@ -103,6 +103,7 @@ const imagesReq: ImagesRequest = {
   filter: 'greyscale',
   layout: { pageSize: 'a4', orientation: 'auto', margin: 'small' },
   name: 'Receipt',
+  quality: 'standard',
 };
 
 beforeEach(() => jest.clearAllMocks());
@@ -452,6 +453,7 @@ describe('toolJobStore images and scans', () => {
       images: [2, 0, 1],
       filter: 'greyscale',
       layout: { pageSize: 'a4', orientation: 'auto', margin: 'small' },
+      quality: 'standard',
     });
     expect(options).not.toHaveProperty('name');
   });
@@ -463,6 +465,30 @@ describe('toolJobStore images and scans', () => {
       createJob(db, { id: toolId, toolId, inputIds: [], options: optionsOf(req), now: 1 });
       expect(requestFromJob(getJob(db, toolId)!)).toEqual({ ...req, name: null });
     }
+  });
+
+  it('stores the quality and rebuilds it, defaulting a missing or invalid one to standard', () => {
+    expect(optionsOf({ ...imagesReq, quality: 'compact' }).quality).toBe('compact');
+    const db = makeDb();
+    const { quality: _q, ...old } = optionsOf(imagesReq);
+    createJob(db, { id: 'old', toolId: 'images-to-pdf', inputIds: [], options: old, now: 1 });
+    expect(requestFromJob(getJob(db, 'old')!)).toMatchObject({ quality: 'standard' });
+    createJob(db, {
+      id: 'bad',
+      toolId: 'scan',
+      inputIds: [],
+      options: { ...old, quality: 'x' },
+      now: 1,
+    });
+    expect(requestFromJob(getJob(db, 'bad')!)).toMatchObject({ quality: 'standard' });
+    createJob(db, {
+      id: 'c',
+      toolId: 'scan',
+      inputIds: [],
+      options: { ...old, quality: 'compact' },
+      now: 1,
+    });
+    expect(requestFromJob(getJob(db, 'c')!)).toMatchObject({ quality: 'compact' });
   });
 
   it('requestFromJob refuses malformed image rows', () => {

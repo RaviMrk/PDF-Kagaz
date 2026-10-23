@@ -61,7 +61,7 @@ describe('images to PDF screen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     fakeSortables.reset();
-    useSettings.setState({ onboardingDone: true });
+    useSettings.setState({ onboardingDone: true, imageQuality: 'standard' });
     useStorage.setState({ mode: 'full', roots: [], canRequestFullAccess: true });
     useFiles.setState({ files: [], status: 'idle', requestThumb: jest.fn() });
     start = jest.fn((): StartResult => ({ ok: true, jobId: 'j1' }));
@@ -114,7 +114,18 @@ describe('images to PDF screen', () => {
         filter: 'colour',
         layout: { pageSize: 'letter', orientation: 'auto', margin: 'small' },
         name: 'Trip',
+        quality: 'standard',
       },
+      expect.any(Function),
+    );
+  });
+
+  it('starts the job with the image quality chosen in Settings', async () => {
+    useSettings.setState({ imageQuality: 'high' });
+    await open();
+    await press('Make PDF');
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({ quality: 'high' }),
       expect.any(Function),
     );
   });

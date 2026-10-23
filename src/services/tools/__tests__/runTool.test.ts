@@ -585,6 +585,7 @@ describe('runTool images and scans', () => {
     filter: 'colour',
     layout,
     name: null,
+    quality: 'standard',
     ...over,
   });
   const imageSetup = () => {
@@ -616,6 +617,12 @@ describe('runTool images and scans', () => {
     expect(logSpy).toHaveBeenCalledWith(
       expect.stringMatching(/^\[tool\] images-to-pdf \d+ms 2 pages 1 files$/),
     );
+  });
+
+  it('uses the high preset first pass', async () => {
+    const s = imageSetup();
+    await s.run(images({ quality: 'high' }));
+    expect(s.native.prepareImagePage.mock.calls[0]!.slice(4, 6)).toEqual([3200, 90]);
   });
 
   it('names a scan with the typed name, or the scan default when blank', async () => {
@@ -675,12 +682,12 @@ describe('runTool images and scans', () => {
   });
 
   /** 100 photo-like pages: `first` bytes each at 2400 px / q85, `smaller` at any other size. */
-  const hundredPhotos = (first: number, smaller: number) => {
+  const hundredPhotos = (first: number, smaller: number, firstPx = 2400, firstQ = 85) => {
     const s = imageSetup();
     const real = s.native.prepareImagePage.getMockImplementation()!;
     s.native.prepareImagePage.mockImplementation(async (...args) => ({
       ...(await real(...args)),
-      sizeBytes: args[4] === 2400 && args[5] === 85 ? first : smaller,
+      sizeBytes: args[4] === firstPx && args[5] === firstQ ? first : smaller,
     }));
     return s;
   };
@@ -708,6 +715,19 @@ describe('runTool images and scans', () => {
     expect([...indices].sort((a, b) => a - b)).toEqual(indices);
     const pages = await inspectPages(new Uint8Array(fs.readFileSync(s.published[0]!.path)));
     expect(pages).toHaveLength(100);
+  });
+
+  it('re-prepares a compact job at its own smaller preset and a high job at 1600 / q75', async () => {
+    const compact = hundredPhotos(1.2 * MIB, 0.6 * MIB, 1600, 75);
+    await compact.run({ ...hundred(), quality: 'compact' });
+    const cc = compact.native.prepareImagePage.mock.calls;
+    expect(cc[0]!.slice(4, 6)).toEqual([1600, 75]);
+    expect(cc.some((c) => c[4] === 1200 && c[5] === 65)).toBe(true);
+    const high = hundredPhotos(1.2 * MIB, 0.6 * MIB, 3200, 90);
+    await high.run({ ...hundred(), quality: 'high' });
+    const hc = high.native.prepareImagePage.mock.calls;
+    expect(hc[0]!.slice(4, 6)).toEqual([3200, 90]);
+    expect(hc.some((c) => c[4] === 1600 && c[5] === 75)).toBe(true);
   });
 
   it('keeps first-pass pages that fit their share of the cap', async () => {

@@ -34,6 +34,7 @@ import {
 } from '@/services/tools/imageSession';
 import { IMAGES_MAX } from '@/services/tools/limits';
 import { imagesName } from '@/services/tools/outputNames';
+import { useSettings } from '@/stores/settingsStore';
 import { useToolJobs } from '@/stores/toolJobStore';
 import { useTheme } from '@/theme/useTheme';
 
@@ -192,6 +193,7 @@ export function ImagesToPdfFlow() {
         filter: 'colour',
         layout,
         name: name.trim() === '' ? null : name,
+        quality: useSettings.getState().imageQuality,
       },
       t,
     );

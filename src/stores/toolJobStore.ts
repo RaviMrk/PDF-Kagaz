@@ -17,6 +17,7 @@ import {
   type ToolRequest,
   type ToolRunDeps,
 } from '@/services/tools/runTool';
+import { IMAGE_QUALITIES } from '@/services/tools/limits';
 import { expoToolFs } from '@/services/tools/toolFs';
 import {
   createJob,
@@ -114,8 +115,8 @@ const FAILURES: readonly ToolFailure[] = [
 /** Options stored with a job: no ids or names (an image job's typed name is not stored). */
 export function optionsOf(request: ToolRequest): Record<string, unknown> {
   if (isImagesRequest(request)) {
-    const { sessionId, images, filter, layout } = request;
-    return { sessionId, images, filter, layout };
+    const { sessionId, images, filter, layout, quality } = request;
+    return { sessionId, images, filter, layout, quality };
   }
   if (request.toolId === 'split') return { split: request.split };
   if (request.toolId === 'organize') return { pages: request.pages };
@@ -152,7 +153,7 @@ const FILTERS: readonly ImageFilter[] = ['colour', 'greyscale', 'bw'];
 
 function imagesFrom(row: ToolJobRow): ImagesRequest | null {
   if (row.toolId !== 'images-to-pdf' && row.toolId !== 'scan') return null;
-  const { sessionId, images, filter, layout } = row.options;
+  const { sessionId, images, filter, layout, quality } = row.options;
   if (typeof sessionId !== 'string' || !SESSION_ID.test(sessionId)) return null;
   if (!Array.isArray(images) || images.length === 0) return null;
   if (!images.every((i) => Number.isInteger(i) && (i as number) >= 0)) return null;
@@ -166,6 +167,7 @@ function imagesFrom(row: ToolJobRow): ImagesRequest | null {
     filter: f,
     layout: { pageSize: layout.pageSize, orientation: layout.orientation, margin: layout.margin },
     name: null,
+    quality: IMAGE_QUALITIES.find((q) => q === quality) ?? 'standard',
   };
 }
 
