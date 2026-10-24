@@ -58,6 +58,24 @@ class PdfSecurityTest {
   }
 
   @Test
+  fun aUserPasswordWithoutChangeRightsNeedsTheOwnerPassword() {
+    val file = userPasswordWithoutChangeRights()
+    assertEquals("password", PdfSecurity.inspectFile(file, tempDir))
+    assertEquals("restricted", PdfSecurity.checkFile(file, "user", tempDir))
+    assertEquals("ok", PdfSecurity.checkFile(file, "owner", tempDir))
+
+    val out = File(tmp.root, "open.pdf")
+    assertEquals("ERR_PASSWORD_RESTRICTED", codedFailure { PdfSecurity.unlockTo(file, out, "user", tempDir) }.code)
+    assertFalse(out.exists())
+    PdfSecurity.unlockTo(file, out, "owner", tempDir)
+    PdfBoxSupport.open(out, null, tempDir).use { doc ->
+      assertFalse(doc.isEncrypted)
+      assertEquals(1, doc.numberOfPages)
+      assertTrue(PDFTextStripper().getText(doc).contains("Hello PDF Toolkit"))
+    }
+  }
+
+  @Test
   fun unlockWritesADecryptedCopyWithItsText() {
     val out = File(tmp.root, "open.pdf")
     PdfSecurity.unlockTo(Fixtures.file("protected.pdf"), out, "secret", tempDir)
@@ -163,6 +181,23 @@ class PdfSecurityTest {
     PdfBoxSupport.open(Fixtures.file("one-page.pdf"), null, tempDir).use { doc ->
       val policy = StandardProtectionPolicy("owner-pw", "", AccessPermission())
       policy.encryptionKeyLength = 128
+      doc.protect(policy)
+      PdfBoxSupport.saveTo(doc, out)
+    }
+    return out
+  }
+
+  /** Needs the user password "user", which forbids modifying, assembling and extracting. */
+  private fun userPasswordWithoutChangeRights(): File {
+    val out = File(tmp.root, "user-restricted.pdf")
+    PdfBoxSupport.open(Fixtures.file("one-page.pdf"), null, tempDir).use { doc ->
+      val access = AccessPermission().apply {
+        setCanModify(false)
+        setCanAssembleDocument(false)
+        setCanExtractContent(false)
+      }
+      val policy = StandardProtectionPolicy("owner", "user", access)
+      policy.encryptionKeyLength = 256
       doc.protect(policy)
       PdfBoxSupport.saveTo(doc, out)
     }

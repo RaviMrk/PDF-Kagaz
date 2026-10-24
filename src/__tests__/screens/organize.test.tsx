@@ -218,6 +218,22 @@ describe('organise screen', () => {
     );
   });
 
+  it('explains a restricted file whose owner password prompt was cancelled', async () => {
+    preview.mockResolvedValue({ ok: false, failure: 'restricted', lock: 'restricted' });
+    await open();
+    expect(
+      screen.getByText(/doesn't allow changes. Enter its owner password to use it/),
+    ).toBeTruthy();
+    await press('Cancel');
+    expect(
+      screen.getByText(
+        "This PDF doesn't allow changes. Enter its owner password to use it in a tool.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/password-protected/)).toBeNull();
+    expect(screen.queryByLabelText('Save as new PDF')).toBeNull();
+  });
+
   it('rejects documents over 300 pages', async () => {
     mockPreview(301);
     await open();

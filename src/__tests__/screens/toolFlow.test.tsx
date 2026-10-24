@@ -291,6 +291,19 @@ describe('tool flow', () => {
     expect(screen.queryByLabelText('Split')).toBeNull();
   });
 
+  it('explains a restricted file to split when its owner password prompt is cancelled', async () => {
+    preview.mockResolvedValue({ ok: false, failure: 'restricted', lock: 'restricted' });
+    await open(`/tool/split?inputs=${ID_A}`);
+    await press('Cancel');
+    expect(
+      screen.getByText(
+        "This PDF doesn't allow changes. Enter its owner password to use it in a tool.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/password-protected/)).toBeNull();
+    expect(screen.queryByLabelText('Split')).toBeNull();
+  });
+
   it('closes the preview when leaving split', async () => {
     const close = jest.fn();
     preview.mockResolvedValue({

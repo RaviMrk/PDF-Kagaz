@@ -29,7 +29,8 @@ type Prompt = { fileKey: string; lock: 'password' | 'restricted'; error: PromptE
  * The staged preview of a tool's one input (page count and thumbnails), open while the caller is
  * mounted and keyed by file, not row object: a thumbnail or favourite update must not restage it.
  * A locked file asks for its password, checked by opening the preview with it; Cancel ends as
- * `encrypted`. `password` is the one that opened it (for the job's request), never stored.
+ * `encrypted` (a restricted file: `restricted`). `password` is the one that opened it (for the
+ * job's request), never stored.
  */
 export function useToolPreview(row: FileRow): {
   state: ToolPreviewState;
@@ -75,7 +76,8 @@ export function useToolPreview(row: FileRow): {
           const typed = await ask(lock, error);
           if (!alive) return;
           if (typed === null) {
-            r = { ok: false, failure: 'encrypted' };
+            // Without its password the file stays as locked as it was found.
+            r = { ok: false, failure: lock === 'restricted' ? 'restricted' : 'encrypted' };
             break;
           }
           r = await open(typed);
