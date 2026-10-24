@@ -6,6 +6,7 @@ import com.tom_roush.pdfbox.cos.COSNumber
 import com.tom_roush.pdfbox.pdfparser.PDFStreamParser
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
+import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import expo.modules.kotlin.exception.CodedException
@@ -49,7 +50,7 @@ class PdfStamperTest {
     pngUri = "file://${png.path}"
   }
 
-  private fun imageStamp(pages: List<Int>? = null, angle: Double = 45.0, opacity: Double = 0.35, png: String = pngUri) =
+  private fun imageStamp(pages: List<Any>? = null, angle: Double = 45.0, opacity: Double = 0.35, png: String = pngUri) =
     JSONObject()
       .put("kind", "image")
       .put("png", png)
@@ -196,6 +197,51 @@ class PdfStamperTest {
   fun fallsBackWhenTheTemplateIsNotWinAnsi() {
     stamp("two-hundred-pages.pdf", spec(textStamp(template = "पृष्ठ {n}")))
     PDDocument.load(target).use { doc -> assertTrue(textOf(doc, 1).contains("1 / 200")) }
+  }
+
+  /** Review fix: one balanced q … Q per stamp, so nesting does not grow with the stamp count. */
+  @Test
+  fun fortyStampsOnOnePageKeepTheNestingFlat() {
+    val stamps = (1..40).map { imageStamp(pages = listOf(1), angle = 0.0, opacity = 1.0) }
+    stamp("one-page.pdf", spec(*stamps.toTypedArray()))
+    PDDocument.load(target).use { doc ->
+      val page = doc.getPage(0)
+      assertEquals(40, drawnImages(page).size)
+      var depth = 0
+      var maxDepth = 0
+      for (token in PDFStreamParser(page).apply { parse() }.tokens) {
+        if (token !is Operator) continue
+        if (token.name == "q") maxDepth = maxOf(maxDepth, ++depth)
+        if (token.name == "Q") depth--
+      }
+      assertEquals(0, depth)
+      assertTrue("q nesting $maxDepth", maxDepth <= 3)
+    }
+  }
+
+  /** Same PDF and numbers as stamp.test.ts: the CropBox is clipped to the MediaBox on both routes. */
+  @Test
+  fun readsTheCropBoxClippedToTheMediaBox() {
+    val source = File(tmp.root, "crop.pdf")
+    PDDocument().use { doc ->
+      val page = PDPage(PDRectangle(600f, 800f))
+      page.cropBox = PDRectangle(20f, 30f, 680f, 870f)
+      doc.addPage(page)
+      doc.save(source)
+    }
+    PdfStamper.stamp(source, target, spec(imageStamp(angle = 0.0, opacity = 1.0)), JobControl({}, { 0L }), tempDir)
+    PDDocument.load(target).use { doc ->
+      val m = drawnImages(doc.getPage(0)).single().ctm
+      assertEquals(165.0, m[4], 0.01)
+      assertEquals(342.5, m[5], 0.01)
+      assertEquals(290.0, Math.hypot(m[0], m[1]), 0.01)
+    }
+  }
+
+  @Test
+  fun skipsPageNumbersThatAreNotIntegers() {
+    stamp("mixed-sizes.pdf", spec(imageStamp(pages = listOf(1.5, 2))))
+    PDDocument.load(target).use { doc -> assertEquals(listOf(0, 1, 0), doc.pages.map { drawnImages(it).size }) }
   }
 
   @Test

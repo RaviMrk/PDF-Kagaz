@@ -88,7 +88,8 @@ object PdfStamper {
     }
 
   private fun parseStamp(o: JSONObject): Stamp {
-    val pages = if (o.isNull("pages")) null else o.getJSONArray("pages").let { a -> (0 until a.length()).map { intOf(a.get(it)) } }
+    // Entries that are not integers are skipped, like stamp.ts (stampedPages).
+    val pages = if (o.isNull("pages")) null else o.getJSONArray("pages").let { a -> (0 until a.length()).mapNotNull { pageOf(a.get(it)) } }
     return when (o.getString("kind")) {
       "image" -> {
         val anchor = o.getJSONObject("anchor")
@@ -123,6 +124,11 @@ object PdfStamper {
   }
 
   private fun finite(d: Double): Double = if (d.isFinite()) d else throw InvalidNameException()
+
+  private fun pageOf(value: Any?): Int? {
+    val d = (value as? Number)?.toDouble() ?: return null
+    return if (d == Math.floor(d) && d >= 1 && d <= Int.MAX_VALUE) d.toInt() else null
+  }
 
   private fun intOf(value: Any?): Int {
     val d = (value as? Number)?.toDouble() ?: throw InvalidNameException()
@@ -160,6 +166,9 @@ object PdfStamper {
       val plans = stamps.map { it to stampedPages(it.pages, pageCount) }
       val units = plans.sumOf { it.second.size }.toDouble()
       val images = HashMap<String, PDImageXObject>()
+      // Only a page's first appended stream wraps the original content in q … Q; each stamp is
+      // its own balanced q … Q, so the nesting stays flat however many stamps a page gets.
+      val wrapped = HashSet<Int>()
       var done = 0
       for ((stamp, pages) in plans) {
         if (pages.isEmpty()) continue
@@ -168,9 +177,10 @@ object PdfStamper {
           control.check()
           PdfBoxSupport.mapReadErrors {
             val page = doc.getPage(number - 1)
+            val reset = wrapped.add(number)
             when (stamp) {
-              is Stamp.Image -> drawImage(doc, page, stamp, image!!)
-              is Stamp.Text -> drawText(doc, page, stamp, stamp.start + index, stamp.start + pages.size - 1)
+              is Stamp.Image -> drawImage(doc, page, reset, stamp, image!!)
+              is Stamp.Text -> drawText(doc, page, reset, stamp, stamp.start + index, stamp.start + pages.size - 1)
             }
           }
           done += 1
@@ -203,7 +213,7 @@ object PdfStamper {
     )
   }
 
-  private fun drawImage(doc: PDDocument, page: PDPage, stamp: Stamp.Image, image: PDImageXObject) {
+  private fun drawImage(doc: PDDocument, page: PDPage, reset: Boolean, stamp: Stamp.Image, image: PDImageXObject) {
     val box = boxOf(page)
     val seen = StampGeometry.visualSize(box)
     val width = stamp.widthFrac * seen.width
@@ -214,7 +224,7 @@ object PdfStamper {
       StampCenter(stamp.cx * seen.width, stamp.cy * seen.height)
     }
     val at = StampGeometry.placeOnPage(box, center, size, stamp.angle)
-    PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true).use { cs ->
+    PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, reset).use { cs ->
       cs.saveGraphicsState()
       cs.setGraphicsStateParameters(PDExtendedGraphicsState().apply { nonStrokingAlphaConstant = stamp.opacity.toFloat() })
       cs.transform(Matrix.getRotateInstance(Math.toRadians(at.rotate), at.x.toFloat(), at.y.toFloat()))
@@ -223,7 +233,7 @@ object PdfStamper {
     }
   }
 
-  private fun drawText(doc: PDDocument, page: PDPage, stamp: Stamp.Text, n: Int, total: Int) {
+  private fun drawText(doc: PDDocument, page: PDPage, reset: Boolean, stamp: Stamp.Text, n: Int, total: Int) {
     val template = if (isWinAnsi(stamp.template)) stamp.template else FALLBACK_TEMPLATE
     val label = labelFor(template, n, total)
     val font = PDType1Font.HELVETICA
@@ -231,13 +241,15 @@ object PdfStamper {
     val box = boxOf(page)
     val center = StampGeometry.positionCenter(stamp.position, StampGeometry.visualSize(box), size, stamp.marginPt)
     val at = StampGeometry.placeOnPage(box, center, size, 0.0)
-    PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true).use { cs ->
+    PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, reset).use { cs ->
+      cs.saveGraphicsState()
       cs.beginText()
       cs.setNonStrokingColor(0f, 0f, 0f)
       cs.setFont(font, stamp.fontSize.toFloat())
       cs.setTextMatrix(Matrix.getRotateInstance(Math.toRadians(at.rotate), at.x.toFloat(), at.y.toFloat()))
       cs.showText(label)
       cs.endText()
+      cs.restoreGraphicsState()
     }
   }
 

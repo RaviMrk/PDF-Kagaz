@@ -73,13 +73,28 @@ export function stampedPages(pages: number[] | null, pageCount: number): number[
     .sort((a, b) => a - b);
 }
 
-function pageBoxOf(page: PDFPage): PageBox {
-  const crop = page.getCropBox();
+type Rect = { x: number; y: number; width: number; height: number };
+
+function normalized(r: Rect): { left: number; bottom: number; right: number; top: number } {
   return {
-    x: Math.min(crop.x, crop.x + crop.width),
-    y: Math.min(crop.y, crop.y + crop.height),
-    width: Math.abs(crop.width),
-    height: Math.abs(crop.height),
+    left: Math.min(r.x, r.x + r.width),
+    bottom: Math.min(r.y, r.y + r.height),
+    right: Math.max(r.x, r.x + r.width),
+    top: Math.max(r.y, r.y + r.height),
+  };
+}
+
+/** The CropBox clipped to the MediaBox (as PdfBox `getCropBox` and viewers do), plus `/Rotate`. */
+function pageBoxOf(page: PDFPage): PageBox {
+  const crop = normalized(page.getCropBox());
+  const media = normalized(page.getMediaBox());
+  const left = Math.max(crop.left, media.left);
+  const bottom = Math.max(crop.bottom, media.bottom);
+  return {
+    x: left,
+    y: bottom,
+    width: Math.max(0, Math.min(crop.right, media.right) - left),
+    height: Math.max(0, Math.min(crop.top, media.top) - bottom),
     rotation: normalizeRotation(page.getRotation().angle),
   };
 }

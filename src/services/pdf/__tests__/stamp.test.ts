@@ -2,6 +2,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { PDFDocument } from '@cantoo/pdf-lib';
+
 import { inspectPages, inspectStamps, readFixture } from '@/test-utils/pdfFixtures';
 
 import {
@@ -148,6 +150,31 @@ describe('applyStamps', () => {
     );
     const pages = await inspectPages(out);
     expect(pages[0]?.text).toContain('1 / 200');
+  });
+
+  it('reads the CropBox clipped to the MediaBox, like PdfBox (PdfStamperTest has the same numbers)', async () => {
+    const source = await PDFDocument.create({ updateMetadata: false });
+    // MediaBox [0 0 600 800], CropBox [20 30 700 900] sticks out past the top-right corner.
+    source.addPage([600, 800]).setCropBox(20, 30, 680, 870);
+    const out = await applyStamps(
+      await source.save(),
+      spec(imageStamp({ angle: 0, opacity: 1 })),
+      readPng,
+    );
+    // Seen box [20 30 600 800] = 580 x 770: a 290 x 145 stamp centred at (310, 415).
+    const placement = (await inspectStamps(out))[0]?.placements[0];
+    expect(placement?.x).toBeCloseTo(165, 2);
+    expect(placement?.y).toBeCloseTo(342.5, 2);
+    expect(placement?.width).toBeCloseTo(290, 2);
+  });
+
+  it('skips page numbers that are not integers', async () => {
+    const out = await applyStamps(
+      readFixture('mixed-sizes.pdf'),
+      spec(imageStamp({ pages: [1.5, 2] })),
+      readPng,
+    );
+    expect((await inspectStamps(out)).map((p) => p.imageDraws)).toEqual([0, 1, 0]);
   });
 
   it('refuses an encrypted input', async () => {
