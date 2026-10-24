@@ -414,6 +414,7 @@
     "saved_one": "Saved {{count}} image to {{folder}}",
     "savedRecovered": "Saved to Pictures/PDFToolkit",
     "reduced": "{{count}} large pages were saved at a lower resolution to fit this phone's memory.",
+    "reduced_one": "{{count}} large page was saved at a lower resolution to fit this phone's memory.",
     "open": "Open",
     "share": "Share",
     "shareTitle": "Share images"
@@ -438,6 +439,7 @@
     "unavailable": "A file is on storage that isn't available right now",
     "unavailableNamed": "\"{{name}}\" is on storage that isn't available right now",
     "permission": "PDF Toolkit can't save to Documents/PDFToolkit. Check storage access in Settings.",
+    "imagesPermission": "PDF Toolkit can't save to Pictures/PDFToolkit. Check storage access in Settings.",
     "permissionNamed": "PDF Toolkit can't read \"{{name}}\" anymore. Open it again from the app you got it from.",
     "encrypted": "This PDF is password-protected. Start the tool again and enter its password.",
     "encryptedNamed": "\"{{name}}\" is password-protected. Start the tool again and enter its password.",

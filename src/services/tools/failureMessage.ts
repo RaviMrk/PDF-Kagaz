@@ -51,6 +51,10 @@ export function jobFailureMessage(
   toolId: RunnableToolId,
 ): string {
   if (failure === 'interrupted' && savedCount > 0) return t('toolError.interruptedPartial');
+  // PDF to images saves to the gallery folder, not Documents/PDFToolkit.
+  if (failure === 'permission' && inputName === null && toolId === 'pdf-to-images') {
+    return t('toolError.imagesPermission');
+  }
   if (failure === 'totalTooLarge' && (toolId === 'images-to-pdf' || toolId === 'scan')) {
     return t('toolError.imagesTooLarge');
   }

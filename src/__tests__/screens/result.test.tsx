@@ -408,7 +408,19 @@ describe('result screen', () => {
       expect(screen.getByText('Saved 1 image to Pictures/PDFToolkit/Report pages')).toBeTruthy();
       expect(
         screen.getByText(
-          "1 large pages were saved at a lower resolution to fit this phone's memory.",
+          "1 large page was saved at a lower resolution to fit this phone's memory.",
+        ),
+      ).toBeTruthy();
+    });
+
+    it('says several reduced pages in the plural', async () => {
+      outcomeOf.mockReturnValue(
+        imagesDone({ ok: true, outputs: [], extras: { images: images({ reducedPages: 2 }) } }),
+      );
+      await open();
+      expect(
+        screen.getByText(
+          "2 large pages were saved at a lower resolution to fit this phone's memory.",
         ),
       ).toBeTruthy();
     });

@@ -62,6 +62,18 @@ describe('jobFailureMessage', () => {
       `These files are over ${formatBytes(1_073_741_824)} together. Use fewer files at a time.`,
     );
   });
+  it('names the gallery folder when PDF to images cannot save', () => {
+    expect(jobFailureMessage('permission', null, 0, t, 'pdf-to-images')).toBe(
+      "PDF Toolkit can't save to Pictures/PDFToolkit. Check storage access in Settings.",
+    );
+    expect(jobFailureMessage('permission', null, 0, t, 'merge')).toBe(
+      "PDF Toolkit can't save to Documents/PDFToolkit. Check storage access in Settings.",
+    );
+    // An input it can no longer read still names the input.
+    expect(jobFailureMessage('permission', 'a.pdf', 0, t, 'pdf-to-images')).toBe(
+      failureMessage('permission', 'a.pdf', t),
+    );
+  });
   it('gives the size limit of the tool', () => {
     const native = formatBytes(536_870_912);
     expect(jobFailureMessage('tooLarge', null, 0, t, 'compress')).toBe(

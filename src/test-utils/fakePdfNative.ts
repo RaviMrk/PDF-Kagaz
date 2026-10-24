@@ -143,8 +143,12 @@ function createNativeFns(): jest.Mocked<NativeFns> {
         }),
     ),
     releasePageExport: jest.fn().mockResolvedValue(undefined),
-    publishImageOutput: jest.fn((_temp: string, name: string, _folder: string) =>
-      Promise.resolve({ uri: `content://media/external/images/media/${name.length}`, name }),
+    publishImageOutput: jest.fn((_temp: string, name: string, folder: string) =>
+      Promise.resolve({
+        uri: `content://media/external/images/media/${name.length}`,
+        name,
+        folder: `Pictures/PDFToolkit/${folder}`,
+      }),
     ),
     shareImages: jest.fn().mockResolvedValue(undefined),
     viewImage: jest.fn().mockResolvedValue(undefined),

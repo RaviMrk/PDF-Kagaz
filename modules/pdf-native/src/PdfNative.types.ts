@@ -69,8 +69,11 @@ export type RenderedPage = {
   reduced: boolean;
 };
 
-/** A page image saved to the gallery: its uri (MediaStore content:// on API 29+) and final name. */
-export type SavedImage = { uri: string; name: string };
+/**
+ * A page image saved to the gallery: its uri (MediaStore content://), final name, and the folder it
+ * went to (`Pictures/PDFToolkit/<folder>` as cleaned and shortened natively).
+ */
+export type SavedImage = { uri: string; name: string; folder: string };
 
 /** A tool input copied into the job workspace; `sizeBytes` is the number of bytes copied. */
 export type StagedInput = WorkspaceFile;

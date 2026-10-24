@@ -35,7 +35,10 @@ class ImagePublisher(private val context: Context) {
     withContext(Dispatchers.IO) { publish(ToolFiles.workspaceFile(context, Uri.parse(tempUri)), fileName, folder) }
   }
 
-  /** Returns `{ uri, name }`: the saved image (a MediaStore content:// URI; file:// if a scan fails) and its final name. */
+  /**
+   * Returns `{ uri, name, folder }`: the saved image (a MediaStore content:// URI; file:// if a scan
+   * fails), its final name and the folder it went to ([relativePathFor]).
+   */
   suspend fun publish(temp: File, fileName: String, folder: String): Map<String, Any?> = RenderSupport.mapErrors {
     withContext(Dispatchers.IO) {
       val name = ToolPaths.fitName(ToolPaths.cleanOutputName(fileName))
@@ -48,7 +51,7 @@ class ImagePublisher(private val context: Context) {
       } else {
         if (!StorageAccess.has(context)) throw PermissionDeniedException("Storage permission required")
         val target = AppFolderLock.withLock { publishToFolder(temp, name, relativePath) }
-        mapOf("uri" to scan(target, mime).toString(), "name" to target.name)
+        resultOf(scan(target, mime).toString(), target.name, relativePath)
       }
       temp.delete()
       saved
@@ -72,7 +75,7 @@ class ImagePublisher(private val context: Context) {
     } catch (e: Exception) {
       null
     }
-    return mapOf("uri" to created.toString(), "name" to (shown ?: name))
+    return resultOf(created.toString(), shown ?: name, relativePath)
   }
 
   @Suppress("DEPRECATION")
@@ -138,6 +141,10 @@ class ImagePublisher(private val context: Context) {
       val fitted = ToolPaths.fitName(cleaned).trim()
       return "$PICTURES_ROOT/${fitted.ifEmpty { FALLBACK_FOLDER }}"
     }
+
+    /** The publish result: the saved image's uri and name, and the folder actually used. */
+    fun resultOf(uri: String, name: String, relativePath: String): Map<String, Any?> =
+      mapOf("uri" to uri, "name" to name, "folder" to relativePath)
 
     /** MIME type of a page image name: .jpg or .png only, else null. */
     fun mimeOf(name: String): String? = when {

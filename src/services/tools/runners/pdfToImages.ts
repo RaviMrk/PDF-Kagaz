@@ -50,6 +50,8 @@ export const runPdfToImages: ToolRunner<PdfToImagesRequest> = async (ctx) => {
       const saved = await as(null, null, () =>
         ctx.time('publish', () => native.publishImageOutput(rendered.uri, fileName, folder)),
       );
+      // The folder native actually used (it cleans and shortens the name).
+      images.folder = saved.folder;
       images.count += 1;
       images.uris.push(saved.uri);
       if (rendered.reduced) images.reducedPages += 1;

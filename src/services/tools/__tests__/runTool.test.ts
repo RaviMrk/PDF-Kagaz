@@ -182,6 +182,7 @@ function setup(rows: FileRow[], sources: string[] = []) {
         return {
           uri: `content://media/external/images/media/${savedImages.length}`,
           name: fileName,
+          folder: `Pictures/PDFToolkit/${folder}`,
         };
       },
     ),
@@ -1848,6 +1849,31 @@ describe('runTool pdf to images', () => {
     expect(outcome).toMatchObject({ ok: true, extras: { images: { count: 1 } } });
   });
 
+  it('reports the folder the gallery save actually used', async () => {
+    const r = report();
+    const s = setup([r]);
+    // Native cleans and shortens the folder; the result must show that one, not the JS name.
+    s.native.publishImageOutput.mockImplementation(async (tempUri, fileName) => {
+      fs.rmSync(tempPathOf(tempUri));
+      return {
+        uri: 'content://media/external/images/media/9',
+        name: fileName,
+        folder: 'Pictures/PDFToolkit/Rep_ort pa',
+      };
+    });
+    const outcome = await s.run({
+      toolId: 'pdf-to-images',
+      inputIds: [r.id],
+      format: 'jpg',
+      dpi: 72,
+      pages: [1],
+    });
+    expect(outcome).toMatchObject({
+      ok: true,
+      extras: { images: { count: 1, folder: 'Pictures/PDFToolkit/Rep_ort pa' } },
+    });
+  });
+
   it('refuses pages outside the PDF', async () => {
     const r = report();
     const s = setup([r]);
@@ -1869,7 +1895,11 @@ describe('runTool pdf to images', () => {
       fs.rmSync(tempPathOf(tempUri));
       s.savedImages.push({ name: fileName, folder });
       s.controller.abort();
-      return { uri: 'content://media/external/images/media/1', name: fileName };
+      return {
+        uri: 'content://media/external/images/media/1',
+        name: fileName,
+        folder: `Pictures/PDFToolkit/${folder}`,
+      };
     });
     const outcome = await s.run({
       toolId: 'pdf-to-images',

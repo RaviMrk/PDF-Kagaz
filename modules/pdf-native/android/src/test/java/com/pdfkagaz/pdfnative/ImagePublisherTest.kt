@@ -37,4 +37,12 @@ class ImagePublisherTest {
     assertEquals("image/jpeg", ImagePublisher.mimeOf("a p1.jpg"))
     assertEquals("image/png", ImagePublisher.mimeOf("a p1.png"))
   }
+
+  @Test
+  fun theResultNamesTheFolderUsed() {
+    assertEquals(
+      mapOf("uri" to "content://media/1", "name" to "a p1.jpg", "folder" to "Pictures/PDFToolkit/a_b pages"),
+      ImagePublisher.resultOf("content://media/1", "a p1.jpg", ImagePublisher.relativePathFor("a/b pages")),
+    )
+  }
 }
