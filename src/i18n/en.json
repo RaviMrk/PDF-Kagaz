@@ -46,6 +46,7 @@
     "adPrivacyFailed": "Couldn't open ad privacy choices. Check your connection and try again.",
     "analytics": "Share anonymous usage statistics",
     "analyticsHint": "Which tools are used and whether they worked. Never file names or contents.",
+    "analyticsOffHint": "Off in this version. Nothing is collected.",
     "crashReports": "Send crash reports",
     "crashReportsHint": "Helps fix crashes. Never includes your files.",
     "offlineNote": "Your files are processed on this phone and never uploaded.",

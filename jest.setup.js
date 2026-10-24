@@ -130,3 +130,7 @@ jest.mock('react-native-google-mobile-ads', () => {
     fakeBannerProps: () => banner.props,
   };
 });
+
+// Ads code is kept but off by default (ADS_ENABLED). Tests run with the flag on; a test turns it off
+// with `(adsEnabled as jest.Mock).mockReturnValue(false)`. adsFlag.test.ts unmocks this.
+jest.mock('./src/config/adsFlag', () => ({ adsEnabled: jest.fn(() => true) }));

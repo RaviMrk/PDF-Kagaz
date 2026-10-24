@@ -16,6 +16,8 @@ const REAL = {
 const MESSAGE =
   'Production build needs real AdMob IDs: set ADMOB_ANDROID_APP_ID, ADMOB_BANNER_ID, ADMOB_INTERSTITIAL_ID';
 
+const ON = { ADS_ENABLED: 'true' };
+
 describe('resolveAdsConfig', () => {
   it("uses Google's test IDs and no debug geography by default", () => {
     expect(TEST_IDS).toEqual({
@@ -23,32 +25,54 @@ describe('resolveAdsConfig', () => {
       banner: 'ca-app-pub-3940256099942544/9214589741',
       interstitial: 'ca-app-pub-3940256099942544/1033173712',
     });
-    expect(resolveAdsConfig({})).toEqual({
+    expect(resolveAdsConfig(ON)).toEqual({
+      enabled: true,
       ...TEST_IDS,
       debugGeography: 'disabled',
       testDeviceIds: [],
     });
   });
 
+  it('is off by default and only ADS_ENABLED=true turns it on', () => {
+    for (const value of [undefined, '', 'false', 'TRUE', '1', 'yes']) {
+      expect(resolveAdsConfig({ ADS_ENABLED: value }).enabled).toBe(false);
+    }
+    expect(resolveAdsConfig(ON).enabled).toBe(true);
+  });
+
+  it("uses Google's test IDs without real IDs when ads are off, even in production", () => {
+    expect(resolveAdsConfig({ APP_ENV: 'production' })).toEqual({
+      enabled: false,
+      ...TEST_IDS,
+      debugGeography: 'disabled',
+      testDeviceIds: [],
+    });
+    expect(
+      resolveAdsConfig({ APP_ENV: 'production', ...REAL, ADS_DEBUG_GEOGRAPHY: 'EEA' }),
+    ).toEqual({ enabled: false, ...TEST_IDS, debugGeography: 'disabled', testDeviceIds: [] });
+  });
+
   it('honours the debug consent settings outside production', () => {
     expect(
-      resolveAdsConfig({ ADS_DEBUG_GEOGRAPHY: 'EEA', ADS_TEST_DEVICE_IDS: ' A1, ,B2' }),
-    ).toEqual({ ...TEST_IDS, debugGeography: 'EEA', testDeviceIds: ['A1', 'B2'] });
+      resolveAdsConfig({ ...ON, ADS_DEBUG_GEOGRAPHY: 'EEA', ADS_TEST_DEVICE_IDS: ' A1, ,B2' }),
+    ).toEqual({ enabled: true, ...TEST_IDS, debugGeography: 'EEA', testDeviceIds: ['A1', 'B2'] });
   });
 
   it('ignores real IDs outside production', () => {
-    expect(resolveAdsConfig({ APP_ENV: 'preview', ...REAL })).toMatchObject(TEST_IDS);
+    expect(resolveAdsConfig({ ...ON, APP_ENV: 'preview', ...REAL })).toMatchObject(TEST_IDS);
   });
 
   it('uses the real IDs in production and never the debug settings', () => {
     expect(
       resolveAdsConfig({
+        ...ON,
         APP_ENV: 'production',
         ...REAL,
         ADS_DEBUG_GEOGRAPHY: 'EEA',
         ADS_TEST_DEVICE_IDS: 'A1',
       }),
     ).toEqual({
+      enabled: true,
       appId: REAL.ADMOB_ANDROID_APP_ID,
       banner: REAL.ADMOB_BANNER_ID,
       interstitial: REAL.ADMOB_INTERSTITIAL_ID,
@@ -59,7 +83,7 @@ describe('resolveAdsConfig', () => {
 
   it('fails a production config with a missing ID', () => {
     const { ADMOB_INTERSTITIAL_ID: _omit, ...partial } = REAL;
-    expect(() => resolveAdsConfig({ APP_ENV: 'production', ...partial })).toThrow(
+    expect(() => resolveAdsConfig({ ...ON, APP_ENV: 'production', ...partial })).toThrow(
       new Error(MESSAGE),
     );
   });
@@ -67,6 +91,7 @@ describe('resolveAdsConfig', () => {
   it('fails a production config that uses a Google test ID', () => {
     expect(() =>
       resolveAdsConfig({
+        ...ON,
         APP_ENV: 'production',
         ...REAL,
         ADMOB_ANDROID_APP_ID: TEST_IDS.appId,
@@ -77,7 +102,7 @@ describe('resolveAdsConfig', () => {
 
 describe('resolveAdsConfig ID validation (production)', () => {
   const prod = (overrides: Record<string, string>) =>
-    resolveAdsConfig({ APP_ENV: 'production', ...REAL, ...overrides });
+    resolveAdsConfig({ ...ON, APP_ENV: 'production', ...REAL, ...overrides });
 
   it('trims surrounding whitespace from real IDs', () => {
     expect(
@@ -119,6 +144,7 @@ describe('getAdsConfig', () => {
 
   it('reads the ads block from the app config', () => {
     const ads = {
+      enabled: true,
       banner: 'ca-app-pub-1/1',
       interstitial: 'ca-app-pub-1/2',
       debugGeography: 'EEA',
@@ -131,6 +157,7 @@ describe('getAdsConfig', () => {
   it('falls back to test IDs with debugging off when the block is absent', () => {
     mocked.expoConfig = { extra: {} };
     expect(getAdsConfig()).toEqual({
+      enabled: false,
       banner: TEST_IDS.banner,
       interstitial: TEST_IDS.interstitial,
       debugGeography: 'disabled',

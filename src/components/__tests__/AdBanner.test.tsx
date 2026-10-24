@@ -5,6 +5,7 @@ import * as ads from 'react-native-google-mobile-ads';
 
 import { initI18n } from '@/i18n';
 import { TEST_IDS } from '@/config/adsIds';
+import { adsEnabled } from '@/config/adsFlag';
 import { useAds } from '@/services/ads/adsStore';
 
 import { AdBanner } from '../AdBanner';
@@ -56,6 +57,12 @@ describe('AdBanner', () => {
     expect(view.getByTestId('banner-ad')).toBeTruthy();
     expect(fake()?.unitId).toBe(TEST_IDS.banner);
     expect(fake()?.size).toBe('LARGE_ANCHORED_ADAPTIVE_BANNER');
+  });
+
+  it('renders nothing, even with consent ready, when the ADS_ENABLED flag is off', async () => {
+    (adsEnabled as jest.Mock).mockReturnValueOnce(false);
+    useAds.setState({ status: 'ready', canRequestAds: true });
+    expect((await renderBanner('home')).toJSON()).toBeNull();
   });
 
   it.each([

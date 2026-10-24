@@ -10,6 +10,7 @@ import type { ConsentApi } from '../adsConsent';
 import { createAdsStore, type AdsStoreDeps } from '../adsStore';
 
 const config: AdsConfig = {
+  enabled: true,
   banner: 'b',
   interstitial: 'i',
   debugGeography: 'disabled',
@@ -26,7 +27,7 @@ function info(over: Partial<AdsConsentInfo> = {}): AdsConsentInfo {
   };
 }
 
-function setup(gathered: AdsConsentInfo = info(), cached: AdsConsentInfo = info()) {
+function setup(gathered: AdsConsentInfo = info(), cached: AdsConsentInfo = info(), enabled = true) {
   const consent = {
     gatherConsent: jest.fn(() => Promise.resolve(gathered)),
     getConsentInfo: jest.fn(() => Promise.resolve(cached)),
@@ -44,10 +45,36 @@ function setup(gathered: AdsConsentInfo = info(), cached: AdsConsentInfo = info(
     consent,
     mobileAds: () => instance,
     config,
+    enabled: () => enabled,
     setAnalyticsConsent,
   };
   return { store: createAdsStore(deps), consent, instance, setAnalyticsConsent };
 }
+
+describe('ads store with the ADS_ENABLED flag off', () => {
+  it('starts with status off', () => {
+    expect(setup(info(), info(), false).store.getState().status).toBe('off');
+  });
+
+  it('makes no UMP call, no SDK start and no analytics grant', async () => {
+    const { store, consent, instance, setAnalyticsConsent } = setup(info(), info(), false);
+    await store.getState().start();
+    expect(consent.gatherConsent).not.toHaveBeenCalled();
+    expect(consent.getConsentInfo).not.toHaveBeenCalled();
+    expect(consent.getUserChoices).not.toHaveBeenCalled();
+    expect(consent.showPrivacyOptionsForm).not.toHaveBeenCalled();
+    expect(instance.setRequestConfiguration).not.toHaveBeenCalled();
+    expect(instance.initialize).not.toHaveBeenCalled();
+    expect(setAnalyticsConsent).not.toHaveBeenCalledWith(true);
+    expect(store.getState()).toMatchObject({ status: 'off', canRequestAds: false });
+  });
+
+  it('does not open the privacy form', async () => {
+    const { store, consent } = setup(info(), info(), false);
+    expect(await store.getState().openPrivacyOptions()).toBe(false);
+    expect(consent.showPrivacyOptionsForm).not.toHaveBeenCalled();
+  });
+});
 
 describe('ads store', () => {
   it('starts idle with ads off', () => {

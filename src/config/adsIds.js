@@ -28,12 +28,26 @@ const realId = (raw, pattern) => {
 };
 
 /**
+ * The ads build flag: off unless ADS_ENABLED is exactly "true".
  * @param {Record<string, string | undefined>} env
- * @returns {{ appId: string; banner: string; interstitial: string; debugGeography: 'EEA' | 'disabled'; testDeviceIds: string[] }}
+ * @returns {boolean}
+ */
+const adsEnabled = (env) => env.ADS_ENABLED === 'true';
+
+/**
+ * With ads off, the SDK is still linked and needs an app ID in the manifest, so Google's test IDs
+ * are used and no real IDs are required, even in production.
+ * @param {Record<string, string | undefined>} env
+ * @returns {{ enabled: boolean; appId: string; banner: string; interstitial: string; debugGeography: 'EEA' | 'disabled'; testDeviceIds: string[] }}
  */
 function resolveAdsConfig(env) {
+  const enabled = adsEnabled(env);
+  if (!enabled) {
+    return { enabled, ...TEST_IDS, debugGeography: 'disabled', testDeviceIds: [] };
+  }
   if (env.APP_ENV !== 'production') {
     return {
+      enabled,
       ...TEST_IDS,
       debugGeography: env.ADS_DEBUG_GEOGRAPHY === 'EEA' ? 'EEA' : 'disabled',
       testDeviceIds: (env.ADS_TEST_DEVICE_IDS ?? '')
@@ -48,7 +62,7 @@ function resolveAdsConfig(env) {
   if (appId === null || banner === null || interstitial === null) {
     throw new Error(PRODUCTION_ERROR);
   }
-  return { appId, banner, interstitial, debugGeography: 'disabled', testDeviceIds: [] };
+  return { enabled, appId, banner, interstitial, debugGeography: 'disabled', testDeviceIds: [] };
 }
 
-module.exports = { TEST_IDS, resolveAdsConfig };
+module.exports = { TEST_IDS, adsEnabled, resolveAdsConfig };

@@ -4,7 +4,7 @@ import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
 import { useTranslation } from 'react-i18next';
 
-import { getAdsConfig } from '@/services/ads/adsConfig';
+import { adsEnabled, getAdsConfig } from '@/services/ads/adsConfig';
 import { useAds } from '@/services/ads/adsStore';
 
 /**
@@ -27,7 +27,7 @@ export function AdBanner({ placement }: { placement: 'home' | 'files' }) {
     }, []),
   );
 
-  if (!ready || failed) return null;
+  if (!adsEnabled() || !ready || failed) return null;
   return <BannerSlot key={width} placement={placement} onFailed={() => setFailed(true)} />;
 }
 

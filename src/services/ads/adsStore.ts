@@ -3,7 +3,7 @@ import { create } from 'zustand';
 
 import { telemetry } from '@/services/telemetry/telemetry';
 
-import { getAdsConfig, type AdsConfig } from './adsConfig';
+import { adsEnabled, getAdsConfig, type AdsConfig } from './adsConfig';
 import {
   gatherAdsConsent,
   openPrivacyOptions,
@@ -25,6 +25,8 @@ export type AdsStoreDeps = {
   consent: ConsentApi;
   mobileAds: () => MobileAdsInstance;
   config: AdsConfig;
+  /** The ADS_ENABLED build flag; false means no UMP call and no SDK start, ever. */
+  enabled: () => boolean;
   /** Analytics follows ConsentState.analyticsAllowed (telemetry.setAnalyticsConsent). */
   setAnalyticsConsent: (allowed: boolean) => Promise<void>;
 };
@@ -98,6 +100,10 @@ export function createAdsStore(deps: AdsStoreDeps) {
     }
 
     async function run(): Promise<void> {
+      if (!deps.enabled()) {
+        set({ status: 'off', canRequestAds: false, privacyOptionsRequired: false });
+        return;
+      }
       set({ status: 'gathering' });
       try {
         // The stored status first, so analytics follows consent before the network form ends.
@@ -110,7 +116,7 @@ export function createAdsStore(deps: AdsStoreDeps) {
     }
 
     return {
-      status: 'idle',
+      status: deps.enabled() ? 'idle' : 'off',
       canRequestAds: false,
       privacyOptionsRequired: false,
       start() {
@@ -118,6 +124,7 @@ export function createAdsStore(deps: AdsStoreDeps) {
         return started;
       },
       async openPrivacyOptions() {
+        if (!deps.enabled()) return false;
         let consent: ConsentState;
         try {
           consent = await openPrivacyOptions(deps.consent);
@@ -135,5 +142,6 @@ export const useAds = createAdsStore({
   consent: AdsConsent,
   mobileAds,
   config: getAdsConfig(),
+  enabled: adsEnabled,
   setAnalyticsConsent: (allowed) => telemetry.setAnalyticsConsent(allowed),
 });

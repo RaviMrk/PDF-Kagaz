@@ -14,6 +14,7 @@ import {
 } from '../adsConsent';
 
 const config: AdsConfig = {
+  enabled: true,
   banner: 'b',
   interstitial: 'i',
   debugGeography: 'disabled',

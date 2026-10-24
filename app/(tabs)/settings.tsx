@@ -9,6 +9,7 @@ import { AdPrivacyRow } from '@/components/settings/AdPrivacyRow';
 import { SettingsSection } from '@/components/settings/SettingsSection';
 import { SwitchRow } from '@/components/settings/SwitchRow';
 import { ScannedFoldersSection } from '@/components/ScannedFoldersSection';
+import { adsEnabled } from '@/config/adsFlag';
 import { appVersion, privacyPolicyUrl } from '@/config/appInfo';
 import { resolveLanguage } from '@/i18n';
 import { clearAppCache } from '@/services/files/clearCache';
@@ -41,6 +42,7 @@ export default function SettingsScreen() {
   const setTheme = useSettings((s) => s.setTheme);
   const language = useSettings((s) => s.language);
   const imageQuality = useSettings((s) => s.imageQuality);
+  const adsOn = adsEnabled();
   const analyticsEnabled = useSettings((s) => s.analyticsEnabled);
   const crashReportsEnabled = useSettings((s) => s.crashReportsEnabled);
   const jobRunning = useToolJobs((s) => s.active !== null);
@@ -158,11 +160,13 @@ export default function SettingsScreen() {
         <Text style={[styles.note, { color: colors.textMuted }]}>{t('settings.qualityHint')}</Text>
       </SettingsSection>
       <SettingsSection title={t('settings.sectionPrivacy')}>
-        <AdPrivacyRow />
+        {adsOn ? <AdPrivacyRow /> : null}
         <SwitchRow
           label={t('settings.analytics')}
-          hint={t('settings.analyticsHint')}
-          value={analyticsEnabled}
+          hint={adsOn ? t('settings.analyticsHint') : t('settings.analyticsOffHint')}
+          // Analytics consent comes from UMP; without ads there is no UMP, so analytics is off.
+          value={adsOn && analyticsEnabled}
+          disabled={!adsOn}
           onValueChange={(on) => useSettings.getState().setAnalyticsEnabled(on)}
         />
         <SwitchRow

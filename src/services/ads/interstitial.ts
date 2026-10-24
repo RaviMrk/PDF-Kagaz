@@ -3,7 +3,7 @@ import { AdEventType, InterstitialAd } from 'react-native-google-mobile-ads';
 import { mmkvStore } from '@/services/prefs/mmkvStore';
 import type { KeyValueStore } from '@/services/prefs/KeyValueStore';
 
-import { getAdsConfig } from './adsConfig';
+import { adsEnabled, getAdsConfig } from './adsConfig';
 import { useAds } from './adsStore';
 import { canShowInterstitial } from './interstitialCap';
 
@@ -80,7 +80,7 @@ export const interstitial = createInterstitialController({
   create: (unitId) => InterstitialAd.createForAdRequest(unitId) as unknown as InterstitialLike,
   kv: mmkvStore,
   now: Date.now,
-  canRequestAds: () => useAds.getState().canRequestAds,
+  canRequestAds: () => adsEnabled() && useAds.getState().canRequestAds,
   unitId: getAdsConfig().interstitial,
 });
 

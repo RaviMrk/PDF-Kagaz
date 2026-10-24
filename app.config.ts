@@ -29,7 +29,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const blocked = config.android?.blockedPermissions ?? [];
   // Crashlytics and Analytics only when the user's google-services.json exists.
   const firebaseEnabled = isFirebaseEnabled();
-  // Google's test IDs unless APP_ENV=production; throws when production lacks real IDs.
+  // ADS_ENABLED=true turns ads on (default off). Google's test IDs unless ads are on AND
+  // APP_ENV=production; throws when an ads-on production build lacks real IDs.
   const ads = resolveAdsConfig(process.env);
   // Throws in production when the privacy policy URL is missing or not https.
   const privacyPolicyUrl = resolvePrivacyPolicyUrl(process.env);
@@ -71,6 +72,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       firebaseEnabled,
       privacyPolicyUrl,
       ads: {
+        enabled: ads.enabled,
         banner: ads.banner,
         interstitial: ads.interstitial,
         debugGeography: ads.debugGeography,

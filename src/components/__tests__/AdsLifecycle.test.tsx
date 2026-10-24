@@ -1,6 +1,7 @@
 import { act, render } from '@testing-library/react-native';
 
 import { AdsLifecycle } from '@/components/AdsLifecycle';
+import { adsEnabled } from '@/config/adsFlag';
 import { useToolJobs } from '@/stores/toolJobStore';
 import { useSettings } from '@/stores/settingsStore';
 
@@ -31,5 +32,27 @@ describe('AdsLifecycle', () => {
     await act(async () => useToolJobs.setState({ active: { ...job, fraction: 0.5 } }));
     await act(async () => useToolJobs.setState({ active: null }));
     expect(mockPreload).toHaveBeenCalledTimes(1);
+  });
+
+  describe('with the ADS_ENABLED flag off', () => {
+    beforeEach(() => {
+      mockStart.mockClear();
+      mockPreload.mockClear();
+      (adsEnabled as jest.Mock).mockReturnValue(false);
+    });
+    afterEach(() => (adsEnabled as jest.Mock).mockReturnValue(true));
+
+    it('never starts consent or the SDK', async () => {
+      useSettings.getState().setOnboardingDone(true);
+      await render(<AdsLifecycle />);
+      expect(mockStart).not.toHaveBeenCalled();
+    });
+
+    it('never preloads an interstitial', async () => {
+      await render(<AdsLifecycle />);
+      const job = { jobId: 'j', toolId: 'merge', phase: 'preparing', fraction: 0 } as const;
+      await act(async () => useToolJobs.setState({ active: job }));
+      expect(mockPreload).not.toHaveBeenCalled();
+    });
   });
 });

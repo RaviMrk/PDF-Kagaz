@@ -4,6 +4,23 @@ This guide covers what the code already does for a Play Store release, what only
 (accounts, keys, Play Console), how to build, and what still has to be checked on real phones.
 Measured numbers come from the M6 release smoke run (Task 11, 2026-10-24).
 
+## Ads are off by default
+
+Ads are switched off for now. The code and `react-native-google-mobile-ads` stay in the app, behind
+one build-time flag: `ADS_ENABLED=true` turns ads back on (`app.config.ts` → `extra.ads.enabled`);
+anything else, or unset, leaves them off. With ads off:
+
+- No UMP consent call, no `mobileAds().initialize`, no banner (no empty gap) and no interstitial;
+  Settings hides "Ad privacy choices".
+- A production build needs no real AdMob IDs (the `PRIVACY_POLICY_URL` check still applies). The
+  manifest keeps Google's test AdMob app ID, because the linked SDK crashes without one.
+- **Analytics stays off.** Analytics consent comes from UMP, and UMP does not run, so the Settings
+  analytics switch shows off and cannot be changed. Crash reports keep their own Settings switch.
+  The cost: no analytics data until ads return.
+
+To bring ads back, set `ADS_ENABLED=true` (an EAS environment variable for production builds) and
+do the AdMob user actions below.
+
 ## Code-side checklist
 
 Status of each `docs/REQUIREMENTS.md` §10.2 item. "Code ready" means the app side is done and the
@@ -68,12 +85,12 @@ Everything here needs your accounts or keys, so the code cannot do it.
 
 1. **Final app name and package ID.** The build uses "PDF Toolkit" and `com.pdfkagaz.pdftoolkit`
    (`app.json`). The package ID can never change after the first Play upload, so decide before it.
-2. **AdMob.** Create the AdMob account and the Android app, then one adaptive banner unit and one
+2. **AdMob** (only when ads are enabled). Create the AdMob account and the Android app, then one adaptive banner unit and one
    interstitial unit. Store the three IDs as EAS environment variables for the `production`
    environment (see [Build](#build)). The app ID looks like `ca-app-pub-<digits>~<digits>`, the
    unit IDs like `ca-app-pub-<digits>/<digits>`; anything else, or Google's test publisher
    `ca-app-pub-3940256099942544`, fails the build on purpose.
-3. **UMP / GDPR message.** In AdMob → Privacy & messaging, create and publish a GDPR (European
+3. **UMP / GDPR message** (only when ads are enabled). In AdMob → Privacy & messaging, create and publish a GDPR (European
    regulations) message for the app, and the US state regulations message if you serve the US.
    Without a published message, UMP shows nothing and EEA users get no ads.
 4. **Firebase (optional, for Crashlytics and Analytics).** Create the Firebase project and Android
@@ -89,7 +106,7 @@ Everything here needs your accounts or keys, so the code cannot do it.
    (`eas credentials -p android`) or upload your own, and enrol in Play App Signing when you create
    the app in Play Console. Back up the upload key; Google can reset it, but only after a support
    request.
-7. **Ads after a consent refusal (real IDs).** With the real IDs, a published GDPR message and an
+7. **Ads after a consent refusal (real IDs)** (only when ads are enabled). With the real IDs, a published GDPR message and an
    EEA test device (its hashed ID in `ADS_TEST_DEVICE_IDS` on a preview build), choose "Do not
    consent", then watch whether Home and Files fill an ad. If ads fill and you would prefer none
    after a refusal, ask for the IABTCF purpose-1 gate (no ad request unless
@@ -132,9 +149,11 @@ release, have someone check:
 
 ```sh
 # Store the IDs once per EAS project (environment: production)
+# Only when ads are enabled (ADS_ENABLED=true): the three AdMob IDs
 eas env:create --environment production --name ADMOB_ANDROID_APP_ID --value 'ca-app-pub-…~…' --visibility sensitive
 eas env:create --environment production --name ADMOB_BANNER_ID --value 'ca-app-pub-…/…' --visibility sensitive
 eas env:create --environment production --name ADMOB_INTERSTITIAL_ID --value 'ca-app-pub-…/…' --visibility sensitive
+# eas env:create --environment production --name ADS_ENABLED --value true --visibility plaintext
 eas env:create --environment production --name PRIVACY_POLICY_URL --value 'https://…' --visibility plaintext
 eas env:create --environment production --name GOOGLE_SERVICES_JSON --type file --value ./google-services.json --visibility secret
 
@@ -150,7 +169,8 @@ eas submit -p android --profile production
 
 - `production` sets `APP_ENV=production`; `production-saf` extends it and adds
   `APP_VARIANT=play-saf`. `preview` sets `APP_ENV=preview` and always uses Google's test ad IDs.
-- With `APP_ENV=production`, `app.config.ts` throws "Production build needs real AdMob IDs" when
+- Ads are off unless `ADS_ENABLED=true`; with them off, the AdMob ID check is skipped. With
+  `ADS_ENABLED=true` and `APP_ENV=production`, `app.config.ts` throws "Production build needs real AdMob IDs" when
   any of the three IDs is missing, malformed or a Google test ID. It also throws "Production build needs
   PRIVACY_POLICY_URL set to an https:// URL" when the URL is missing or not https. It also ignores
   `ADS_DEBUG_GEOGRAPHY` and `ADS_TEST_DEVICE_IDS`.

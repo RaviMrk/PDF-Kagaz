@@ -7,6 +7,7 @@ import path from 'path';
 import SettingsScreen from '../../../app/(tabs)/settings';
 import { initI18n } from '@/i18n';
 import * as clearCacheModule from '@/services/files/clearCache';
+import { adsEnabled } from '@/config/adsFlag';
 import { useAds } from '@/services/ads/adsStore';
 import { useSettings } from '@/stores/settingsStore';
 import { useToolJobs } from '@/stores/toolJobStore';
@@ -99,6 +100,29 @@ describe('Settings sections', () => {
     expect(useSettings.getState().analyticsEnabled).toBe(false);
     await fireEvent.press(screen.getByLabelText('Send crash reports'));
     expect(useSettings.getState().crashReportsEnabled).toBe(false);
+  });
+
+  describe('with the ADS_ENABLED flag off', () => {
+    beforeEach(() => (adsEnabled as jest.Mock).mockReturnValue(false));
+    afterEach(() => (adsEnabled as jest.Mock).mockReturnValue(true));
+
+    it('hides ad privacy choices even when UMP state says required', async () => {
+      useAds.setState({ privacyOptionsRequired: true });
+      await renderSettings();
+      expect(screen.queryByLabelText('Ad privacy choices')).toBeNull();
+    });
+
+    it('shows analytics as off and inert, while crash reports keep their own switch', async () => {
+      await renderSettings();
+      const analytics = screen.getByLabelText('Share anonymous usage statistics');
+      expect(analytics.props.accessibilityState).toMatchObject({ checked: false, disabled: true });
+      await fireEvent.press(analytics);
+      expect(useSettings.getState().analyticsEnabled).toBe(true);
+      const crashes = screen.getByLabelText('Send crash reports');
+      expect(crashes.props.accessibilityState.checked).toBe(true);
+      await fireEvent.press(crashes);
+      expect(useSettings.getState().crashReportsEnabled).toBe(false);
+    });
   });
 
   it('hides ad privacy choices unless required', async () => {

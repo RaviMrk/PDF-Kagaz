@@ -69,6 +69,7 @@ describe('app.config', () => {
 
   describe('privacy policy URL', () => {
     const KEYS = [
+      'ADS_ENABLED',
       'APP_ENV',
       'PRIVACY_POLICY_URL',
       'ADMOB_ANDROID_APP_ID',
@@ -83,6 +84,7 @@ describe('app.config', () => {
       }
     });
     const production = (url: string | undefined) => {
+      process.env.ADS_ENABLED = 'true';
       process.env.APP_ENV = 'production';
       process.env.ADMOB_ANDROID_APP_ID = 'ca-app-pub-1111111111111111~2222222222';
       process.env.ADMOB_BANNER_ID = 'ca-app-pub-1111111111111111/3333333333';
@@ -118,17 +120,30 @@ describe('app.config', () => {
   });
 
   describe('AdMob', () => {
-    const saved = process.env.APP_ENV;
+    const KEYS = [
+      'ADS_ENABLED',
+      'APP_ENV',
+      'PRIVACY_POLICY_URL',
+      'ADMOB_ANDROID_APP_ID',
+      'ADMOB_BANNER_ID',
+      'ADMOB_INTERSTITIAL_ID',
+    ] as const;
+    const saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
+    beforeEach(() => {
+      for (const k of KEYS) delete process.env[k];
+    });
     afterEach(() => {
-      if (saved === undefined) delete process.env.APP_ENV;
-      else process.env.APP_ENV = saved;
+      for (const k of KEYS) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
     });
 
     const adsPlugin = (plugins: unknown[]) =>
       plugins.find((p) => Array.isArray(p) && p[0] === 'react-native-google-mobile-ads');
 
     it("configures the ads plugin with Google's test app ID outside production", () => {
-      delete process.env.APP_ENV;
+      process.env.ADS_ENABLED = 'true';
       const config = appConfig({ config: appJson.expo });
       expect(adsPlugin(config.plugins)).toEqual([
         'react-native-google-mobile-ads',
@@ -140,6 +155,7 @@ describe('app.config', () => {
         },
       ]);
       expect(config.extra.ads).toEqual({
+        enabled: true,
         banner: 'ca-app-pub-3940256099942544/9214589741',
         interstitial: 'ca-app-pub-3940256099942544/1033173712',
         debugGeography: 'disabled',
@@ -147,9 +163,31 @@ describe('app.config', () => {
       });
     });
 
-    it('refuses a production config without real AdMob IDs', () => {
+    it('refuses a production config with ads on and without real AdMob IDs', () => {
       process.env.APP_ENV = 'production';
+      process.env.ADS_ENABLED = 'true';
+      process.env.PRIVACY_POLICY_URL = 'https://example.com/privacy';
       expect(() => appConfig({ config: appJson.expo })).toThrow(/real AdMob IDs/);
+    });
+
+    it('builds a production config with ads off and no AdMob IDs, keeping the manifest app ID', () => {
+      process.env.APP_ENV = 'production';
+      process.env.PRIVACY_POLICY_URL = 'https://example.com/privacy';
+      const config = appConfig({ config: appJson.expo });
+      expect(config.extra.ads.enabled).toBe(false);
+      expect(adsPlugin(config.plugins)).toEqual([
+        'react-native-google-mobile-ads',
+        expect.objectContaining({ androidAppId: 'ca-app-pub-3940256099942544~3347511713' }),
+      ]);
+    });
+
+    it('still refuses production with ads off and no privacy policy URL', () => {
+      process.env.APP_ENV = 'production';
+      expect(() => appConfig({ config: appJson.expo })).toThrow(/PRIVACY_POLICY_URL/);
+    });
+
+    it('is off by default', () => {
+      expect(appConfig({ config: appJson.expo }).extra.ads.enabled).toBe(false);
     });
   });
 
