@@ -33,7 +33,7 @@ describe('image quality presets', () => {
         smallerLongSidePx: 1600,
         smallerJpegQuality: 75,
       },
-      high: { longSidePx: 3200, jpegQuality: 90, smallerLongSidePx: 1600, smallerJpegQuality: 75 },
+      high: { longSidePx: 3200, jpegQuality: 90, smallerLongSidePx: 2400, smallerJpegQuality: 85 },
     });
   });
   it('keeps the M5 constants as the standard preset', () => {

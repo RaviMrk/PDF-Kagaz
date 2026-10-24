@@ -775,7 +775,7 @@ describe('runTool images and scans', () => {
     expect(lines.join('\n')).not.toMatch(/\.pdf|\//);
   });
 
-  it('re-prepares a compact job at its own smaller preset and a high job at 1600 / q75', async () => {
+  it('re-prepares a compact job at its own smaller preset and a high job at 2400 / q85', async () => {
     const compact = hundredPhotos(1.2 * MIB, 0.6 * MIB, 1600, 75);
     await compact.run({ ...hundred(), quality: 'compact' });
     const cc = compact.native.prepareImagePage.mock.calls;
@@ -785,7 +785,45 @@ describe('runTool images and scans', () => {
     await high.run({ ...hundred(), quality: 'high' });
     const hc = high.native.prepareImagePage.mock.calls;
     expect(hc[0]!.slice(4, 6)).toEqual([3200, 90]);
-    expect(hc.some((c) => c[4] === 1600 && c[5] === 75)).toBe(true);
+    expect(hc.some((c) => c[4] === 2400 && c[5] === 85)).toBe(true);
+    expect(hc.some((c) => c[4] < 2400)).toBe(false);
+  });
+
+  it('never gives a high job a smaller long side than a standard job of the same photos', async () => {
+    // 30 detailed photos: the share is ≈ 0.95 × 100 MiB / 30 ≈ 3.2 MiB. A 3200 / q90 page
+    // (3.5 MiB) runs over it and the high job steps down; 2400 / q85 pages (1.5 MiB) fit.
+    const bySize: Record<string, number> = {
+      '3200/90': 3.5 * MIB,
+      '2400/85': 1.5 * MIB,
+      '1600/75': 0.7 * MIB,
+    };
+    const run = async (quality: ImagesRequest['quality']) => {
+      const s = imageSetup();
+      const real = s.native.prepareImagePage.getMockImplementation()!;
+      s.native.prepareImagePage.mockImplementation(async (...args) => ({
+        ...(await real(...args)),
+        sizeBytes: bySize[`${args[4]}/${args[5]}`] ?? MIB,
+      }));
+      const outcome = await s.run(
+        images({ quality, images: Array.from({ length: 30 }, (_, i) => i % 2) }),
+      );
+      expect(outcome.ok).toBe(true);
+      // The last prepare of each page is the one kept (a re-prepare overwrites the page).
+      const kept = new Map<number, number>();
+      for (const c of s.native.prepareImagePage.mock.calls) kept.set(c[3], c[4]);
+      return [...kept.values()];
+    };
+    const standard = await run('standard');
+    const high = await run('high');
+    expect(standard.every((px) => px === 2400)).toBe(true);
+    expect(Math.min(...high)).toBeGreaterThanOrEqual(Math.max(...standard));
+  });
+
+  it('still fails a high job with totalTooLarge when its 2400 px pages exceed the cap', async () => {
+    const s = hundredPhotos(1.2 * MIB, 1.1 * MIB, 3200, 90);
+    const outcome = await s.run({ ...hundred(), quality: 'high' });
+    expect(outcome).toEqual({ ok: false, failure: 'totalTooLarge', inputIndex: null, outputs: [] });
+    expect(s.native.publishToolOutput).not.toHaveBeenCalled();
   });
 
   it('keeps first-pass pages that fit their share of the cap', async () => {

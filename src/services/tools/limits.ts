@@ -25,7 +25,8 @@ export const IMAGE_QUALITIES: readonly ImageQuality[] = ['compact', 'standard', 
 /**
  * Images and scans: the first pass prepares a page at `longSidePx` / `jpegQuality`; a page over its
  * share of the total budget is prepared once more at the smaller pair, and every later page of that
- * job is prepared at the smaller pair directly.
+ * job is prepared at the smaller pair directly. High's smaller pair is Standard's first pair, so a
+ * stepped-down Sharper job is never softer than Standard.
  */
 export const IMAGE_QUALITY_PRESETS: Record<
   ImageQuality,
@@ -33,7 +34,7 @@ export const IMAGE_QUALITY_PRESETS: Record<
 > = {
   compact: { longSidePx: 1600, jpegQuality: 75, smallerLongSidePx: 1200, smallerJpegQuality: 65 },
   standard: { longSidePx: 2400, jpegQuality: 85, smallerLongSidePx: 1600, smallerJpegQuality: 75 },
-  high: { longSidePx: 3200, jpegQuality: 90, smallerLongSidePx: 1600, smallerJpegQuality: 75 },
+  high: { longSidePx: 3200, jpegQuality: 90, smallerLongSidePx: 2400, smallerJpegQuality: 85 },
 };
 
 export const IMAGE_MAX_LONG_SIDE_PX = IMAGE_QUALITY_PRESETS.standard.longSidePx;
