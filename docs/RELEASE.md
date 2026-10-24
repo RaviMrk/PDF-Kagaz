@@ -2,7 +2,7 @@
 
 This guide covers what the code already does for a Play Store release, what only you can do
 (accounts, keys, Play Console), how to build, and what still has to be checked on real phones.
-Numbers marked "filled by Task 11" come from the M6 release smoke run.
+Measured numbers come from the M6 release smoke run (Task 11, 2026-10-24).
 
 ## Code-side checklist
 
@@ -11,15 +11,15 @@ rest is a user action below.
 
 | §10.2 item | Status |
 | --- | --- |
-| P0 acceptance criteria on a real Android 11+ and Android 9 device | Emulator smoke: filled by Task 11. Real devices: user action (see [Known limitations](#known-limitations)) |
-| Denying All Files Access still gives a working app (SAF mode) | Code ready (SafProvider, `play-saf` variant). Smoke: filled by Task 11 |
+| P0 acceptance criteria on a real Android 11+ and Android 9 device | Emulator smoke passed on the minified release build (Pixel_10a API 37 with 16 KB pages, Pixel_Fold_API_34 folded and unfolded); see [Release verification](#release-verification-task-11). Real devices: user action (see [Known limitations](#known-limitations)) |
+| Denying All Files Access still gives a working app (SAF mode) | Code ready (SafProvider, `play-saf` variant). Smoke passed: onboarding "Pick folders instead" → Documents → its PDFs listed, merged and opened on Pixel_Fold_API_34 |
 | Low-RAM phone (≤ 3 GB) with the 50 MB fixture | User action (physical device) |
-| Test ad IDs replaced with production IDs; UMP consent in EU test mode | Code ready: the `production` profile sets `APP_ENV=production`, and `app.config.ts` refuses to build without three well-formed, non-test AdMob IDs. EEA test mode: `ADS_DEBUG_GEOGRAPHY=EEA` on a non-production build. Real IDs: user action |
+| Test ad IDs replaced with production IDs; UMP consent in EU test mode | Code ready: the `production` profile sets `APP_ENV=production`, and `app.config.ts` refuses to build without three well-formed, non-test AdMob IDs. EEA test mode: `ADS_DEBUG_GEOGRAPHY=EEA` on a non-production build; the consent form showed on both emulators. Real IDs: user action |
 | Privacy policy URL live | Code ready (`PRIVACY_POLICY_URL` → Settings → About; a production build fails without an https URL). Hosting the page: user action |
 | Data safety form, All Files Access declaration + video, content rating, target audience | User action; the answers and texts are below |
 | Store listing | User action |
 | Signed AAB from the EAS production profile; internal track first | Code ready (`eas.json`: `production` builds an auto-incremented `app-bundle`; `submit.production.android.track` is `internal`). Upload key + Play App Signing: user action |
-| targetSdk 36 and every `.so` passes the 16 KB page-size check | targetSdk/compileSdk 36 set. 16 KB check: filled by Task 11 |
+| targetSdk 36 and every `.so` passes the 16 KB page-size check | targetSdk/compileSdk 36 set. 16 KB check passed: all 29 arm64 `.so` (and the 4 `libcrashlytics*.so` + `libdatastore_shared_counter.so` of a Firebase build) are zip-aligned to 16 KB and every `LOAD` segment is `align 2**14` |
 
 Release hardening in the build itself:
 
@@ -34,6 +34,12 @@ Release hardening in the build itself:
 - **Debug and verbose logs stripped.** `-assumenosideeffects class android.util.Log { d, v }`
   removes every `Log.d`/`Log.v` call in app and library code. This removes react-native-pdf's
   `PdfView` lines, which logged the open file's path.
+- **Storage permission caps kept.** `WRITE_EXTERNAL_STORAGE` is capped at max SDK 29 and
+  `READ_EXTERNAL_STORAGE` at 32. Expo's `expo-max-sdk-override-plugin` misreads the manifest-merge
+  report and used to strip WRITE's cap from the final manifest (it was uncapped in the M4/M5 APKs).
+  `plugins/withStoragePermissions.js` now adds a last action to that Gradle task that restores both
+  caps and fails the build if either is still missing. The Expo task still logs "Removed
+  'android:maxSdkVersion'"; the restore runs after it.
 - **Extra keep rules** (`app.json` → `extraProguardRules`), each one needed or justified:
   - `-keep class org.wonday.pdf.** { *; }` — react-native-pdf ships no consumer ProGuard rules, and
     its view manager, Fabric delegate and event classes are reached through React Native's
@@ -176,13 +182,13 @@ disabled.
   content. Declare it under diagnostics/app performance.
 - **Encrypted in transit:** yes (all SDK traffic is HTTPS). **Deletion request:** no user account
   and no server-side user data held by the app itself.
-- **Release permissions** (merged release manifest of the Task 10 build, `aapt dump permissions`,
-  default variant without Firebase; Task 11 confirms on its build):
+- **Release permissions** (Task 11 release APK, `aapt2 dump xmltree`, default variant; a build
+  with Firebase linked has the same list):
   - Ads SDK: `INTERNET`, `ACCESS_NETWORK_STATE`, `com.google.android.gms.permission.AD_ID`,
     `ACCESS_ADSERVICES_AD_ID`, `ACCESS_ADSERVICES_ATTRIBUTION`, `ACCESS_ADSERVICES_TOPICS`,
     `com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE`.
   - Storage: `MANAGE_EXTERNAL_STORAGE` (not in `production-saf`), `READ_EXTERNAL_STORAGE`
-    (max SDK 32), `WRITE_EXTERNAL_STORAGE`.
+    (max SDK 32), `WRITE_EXTERNAL_STORAGE` (max SDK 29).
   - Background work: `WAKE_LOCK`, `FOREGROUND_SERVICE`.
   - The app's own `com.pdfkagaz.pdftoolkit.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` (AndroidX).
   - Not present: `CAMERA`, `READ_MEDIA_*`, `SYSTEM_ALERT_WINDOW`, `ACCESS_WIFI_STATE`,
@@ -240,7 +246,66 @@ arm64 phone gets; it is under the §4 40 MB target. The universal APK stays abov
 carries every density and language. R8 also removed all 534 `Log.d`/`Log.v` call sites from the
 dex (0 left).
 
-Task 11's final numbers: filled by Task 11.
+**Task 11 final numbers** (all ABIs, Firebase not linked, test ad IDs):
+
+| Artifact | Size |
+| --- | --- |
+| `app-release.aab` | 94 438 809 B (90.1 MiB) |
+| Universal `app-release.apk` (4 ABIs) | 137 357 075 B (131.0 MiB) |
+| arm64-only release APK (`-PreactNativeArchitectures=arm64-v8a`) | 51 823 212 B (49.4 MiB) |
+| **AAB download size, arm64-v8a** (`bundletool get-size total --dimensions=ABI`, bundletool 1.17.2) | **26 363 402 – 26 498 171 B (25.1–25.3 MiB)** |
+| AAB download size, armeabi-v7a / x86 / x86_64 | 24.8–24.9 / 27.1–27.2 / 27.0–27.2 MB |
+| M5 APK for comparison (arm64-only, before R8) | 58 450 484 B (55.7 MiB, "58.4 MB") |
+
+The arm64 download size is under the §4 40 MB target. The universal APK is only for sideloading;
+Play never delivers it.
+
+Largest entries of the universal APK (`unzip -lv`, by stored size): `lib/x86/libreactnative.so`
+7.36 MB, `lib/x86_64/libreactnative.so` 7.10 MB, `lib/arm64-v8a/libreactnative.so` 6.99 MB,
+`assets/index.android.bundle` 6.74 MB, `lib/x86_64/libpdfium.so` 4.97 MB,
+`lib/armeabi-v7a/libreactnative.so` 4.86 MB, `lib/arm64-v8a/libpdfium.so` 4.77 MB,
+`lib/x86/libpdfium.so` 4.53 MB, `classes2.dex` 3.41 MB compressed (8.06 MB),
+`lib/armeabi-v7a/libpdfium.so` 3.19 MB. The three dex files hold 21.9 MB uncompressed, 9.0 MB
+compressed.
+
+Native libraries (29 per ABI, identical to the M5 set; the ads SDK adds none): `libNitroMmkv`,
+`libNitroModules`, `libandroidx.graphics.path`, `libanimation-decoder-gif`, `libappmodules`,
+`libavif_android`, `libc++_shared`, `libexpo-modules-core`, `libexpo-sqlite`, `libfbjni`,
+`libgesturehandler`, `libgifimage`, `libhermestooling`, `libhermesvm`, `libimagepipeline`,
+`libjsi`, `libmmkv`, `libnative-filters`, `libnative-imagetranscoder`, `libpdfium`,
+`libpdfiumandroid`, `libreact_codegen_rnscreens`, `libreact_codegen_safeareacontext`,
+`libreactnative`, `libreanimated`, `librnscreens`, `libstatic-webp`, `libworklets`,
+`libzstd-kmp`. With `google-services.json` present, Firebase adds `libcrashlytics`,
+`libcrashlytics-common`, `libcrashlytics-handler`, `libcrashlytics-trampoline` and
+`libdatastore_shared_counter` (all pass the 16 KB checks).
+
+## Release verification (Task 11)
+
+Local release builds: `npx expo prebuild --platform android --clean`, then
+`./gradlew :pdf-native:testDebugUnitTest bundleRelease` and `./gradlew assembleRelease` as two
+runs (on an 8 GB machine, one Gradle run with both tasks runs out of heap; pass
+`-Dorg.gradle.jvmargs=-Xmx3072m`). All BUILD SUCCESSFUL; pdf-native unit tests 191/0.
+`APP_VARIANT=play-saf` `assembleRelease` also succeeded.
+
+| Check | Result |
+| --- | --- |
+| 16 KB: `zipalign -c -P 16 -v 4`, `llvm-objdump -p` | Pass. 29/29 arm64 `.so` OK, every `LOAD` `align 2**14`. Firebase build: 34/34 incl. `libcrashlytics*` |
+| Manifest, default | `INTERNET`, `MANAGE_EXTERNAL_STORAGE`, `READ_EXTERNAL_STORAGE` (max 32), `WRITE_EXTERNAL_STORAGE` (max 29), `WAKE_LOCK`, `ACCESS_NETWORK_STATE`, `AD_ID`, `ACCESS_ADSERVICES_AD_ID/ATTRIBUTION/TOPICS`, `FOREGROUND_SERVICE`, `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, `BIND_GET_INSTALL_REFERRER_SERVICE`. No `CAMERA`, `READ_MEDIA_*`, `SYSTEM_ALERT_WINDOW`, `ACCESS_WIFI_STATE`, `DOWNLOAD_WITHOUT_NOTIFICATION`, `VIBRATE`. `allowBackup=false`, `fullBackupContent=false`, `dataExtractionRules` set. AdMob app ID = Google test ID. The PDF VIEW/SEND filters have no scheme (the `exp+pdf-toolkit` scheme is only on the `pdftoolkit://` deep-link filter) |
+| Manifest, `play-saf` | Same list without `MANAGE_EXTERNAL_STORAGE`; READ max 32, WRITE max 29; same backup, AdMob and filter results; 29/29 arm64 `.so` pass the 16 KB checks. `extra.appVariant` = `play-saf`, `allFilesAccessEnabled` = false |
+| Crashlytics keep rule (Firebase build with a placeholder `google-services.json`, arm64, R8) | Pass. `com.google.firebase.crashlytics.FirebaseCrashlytics` keeps its name, `getInstance()` and `setCrashlyticsCollectionEnabled(java.lang.Boolean)` (apkanalyzer). On Pixel_Fold_API_34 the app started with Crashlytics initialised; turning "Send crash reports" off caused no exception and the process kept running. Whether the reflective call returned true cannot be seen in a minified build (Firebase's own confirmation is a stripped `Log.d`); `CrashReportsSwitchTest` covers the return value. Upload behaviour needs the real Firebase project (user check: opt out, force a test crash, confirm nothing arrives) |
+| Ads: UMP (EEA test mode) | The consent form shows after onboarding on both emulators. "Consent" → test banner on Home and Files. No ad in the reader, Tools, the Merge flow, `/scan` or Settings. Settings shows "Ad privacy choices" and reopens the form |
+| Ads: "Do not consent" / "Manage options → Confirm choices" | A **test** banner still shows. After any choice UMP reports `canRequestAds() = true` (Google's documented behaviour), and Google's test ad unit fills even without Purpose 1 consent. With real IDs, a user who refuses Purpose 1 gets no fill and `AdBanner` hides; limited ads can still serve otherwise. If no ad request at all is wanted after a refusal, that is a product change (read `IABTCF_PurposeConsents`) |
+| Interstitial cap | Merge → Done → test interstitial (11:49:10). Another merge → Done at 11:49:59 → none. Force-stop, relaunch, merge → Done at 11:50:46 → none. Merge → Done at 11:52:49 (≥ 3 min) → shown. Result → Open → reader, no ad |
+| Offline (airplane mode, cold start) | No banner and no blank gap, merge works, Done returns to Home at once, no crash |
+| Settings | Dark theme applies at once. Images to PDF with the same 3 photos: "Smaller files" 851 654 B vs "Standard" 4 350 231 B. Clear cache → "Freed 226.1 KB", Files thumbnails regenerate. Analytics/crash switches stay off after a force-stop. Open-source licences list. "Version 1.0.0 (1)" |
+| Pickers in the minified build | Document picker (Merge → Browse files…) returns the file, folder picker (SAF onboarding and Settings → Add folder) works, Save as… writes the copy, Share opens the chooser. No crash |
+| Scanner after recreation (Task 8) | Font scale 1.0 → 1.15 in the foreground → Scan opens the ML Kit scanner. Recreated again while the scanner was open → after leaving it, Scan opens again |
+| Fold layout | Unfolded (letterboxed app): banner `[446,1276][1763,1627]` fits the app width and ends above the tab bar (`[.., 1628]`). Folded: banner refits `[0,1564][1080,1900]`, tab bar from 1901 |
+| Crash check | No `FATAL EXCEPTION`, `ClassNotFoundException` or `NoSuchMethodError` from the app in the Pixel_10a and Fold logcats |
+
+The emulator counts as a UMP test device: the EEA form showed without `ADS_TEST_DEVICE_IDS`, and
+the minified build logged no `addTestDeviceHashedId` hint. On a physical test phone, read the
+hint from a debug build and pass it as `ADS_TEST_DEVICE_IDS`.
 
 ## Known limitations
 
