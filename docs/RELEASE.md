@@ -306,11 +306,22 @@ Task 1 gate (stop at ≥ 34 MB): passed, with 1.7 MB left before the gate and 7.
 - 4 138 070 B: BouncyCastle post-quantum parameter tables, Java resources that ship next to the
   dex (`org/bouncycastle/pqc/crypto/picnic/lowmc.properties` 1.57 MB, `pqc/crypto/sike/p751`,
   `p610`, `p503`, `p434.properties`). PdfBox never uses them (only bcprov's AES). R8 does not
-  remove Java resources, so they need a `packaging { resources { excludes } }` rule in `:app`
-  (config plugin); Task 14 can take this back.
+  remove Java resources, so `plugins/withPackagingExcludes.js` now excludes
+  `org/bouncycastle/pqc/**` from `:app` packaging (see the next table).
 - 1 618 605 B: PdfBox-Android assets (112 files: CMaps, `LiberationSans-Regular.ttf`, glyph lists).
 - Dex: 9 045 444 B compressed, the same as M6, because R8 strips PdfBox code that nothing calls
   yet. The M7 tools add their share of PdfBox dex later; Task 14 measures it.
+
+After excluding `org/bouncycastle/pqc/**` (Task 1 fix round 1, same build settings):
+
+| Measurement | After PdfBox | With the pqc exclude | Change |
+| --- | --- | --- | --- |
+| AAB download size, arm64 phone (`get-size total`, API 34, 420 dpi, `en`) | 32 286 546 B | **28 146 914 B (26.8 MiB)** | −4 139 632 B |
+| AAB download size, arm64-v8a (`get-size total --dimensions=ABI`) | 32 159 822 – 32 295 009 B | 28 021 309 – 28 155 377 B | −4.1 MB |
+
+That is +1 658 291 B over M6, leaving 5.9 MB before the Task 1 gate and 11.9 MB before 40 MB. The
+AAB holds no `org/bouncycastle/pqc` entry; the two small `x509/CertPathReviewerMessages*.properties`
+(92 KB raw) remain. The AES-256 round trip (`PdfBoxSupportTest`) still passes.
 
 Largest entries of the universal APK (`unzip -lv`, by stored size): `lib/x86/libreactnative.so`
 7.36 MB, `lib/x86_64/libreactnative.so` 7.10 MB, `lib/arm64-v8a/libreactnative.so` 6.99 MB,

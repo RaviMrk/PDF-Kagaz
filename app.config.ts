@@ -52,6 +52,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ['./plugins/withStoragePermissions', { allFilesAccess }],
       './plugins/withPdfIntentFilters',
       './plugins/withBackupRules',
+      './plugins/withPackagingExcludes',
       [
         'react-native-google-mobile-ads',
         {

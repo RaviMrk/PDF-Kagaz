@@ -76,6 +76,67 @@ class PdfBoxSupportTest {
   }
 
   @Test
+  fun junkAfterEofStillOpens() {
+    // Scanners pad to a block size, gateways append bytes: 4 KB of NULs after %%EOF.
+    val padded = File(tmp.root, "padded.pdf")
+    padded.writeBytes(Fixtures.file("one-page.pdf").readBytes() + ByteArray(4096))
+    PdfBoxSupport.open(padded, null, tempDir).use { assertEquals(1, it.numberOfPages) }
+  }
+
+  @Test
+  fun completeFileWithoutEofMarkerStillOpens() {
+    val text = String(Fixtures.file("one-page.pdf").readBytes(), Charsets.ISO_8859_1)
+    val stripped = File(tmp.root, "no-eof.pdf")
+    stripped.writeBytes(text.substring(0, text.lastIndexOf("%%EOF")).toByteArray(Charsets.ISO_8859_1))
+    PdfBoxSupport.open(stripped, null, tempDir).use { assertEquals(1, it.numberOfPages) }
+  }
+
+  @Test
+  fun fileCutInsideAnObjectIsPdfInvalid() {
+    // Cut right after "N 0 obj": no %%EOF and an unclosed object.
+    val text = String(Fixtures.file("mixed-sizes.pdf").readBytes(), Charsets.ISO_8859_1)
+    val cut = File(tmp.root, "cut.pdf")
+    val at = text.lastIndexOf(" obj") + 4
+    cut.writeBytes(text.substring(0, at).toByteArray(Charsets.ISO_8859_1))
+    assertEquals("ERR_PDF_INVALID", codedFailure { PdfBoxSupport.open(cut, null, tempDir) }.code)
+  }
+
+  @Test
+  fun runtimeErrorsWhileOpeningBecomePdfInvalidWithoutPath() {
+    val e = codedFailure {
+      PdfBoxSupport.mapOpenErrors(null) { throw IllegalStateException("bad /data/user/0/x/one-page.pdf") }
+    }
+    assertEquals("ERR_PDF_INVALID", e.code)
+    assertClean(e)
+  }
+
+  @Test
+  fun missingFileErrorCarriesNoPathInMessageOrCause() {
+    val e = codedFailure { PdfBoxSupport.open(File(tmp.root, "one-page.pdf"), null, tempDir) }
+    assertEquals("ERR_PDF_INVALID", e.code)
+    assertClean(e)
+  }
+
+  @Test
+  fun runtimeErrorsWhileSavingBecomeIoWithoutPath() {
+    val e = codedFailure {
+      PdfBoxSupport.mapSaveErrors { throw IllegalArgumentException("bad /data/user/0/x/one-page.pdf") }
+    }
+    assertEquals("ERR_IO", e.code)
+    assertClean(e)
+  }
+
+  private fun assertClean(e: CodedException) {
+    var t: Throwable? = e
+    while (t != null) {
+      val message = t.message.orEmpty()
+      assertFalse(message, message.contains("one-page"))
+      assertFalse(message, message.contains("/"))
+      t = t.cause
+    }
+  }
+
+  @Test
   fun aes256RoundTripWorksWithoutBcpkixOrBcutil() {
     val out = File(tmp.root, "out.pdf")
     PdfBoxSupport.open(Fixtures.file("one-page.pdf"), null, tempDir).use { doc ->

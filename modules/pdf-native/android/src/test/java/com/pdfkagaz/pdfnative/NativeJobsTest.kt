@@ -5,6 +5,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.fail
 import org.junit.Test
+import java.util.concurrent.CyclicBarrier
 
 class NativeJobsTest {
   private var now = 0L
@@ -47,6 +48,38 @@ class NativeJobsTest {
     NativeJobs.cancel("j-stale")
     t += 60_001
     begin("j-stale").check()
+  }
+
+  @Test
+  fun cancelArrivingWhileBeginRegistersIsNotLost() {
+    // begin reads the cancel clock while registering; a cancel landing at that moment must stick.
+    var fired = false
+    NativeJobs.cancelClock = {
+      if (!fired) {
+        fired = true
+        NativeJobs.cancel("j-race")
+      }
+      0L
+    }
+    assertCancelled(begin("j-race"))
+  }
+
+  @Test
+  fun concurrentCancelAndBeginNeverLoseTheCancel() {
+    repeat(2_000) { i ->
+      val id = "j-con-$i"
+      ids += id
+      val barrier = CyclicBarrier(2)
+      val canceller = Thread {
+        barrier.await()
+        NativeJobs.cancel(id)
+      }
+      canceller.start()
+      barrier.await()
+      val job = NativeJobs.begin(id, {}, { 0L })
+      canceller.join()
+      assertCancelled(job)
+    }
   }
 
   @Test
