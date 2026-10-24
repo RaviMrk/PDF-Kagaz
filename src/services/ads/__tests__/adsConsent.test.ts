@@ -35,7 +35,29 @@ function fakeApi(): jest.Mocked<ConsentApi> {
     gatherConsent: jest.fn(() => Promise.resolve(info())),
     getConsentInfo: jest.fn(() => Promise.resolve(info())),
     showPrivacyOptionsForm: jest.fn(() => Promise.resolve(info())),
+    getUserChoices: jest.fn(() => Promise.resolve(choices())),
   } as unknown as jest.Mocked<ConsentApi>;
+}
+
+type Choices = Awaited<ReturnType<ConsentApi['getUserChoices']>>;
+
+/** TCF choices with storage (purpose 1) and content measurement (purpose 8) granted by default. */
+function choices(over: Partial<Choices> = {}): Choices {
+  return {
+    activelyScanDeviceCharacteristicsForIdentification: false,
+    applyMarketResearchToGenerateAudienceInsights: false,
+    createAPersonalisedAdsProfile: false,
+    createAPersonalisedContentProfile: false,
+    developAndImproveProducts: false,
+    measureAdPerformance: false,
+    measureContentPerformance: true,
+    selectBasicAds: false,
+    selectPersonalisedAds: false,
+    selectPersonalisedContent: false,
+    storeAndAccessInformationOnDevice: true,
+    usePreciseGeolocationData: false,
+    ...over,
+  };
 }
 
 describe('gatherAdsConsent', () => {
@@ -95,6 +117,65 @@ describe('gatherAdsConsent', () => {
     const api = fakeApi();
     api.gatherConsent.mockResolvedValue(info({ status }));
     expect((await gatherAdsConsent(api, config)).analyticsAllowed).toBe(allowed);
+  });
+});
+
+describe('analytics after gathered consent', () => {
+  it('OBTAINED but purposes refused → analytics off', async () => {
+    const api = fakeApi();
+    api.getUserChoices.mockResolvedValue(
+      choices({ storeAndAccessInformationOnDevice: false, measureContentPerformance: false }),
+    );
+    await expect(gatherAdsConsent(api, config)).resolves.toEqual({
+      canRequestAds: true,
+      privacyOptionsRequired: false,
+      analyticsAllowed: false,
+    });
+  });
+
+  it.each([
+    ['storage refused', { storeAndAccessInformationOnDevice: false }],
+    ['content measurement refused', { measureContentPerformance: false }],
+    [
+      'only ad measurement granted',
+      { measureContentPerformance: false, measureAdPerformance: true },
+    ],
+  ])('OBTAINED with %s → analytics off', async (_name, over) => {
+    const api = fakeApi();
+    api.getUserChoices.mockResolvedValue(choices(over));
+    expect((await gatherAdsConsent(api, config)).analyticsAllowed).toBe(false);
+  });
+
+  it('OBTAINED + purposes granted → analytics on', async () => {
+    const api = fakeApi();
+    expect((await gatherAdsConsent(api, config)).analyticsAllowed).toBe(true);
+    expect(api.getUserChoices).toHaveBeenCalledTimes(1);
+  });
+
+  it('NOT_REQUIRED → analytics on without reading the TCF choices', async () => {
+    const api = fakeApi();
+    api.gatherConsent.mockResolvedValue(info({ status: AdsConsentStatus.NOT_REQUIRED }));
+    api.getUserChoices.mockResolvedValue(
+      choices({ storeAndAccessInformationOnDevice: false, measureContentPerformance: false }),
+    );
+    expect((await gatherAdsConsent(api, config)).analyticsAllowed).toBe(true);
+    expect(api.getUserChoices).not.toHaveBeenCalled();
+  });
+
+  it('getUserChoices throws → analytics off, ads unchanged', async () => {
+    const api = fakeApi();
+    api.getUserChoices.mockRejectedValue(new Error('tc string'));
+    await expect(gatherAdsConsent(api, config)).resolves.toEqual({
+      canRequestAds: true,
+      privacyOptionsRequired: false,
+      analyticsAllowed: false,
+    });
+  });
+
+  it('privacy form withdrawal → analytics off', async () => {
+    const api = fakeApi();
+    api.getUserChoices.mockResolvedValue(choices({ measureContentPerformance: false }));
+    await expect(openPrivacyOptions(api)).resolves.toMatchObject({ analyticsAllowed: false });
   });
 });
 

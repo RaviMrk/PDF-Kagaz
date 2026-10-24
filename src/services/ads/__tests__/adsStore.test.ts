@@ -31,6 +31,9 @@ function setup(gathered: AdsConsentInfo = info(), cached: AdsConsentInfo = info(
     gatherConsent: jest.fn(() => Promise.resolve(gathered)),
     getConsentInfo: jest.fn(() => Promise.resolve(cached)),
     showPrivacyOptionsForm: jest.fn(() => Promise.resolve(gathered)),
+    getUserChoices: jest.fn(() =>
+      Promise.resolve({ storeAndAccessInformationOnDevice: true, measureContentPerformance: true }),
+    ),
   } as unknown as jest.Mocked<ConsentApi>;
   const instance = {
     setRequestConfiguration: jest.fn((_c: unknown) => Promise.resolve()),
@@ -236,6 +239,20 @@ describe('ads store', () => {
       expect(setAnalyticsConsent).toHaveBeenLastCalledWith(true);
       expect(instance.initialize).toHaveBeenCalledTimes(1);
       expect(store.getState().status).toBe('ready');
+    });
+
+    it('privacy form withdrawal → analytics off while UMP still reports OBTAINED', async () => {
+      const { store, consent, setAnalyticsConsent } = setup();
+      await store.getState().start();
+      expect(setAnalyticsConsent).toHaveBeenLastCalledWith(true);
+      consent.getUserChoices.mockResolvedValue({
+        storeAndAccessInformationOnDevice: true,
+        measureContentPerformance: false,
+      } as Awaited<ReturnType<ConsentApi['getUserChoices']>>);
+      await expect(store.getState().openPrivacyOptions()).resolves.toBe(true);
+      expect(setAnalyticsConsent).toHaveBeenLastCalledWith(false);
+      // Ads keep Google's canRequestAds contract.
+      expect(store.getState()).toMatchObject({ status: 'ready', canRequestAds: true });
     });
 
     it('never lets a failing telemetry call break the ads start', async () => {

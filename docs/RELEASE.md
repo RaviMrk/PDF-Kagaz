@@ -180,8 +180,11 @@ disabled.
 - **Firebase Analytics (only when `google-services.json` is supplied).** App interactions
   (`first_open`, `session_start` and other automatic events, and the app's `tool_finished` event)
   and the app-instance ID. Advertising-ID and SSAID collection and automatic screen reporting are
-  off. Optional: the user can turn it off in Settings, and it is off while ads consent does not
-  allow it.
+  off. Optional: the user can turn it off in Settings. Where the consent form applies (EEA/UK), it
+  is on only when the user's consent choices allow storing information on the device (TCF purpose
+  1) and measuring content performance (purpose 8); "Do not consent", refusing either purpose,
+  withdrawing them later in Privacy options, or a consent state that cannot be read keeps it off.
+  Outside those regions it follows the Settings switch alone.
 - **Firebase Crashlytics (only when enabled).** Crash logs and diagnostics (stack traces, device
   model, OS version, a Crashlytics installation ID). No custom logs or keys. Optional: the user can
   turn it off in Settings.

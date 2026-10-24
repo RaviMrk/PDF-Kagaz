@@ -15,8 +15,9 @@ export type TelemetryAdapter = {
 
 export type Telemetry = TelemetryAdapter & {
   /**
-   * Whether the ads consent state (UMP NOT_REQUIRED or OBTAINED) allows analytics. False until
-   * told otherwise; crash reports do not depend on it.
+   * Whether the ads consent state allows analytics (ConsentState.analyticsAllowed: UMP
+   * NOT_REQUIRED, or TCF purposes 1 and 8 granted). False until told otherwise; crash reports do
+   * not depend on it.
    */
   setAnalyticsConsent(allowed: boolean): Promise<void>;
 };

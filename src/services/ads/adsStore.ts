@@ -25,7 +25,7 @@ export type AdsStoreDeps = {
   consent: ConsentApi;
   mobileAds: () => MobileAdsInstance;
   config: AdsConfig;
-  /** Analytics follows the UMP consent status (telemetry.setAnalyticsConsent). */
+  /** Analytics follows ConsentState.analyticsAllowed (telemetry.setAnalyticsConsent). */
   setAnalyticsConsent: (allowed: boolean) => Promise<void>;
 };
 
