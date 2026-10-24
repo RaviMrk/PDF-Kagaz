@@ -9,6 +9,7 @@ import android.os.SystemClock
 import android.print.PrintManager
 import android.provider.DocumentsContract
 import android.provider.Settings
+import expo.modules.kotlin.activityresult.AppContextActivityResultCaller
 import expo.modules.kotlin.activityresult.AppContextActivityResultLauncher
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.functions.Coroutine
@@ -200,19 +201,7 @@ class PdfNativeModule : Module() {
       toolThumbnails.release()
     }
 
-    lateinit var folderPicker: AppContextActivityResultLauncher<FolderPickerInput, Uri?>
-    lateinit var createDocument: AppContextActivityResultLauncher<CreateDocumentInput, Uri?>
-    lateinit var openDocuments: AppContextActivityResultLauncher<OpenDocumentsInput, List<String>>
-    lateinit var pickImagesLauncher: AppContextActivityResultLauncher<PickImagesInput, PickerResults.Limited>
-    lateinit var scanLauncher: AppContextActivityResultLauncher<ScanLaunchInput, ScanOutcome>
-
-    RegisterActivityContracts {
-      folderPicker = registerForActivityResult(FolderPickerContract(this@PdfNativeModule))
-      createDocument = registerForActivityResult(CreateDocumentContract())
-      openDocuments = registerForActivityResult(OpenDocumentsContract())
-      pickImagesLauncher = registerForActivityResult(PickImagesContract())
-      scanLauncher = registerForActivityResult(scanContract)
-    }
+    RegisterActivityContracts { registerLaunchers(this) }
 
     AsyncFunction("saveCopyAs") Coroutine { uri: String, suggestedName: String ->
       // A source that cannot be copied fails before the user picks a target.
@@ -270,7 +259,7 @@ class PdfNativeModule : Module() {
 
     AsyncFunction("pickFolder") Coroutine { ->
       val treeUri = try {
-        folderPicker.launch(FolderPickerInput())
+        launchPicker { folderPicker.launch(FolderPickerInput()) }
       } catch (e: SecurityException) {
         // takePersistableUriPermission refused; its message contains the URI.
         throw PermissionDeniedException(cause = e)
@@ -320,6 +309,29 @@ class PdfNativeModule : Module() {
 
   /** Registered once; its pendingSender carries the scanner's IntentSender into each launch. */
   private val scanContract = ScanDocumentContract()
+
+  private lateinit var folderPicker: AppContextActivityResultLauncher<FolderPickerInput, Uri?>
+  private lateinit var createDocument: AppContextActivityResultLauncher<CreateDocumentInput, Uri?>
+  private lateinit var openDocuments: AppContextActivityResultLauncher<OpenDocumentsInput, List<String>>
+  private lateinit var pickImagesLauncher: AppContextActivityResultLauncher<PickImagesInput, PickerResults.Limited>
+  private lateinit var scanLauncher: AppContextActivityResultLauncher<ScanLaunchInput, ScanOutcome>
+
+  /** The caller Expo handed to RegisterActivityContracts; kept to re-register for a new activity. */
+  private var resultCaller: AppContextActivityResultCaller? = null
+
+  private val launcherBinding = LauncherBinding()
+
+  /** Registers the five launchers against the current activity. Main thread. */
+  private suspend fun registerLaunchers(caller: AppContextActivityResultCaller) {
+    resultCaller = caller
+    val activity = appContext.currentActivity
+    folderPicker = caller.registerForActivityResult(FolderPickerContract(this))
+    createDocument = caller.registerForActivityResult(CreateDocumentContract())
+    openDocuments = caller.registerForActivityResult(OpenDocumentsContract())
+    pickImagesLauncher = caller.registerForActivityResult(PickImagesContract())
+    scanLauncher = caller.registerForActivityResult(scanContract)
+    if (activity != null) launcherBinding.bind(activity)
+  }
 
   // region scan
 
@@ -456,9 +468,15 @@ class PdfNativeModule : Module() {
 
   // region document pickers
 
-  /** Launches a system picker from the main thread; no activity (or no picker app) → ERR_NO_ACTIVITY. */
+  /**
+   * Launches a system picker from the main thread; no activity (or no picker app) → ERR_NO_ACTIVITY.
+   * Launchers registered for an earlier activity are registered again first (see [LauncherBinding]).
+   */
   private suspend fun <T> launchPicker(launch: suspend () -> T): T = withContext(Dispatchers.Main) {
-    if (appContext.currentActivity == null) throw NoActivityException()
+    val activity = appContext.currentActivity ?: throw NoActivityException()
+    if (launcherBinding.needsRegistration(activity)) {
+      registerLaunchers(resultCaller ?: throw NoActivityException())
+    }
     try {
       launch()
     } catch (e: ActivityNotFoundException) {
