@@ -41,8 +41,10 @@ import { runProtect } from './runners/protect';
 import { runUnlock } from './runners/unlock';
 import { runMerge } from './runners/merge';
 import { runOrganize } from './runners/organize';
+import { runPageNumbers } from './runners/pageNumbers';
 import { runPdfToImages } from './runners/pdfToImages';
 import { runSplit } from './runners/split';
+import { runWatermark } from './runners/watermark';
 import { knownSize, toToolFailure } from './toolFailure';
 import type { ToolFs } from './toolFs';
 import type { ToolFailure } from './toolJobRepo';
@@ -209,6 +211,9 @@ export type ToolRunDeps = {
     | 'renderPdfPage'
     | 'releasePageExport'
     | 'publishImageOutput'
+    | 'stampPdf'
+    | 'renderTextStamp'
+    | 'prepareStampImage'
   >;
   fs: ToolFs;
   getRows(ids: string[]): FileRow[];
@@ -301,6 +306,8 @@ export const RUNNERS: { [K in PdfToolRequest['toolId']]?: ToolRunner<PdfRequestO
   protect: runProtect,
   unlock: runUnlock,
   'pdf-to-images': runPdfToImages,
+  watermark: runWatermark,
+  'page-numbers': runPageNumbers,
 };
 
 type PdfRequestOf<K extends PdfToolRequest['toolId']> = Extract<PdfToolRequest, { toolId: K }>;

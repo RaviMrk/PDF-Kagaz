@@ -21,7 +21,8 @@ import { fileIdForUri } from '@/utils/fileId';
 import { makeRow } from '@/test-utils/fileRows';
 import { nativeError } from '@/test-utils/fakePdfNative';
 import { makeTempDir, nodeToolFs, tempPathOf } from '@/test-utils/nodeToolFs';
-import { inspectPages, loadStrict, readFixture } from '@/test-utils/pdfFixtures';
+import { inspectImages, inspectPages, loadStrict, readFixture } from '@/test-utils/pdfFixtures';
+import * as stampModule from '@/services/pdf/stamp';
 
 import {
   RUNNERS,
@@ -32,7 +33,9 @@ import {
   type ToolPhase,
   type ToolRequest,
   type ToolRunDeps,
+  type WatermarkOptions,
 } from '../runTool';
+import { watermarkSpec } from '../stampSpecs';
 
 const i18n = initI18n('en');
 const t = (key: string, options?: Record<string, unknown>): string => i18n.t(key, options);
@@ -175,6 +178,32 @@ function setup(rows: FileRow[], sources: string[] = []) {
       },
     ),
     releasePageExport: jest.fn(async () => {}),
+    // The stamped copy: a one-page stand-in written where PdfBox would write it.
+    stampPdf: jest.fn(async (_fileUri: string, jobId: string, _specJson: string) => {
+      const bytes = fs.readFileSync(path.join(FIXTURES, 'one-page.pdf'));
+      const dest = path.join(tmp, jobId, 'out-stamped.pdf');
+      fs.writeFileSync(dest, bytes);
+      return { uri: `file://${dest}`, sizeBytes: bytes.length };
+    }),
+    // A rendered text watermark: a real transparent PNG where native would write it.
+    renderTextStamp: jest.fn(
+      async (jobId: string, _text: string, _color: number, _heightPx: number) => {
+        const bytes = fs.readFileSync(path.join(FIXTURES, 'images', 'alpha-200x100.png'));
+        const dest = path.join(tmp, jobId, 'stamp-text.png');
+        fs.writeFileSync(dest, bytes);
+        return { uri: `file://${dest}`, width: 200, height: 100, sizeBytes: bytes.length };
+      },
+    ),
+    // Image session source `sourceIndex` prepared as a PNG (missing source: the session is gone).
+    prepareStampImage: jest.fn(
+      async (_sessionId: string, sourceIndex: number, jobId: string, _maxLongSidePx: number) => {
+        if (sources[sourceIndex] === undefined) throw nativeError('ERR_FILE_NOT_FOUND');
+        const bytes = fs.readFileSync(path.join(FIXTURES, 'images', 'alpha-200x100.png'));
+        const dest = path.join(tmp, jobId, `stamp-image-${sourceIndex}.png`);
+        fs.writeFileSync(dest, bytes);
+        return { uri: `file://${dest}`, width: 200, height: 100, sizeBytes: bytes.length };
+      },
+    ),
     publishImageOutput: jest.fn(
       async (tempUri: string, fileName: string, folder: string): Promise<SavedImage> => {
         fs.rmSync(tempPathOf(tempUri));
@@ -1979,5 +2008,135 @@ describe('runTool pdf to images', () => {
     );
     expect(s.savedImages).toEqual([{ name: 'protected p1.jpg', folder: 'protected pages' }]);
     expect(outcome).toMatchObject({ ok: true, extras: { images: { count: 1 } } });
+  });
+});
+
+describe('runTool watermark and page numbers', () => {
+  const textWatermark: WatermarkOptions = {
+    source: { kind: 'text', text: 'DRAFT', color: 'grey' },
+    opacity: 0.35,
+    angle: 45,
+    size: 'medium',
+    position: 'center',
+    pages: null,
+  };
+
+  it('renders a text watermark and stamps it on every page in pdf-lib', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    const outcome = await s.run({
+      toolId: 'watermark',
+      inputIds: [r.id],
+      watermark: textWatermark,
+    });
+    expect(s.native.renderTextStamp).toHaveBeenCalledWith('j1', 'DRAFT', 0xff808080, 256);
+    expect(s.native.stampPdf).not.toHaveBeenCalled();
+    expect(outcome.ok).toBe(true);
+    expect(s.published.map((p) => p.name)).toEqual(['one-page watermarked.pdf']);
+    const pages = await inspectImages(new Uint8Array(fs.readFileSync(s.published[0]!.path)));
+    expect(pages.length).toBeGreaterThan(0);
+    for (const page of pages) {
+      expect(page.images).toEqual(
+        expect.arrayContaining([expect.objectContaining({ width: 200 })]),
+      );
+    }
+  });
+
+  it('stamps natively over the JS caps with the same spec, never in pdf-lib', async () => {
+    const applyStamps = jest.spyOn(stampModule, 'applyStamps');
+    const r = row('mixed-sizes.pdf');
+    const s = setup([r]);
+    s.deps.caps = { js: { file: 10, total: 10 }, native: { file: 1e9, total: 1e9 } };
+    const opts: WatermarkOptions = { ...textWatermark, position: 'top-right', pages: [1, 3] };
+    const outcome = await s.run({ toolId: 'watermark', inputIds: [r.id], watermark: opts });
+    expect(outcome.ok).toBe(true);
+    expect(s.native.stampPdf).toHaveBeenCalledTimes(1);
+    const [input, jobId, json] = s.native.stampPdf.mock.calls[0]!;
+    expect(input).toBe(`file://${s.tmp}/j1/in-0.pdf`);
+    expect(jobId).toBe('j1');
+    expect(JSON.parse(json)).toEqual(watermarkSpec(opts, `file://${s.tmp}/j1/stamp-text.png`));
+    expect(s.native.publishToolOutput).toHaveBeenCalledWith(
+      `file://${s.tmp}/j1/out-stamped.pdf`,
+      'mixed-sizes watermarked.pdf',
+    );
+    expect(applyStamps).not.toHaveBeenCalled();
+    expect(s.toolFs.readBytes).not.toHaveBeenCalled();
+  });
+
+  it('prepares an image watermark from its session source', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r], ['alpha-200x100.png', 'alpha-200x100.png']);
+    const outcome = await s.run({
+      toolId: 'watermark',
+      inputIds: [r.id],
+      watermark: { ...textWatermark, source: { kind: 'image', sessionId: 'img-1', index: 1 } },
+    });
+    expect(outcome.ok).toBe(true);
+    expect(s.native.prepareStampImage).toHaveBeenCalledWith('img-1', 1, 'j1', 1600);
+    expect(s.native.renderTextStamp).not.toHaveBeenCalled();
+  });
+
+  it('an image watermark whose session is gone fails as imagesGone', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r], []);
+    const outcome = await s.run({
+      toolId: 'watermark',
+      inputIds: [r.id],
+      watermark: { ...textWatermark, source: { kind: 'image', sessionId: 'img-1', index: 0 } },
+    });
+    expect(outcome).toEqual({ ok: false, failure: 'imagesGone', inputIndex: null, outputs: [] });
+    expect(s.native.publishToolOutput).not.toHaveBeenCalled();
+  });
+
+  it('numbers 200 pages as "Page n of 200" in pdf-lib', async () => {
+    const r = row('two-hundred-pages.pdf');
+    const s = setup([r]);
+    const outcome = await s.run({
+      toolId: 'page-numbers',
+      inputIds: [r.id],
+      numbers: {
+        position: 'bottom-right',
+        format: 'pageOfTotal',
+        start: 1,
+        fontSize: 12,
+        pages: null,
+      },
+    });
+    expect(outcome.ok).toBe(true);
+    expect(s.native.stampPdf).not.toHaveBeenCalled();
+    expect(s.published.map((p) => p.name)).toEqual(['two-hundred-pages numbered.pdf']);
+    const pages = await inspectPages(new Uint8Array(fs.readFileSync(s.published[0]!.path)));
+    expect(pages).toHaveLength(200);
+    expect(pages[0]!.text).toContain('Page 1 of 200');
+    expect(pages[199]!.text).toContain('Page 200 of 200');
+  });
+
+  it('numbers natively with the plain "{n}" template', async () => {
+    const r = row('mixed-sizes.pdf');
+    const s = setup([r]);
+    s.deps.caps = { js: { file: 10, total: 10 }, native: { file: 1e9, total: 1e9 } };
+    const outcome = await s.run({
+      toolId: 'page-numbers',
+      inputIds: [r.id],
+      numbers: { position: 'top-left', format: 'n', start: 5, fontSize: 10, pages: [2] },
+    });
+    expect(outcome.ok).toBe(true);
+    expect(JSON.parse(s.native.stampPdf.mock.calls[0]![2])).toEqual({
+      stamps: [
+        {
+          kind: 'text',
+          template: '{n}',
+          start: 5,
+          pages: [2],
+          position: 'top-left',
+          fontSize: 10,
+          marginPt: 28,
+        },
+      ],
+    });
+    expect(s.native.publishToolOutput).toHaveBeenCalledWith(
+      `file://${s.tmp}/j1/out-stamped.pdf`,
+      'mixed-sizes numbered.pdf',
+    );
   });
 });

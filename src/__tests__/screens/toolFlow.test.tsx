@@ -403,8 +403,67 @@ describe('tool flow', () => {
     );
   });
 
+  it('numbers pages from a start typed in Devanagari digits', async () => {
+    await open(`/tool/page-numbers?inputs=${ID_A}`);
+    expect(screen.getByLabelText('Bottom centre')).toBeChecked();
+    expect(screen.getByLabelText('1')).toBeChecked();
+    expect(screen.getByLabelText('12 pt')).toBeChecked();
+    await press('Page 1 of N');
+    await press('Bottom right');
+    await fireEvent.changeText(screen.getByLabelText('Start at'), '०५');
+    await act(async () => {});
+    await press('Add page numbers');
+    expect(start).toHaveBeenCalledWith(
+      {
+        toolId: 'page-numbers',
+        inputIds: [ID_A],
+        numbers: {
+          position: 'bottom-right',
+          format: 'pageOfTotal',
+          start: 5,
+          fontSize: 12,
+          pages: null,
+        },
+      },
+      expect.any(Function),
+    );
+  });
+
+  it('refuses a page number start of 0', async () => {
+    await open(`/tool/page-numbers?inputs=${ID_A}`);
+    await fireEvent.changeText(screen.getByLabelText('Start at'), '0');
+    await act(async () => {});
+    expect(screen.getByText('Enter a number from 1 to 9999')).toBeTruthy();
+    expect(screen.getByLabelText('Add page numbers')).toBeDisabled();
+    await press('Add page numbers');
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it('adds a text watermark to the picked file', async () => {
+    await open(`/tool/watermark?inputs=${ID_A}`);
+    await fireEvent.changeText(screen.getByLabelText('Watermark text'), 'गोपनीय');
+    await act(async () => {});
+    await press('Red');
+    await press('Add watermark');
+    expect(start).toHaveBeenCalledWith(
+      {
+        toolId: 'watermark',
+        inputIds: [ID_A],
+        watermark: {
+          source: { kind: 'text', text: 'गोपनीय', color: 'red' },
+          opacity: 0.35,
+          angle: 45,
+          size: 'medium',
+          position: 'center',
+          pages: null,
+        },
+      },
+      expect.any(Function),
+    );
+  });
+
   it('shows coming soon for tools that are not ready', async () => {
-    await open('/tool/watermark');
+    await open('/tool/sign');
     expect(screen.getByText('Coming soon')).toBeTruthy();
     expect(screen.queryByText('Choose PDFs')).toBeNull();
   });

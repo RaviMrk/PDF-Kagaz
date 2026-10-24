@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { CompressOptions } from '@/components/tools/CompressOptions';
 import { ImagesToPdfFlow } from '@/components/tools/ImagesToPdfFlow';
 import { MergeOptions } from '@/components/tools/MergeOptions';
+import { PageNumberOptions } from '@/components/tools/PageNumberOptions';
 import { PdfToImagesOptions } from '@/components/tools/PdfToImagesOptions';
 import { PickFilesList } from '@/components/tools/PickFilesList';
 import { ProgressSheet } from '@/components/tools/ProgressSheet';
@@ -15,6 +16,7 @@ import { ProtectOptions } from '@/components/tools/ProtectOptions';
 import { SplitOptions } from '@/components/tools/SplitOptions';
 import { UnlockOptions } from '@/components/tools/UnlockOptions';
 import { usePasswordPrompts } from '@/components/tools/usePasswordPrompts';
+import { WatermarkOptions } from '@/components/tools/WatermarkOptions';
 import type { FileRow } from '@/db/schema';
 import { checkInputSizes } from '@/services/tools/limits';
 import { pickDocuments } from '@/services/tools/pickDocuments';
@@ -114,17 +116,19 @@ function ToolFlow({ tool, inputIds }: { tool: ToolDef; inputIds: string[] }) {
     }, [backToPick, setFlow]),
   );
 
-  const run = (request: ToolRequest) => {
-    if (starting.current) return;
+  /** Starts the job; false when none started (a tap already starting one, busy or failed). */
+  const run = (request: ToolRequest): boolean => {
+    if (starting.current) return false;
     starting.current = true;
     setNotice(null);
     const result = useToolJobs.getState().start(request, t);
     if (result.ok) {
       setJobId(result.jobId);
-      return;
+      return true;
     }
     starting.current = false;
     setNotice(t(result.reason === 'busy' ? 'toolError.busy' : 'toolError.unknown'));
+    return false;
   };
 
   // Locked inputs are asked for first; Cancel starts nothing.
@@ -217,6 +221,32 @@ function ToolFlow({ tool, inputIds }: { tool: ToolDef; inputIds: string[] }) {
                   toolId: 'pdf-to-images',
                   inputIds: [rows[0]!.id],
                   ...opts,
+                  ...(passwords ? { passwords } : {}),
+                })
+              }
+            />
+          ) : null}
+          {tool.id === 'watermark' && rows[0] ? (
+            <WatermarkOptions
+              row={rows[0]}
+              onRun={(watermark, passwords) =>
+                run({
+                  toolId: 'watermark',
+                  inputIds: [rows[0]!.id],
+                  watermark,
+                  ...(passwords ? { passwords } : {}),
+                })
+              }
+            />
+          ) : null}
+          {tool.id === 'page-numbers' && rows[0] ? (
+            <PageNumberOptions
+              row={rows[0]}
+              onRun={(numbers, passwords) =>
+                run({
+                  toolId: 'page-numbers',
+                  inputIds: [rows[0]!.id],
+                  numbers,
                   ...(passwords ? { passwords } : {}),
                 })
               }

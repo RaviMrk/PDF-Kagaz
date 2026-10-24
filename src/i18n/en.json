@@ -570,5 +570,57 @@
     "backToList": "All licences",
     "textMissing": "The licence text is not available.",
     "open": "Show licence text for {{name}} {{version}}"
+  },
+  "position": {
+    "label": "Position",
+    "topLeft": "Top left",
+    "topCenter": "Top centre",
+    "topRight": "Top right",
+    "middleLeft": "Middle left",
+    "center": "Centre",
+    "middleRight": "Middle right",
+    "bottomLeft": "Bottom left",
+    "bottomCenter": "Bottom centre",
+    "bottomRight": "Bottom right"
+  },
+  "scope": {
+    "label": "Pages",
+    "all": "All pages",
+    "some": "Some pages",
+    "placeholder": "e.g. 1-3, 5"
+  },
+  "watermark": {
+    "source": "Watermark",
+    "text": "Text",
+    "image": "Image",
+    "textLabel": "Watermark text",
+    "textRequired": "Enter the watermark text",
+    "chooseImage": "Choose image",
+    "changeImage": "Change image",
+    "color": "Colour",
+    "grey": "Grey",
+    "red": "Red",
+    "blue": "Blue",
+    "opacity": "Opacity",
+    "opacityValue": "{{percent}}%",
+    "angle": "Angle",
+    "angleValue": "{{deg}}°",
+    "size": "Size",
+    "small": "Small",
+    "medium": "Medium",
+    "large": "Large",
+    "run": "Add watermark"
+  },
+  "numbers": {
+    "format": "Format",
+    "formatN": "1",
+    "formatOf": "Page 1 of N",
+    "templateN": "{n}",
+    "templateOf": "Page {n} of {total}",
+    "start": "Start at",
+    "startError": "Enter a number from 1 to 9999",
+    "fontSize": "Text size",
+    "fontSizeValue": "{{size}} pt",
+    "run": "Add page numbers"
   }
 }

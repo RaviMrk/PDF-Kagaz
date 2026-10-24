@@ -33,7 +33,7 @@ describe('toolRegistry', () => {
       'ocr',
     ]);
   });
-  it('merge, split, organize, images to PDF, scan, compress, protect, unlock and PDF to images are available', () => {
+  it('every tool but sign, OCR and metadata is available', () => {
     expect(TOOLS.filter((t) => t.available).map((t) => t.id)).toEqual([
       'merge',
       'split',
@@ -44,6 +44,8 @@ describe('toolRegistry', () => {
       'protect',
       'unlock',
       'pdf-to-images',
+      'watermark',
+      'page-numbers',
     ]);
   });
   it('looks tools up by id', () => {

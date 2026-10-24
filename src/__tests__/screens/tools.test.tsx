@@ -35,8 +35,8 @@ const CARDS = [
   'Compress',
   'Protect with password',
   'Remove password',
-  'Add watermark, coming soon',
-  'Add page numbers, coming soon',
+  'Add watermark',
+  'Add page numbers',
   'Sign PDF, coming soon',
   'Edit details, coming soon',
 ];
