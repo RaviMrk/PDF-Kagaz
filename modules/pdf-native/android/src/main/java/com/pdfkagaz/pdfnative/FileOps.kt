@@ -9,7 +9,6 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import expo.modules.kotlin.exception.CodedException
 import java.io.File
-import java.io.IOException
 
 /**
  * Rename / delete / duplicate / move-to-app-folder for the three URI kinds the app holds:
@@ -168,12 +167,9 @@ class FileOps(private val context: Context, private val hasAllFilesAccess: () ->
     val created = DocumentsContract.createDocument(resolver, parentUri, PDF_MIME, name)
       ?: throw PermissionDeniedException("Could not create document")
     try {
-      // Synced before close where the provider's descriptor allows it (not a pipe).
+      // A descriptor (synced where it allows) or, for a stream-only provider, a flushed stream.
       val input = resolver.openInputStream(uri) ?: throw FileNotFoundCodedException()
-      input.use { inp ->
-        val pfd = resolver.openFileDescriptor(created, "w") ?: throw IOException("No output stream")
-        DurableWrites.writeFd(pfd, requireSync = false) { out -> inp.copyTo(out) }
-      }
+      input.use { inp -> DurableWrites.writeDocument(DurableWrites.ResolverTarget(resolver, created)) { out -> inp.copyTo(out) } }
     } catch (e: Throwable) {
       runCatching { DocumentsContract.deleteDocument(resolver, created) }
       throw e

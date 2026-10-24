@@ -1,5 +1,7 @@
 package com.pdfkagaz.pdfnative
 
+import android.content.ContentResolver
+import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.system.Os
 import android.system.OsConstants
@@ -8,6 +10,7 @@ import java.io.File
 import java.io.FileDescriptor
 import java.io.FileOutputStream
 import java.io.FilterOutputStream
+import java.io.IOException
 import java.io.OutputStream
 import java.io.SyncFailedException
 
@@ -51,6 +54,44 @@ object DurableWrites {
       }
       result
     }
+
+  /** A document to write: a whole-file descriptor where the provider gives one, else a stream. */
+  interface WriteTarget {
+    fun openDescriptor(mode: String): ParcelFileDescriptor?
+
+    fun openStream(mode: String): OutputStream?
+  }
+
+  /** [WriteTarget] of a content:// (or file://) document. */
+  class ResolverTarget(private val resolver: ContentResolver, private val uri: Uri) : WriteTarget {
+    override fun openDescriptor(mode: String): ParcelFileDescriptor? = resolver.openFileDescriptor(uri, mode)
+
+    override fun openStream(mode: String): OutputStream? = resolver.openOutputStream(uri, mode)
+  }
+
+  /**
+   * Writes a document a provider holds (Save as, SAF duplicate): through a descriptor ("w") when
+   * the provider gives one, synced best effort ([writeFd]); a stream-only provider (it throws or
+   * returns null) gets a stream ("wt", else "w") that is flushed and closed, without a sync.
+   */
+  fun <T> writeDocument(target: WriteTarget, block: (OutputStream) -> T): T {
+    val pfd = try {
+      target.openDescriptor("w")
+    } catch (_: Exception) {
+      null
+    }
+    if (pfd != null) return writeFd(pfd, requireSync = false, block)
+    return fallbackStream(target).use { out -> writeThenFlush(out, block) }
+  }
+
+  private fun fallbackStream(target: WriteTarget): OutputStream {
+    try {
+      target.openStream("wt")?.let { return it }
+    } catch (_: Exception) {
+      // Some providers refuse truncation: "w" on a new or verified-empty document.
+    }
+    return target.openStream("w") ?: throw IOException("No output stream")
+  }
 
   /** Best-effort fsync of [dir], so a rename into it is durable too; ignored where unsupported. */
   fun syncDir(dir: File) {
