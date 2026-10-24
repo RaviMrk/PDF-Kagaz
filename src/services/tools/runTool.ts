@@ -35,6 +35,7 @@ import {
   splitNames,
   type Translate,
 } from './outputNames';
+import { createPhaseTimer, formatPhases } from './phaseTimer';
 import { knownSize, toToolFailure } from './toolFailure';
 import type { ToolFs } from './toolFs';
 import type { ToolFailure } from './toolJobRepo';
@@ -199,6 +200,8 @@ export async function runTool(
   const { signal } = control;
   const onProgress = monotonicProgress(control.onProgress);
   const started = deps.now();
+  const timer = createPhaseTimer(() => deps.now());
+  const { time } = timer;
   const published: PdfFileInfo[] = [];
   let workspaceUsed = false;
   let pages = 0;
@@ -236,11 +239,13 @@ export async function runTool(
   const save = async (out: Output, from: number, to: number) => {
     k += 1;
     const uri = `${workspace}/out-${k}.pdf`;
-    await as('io', null, () => fs.writeBytes(uri, out.bytes));
+    await as('io', null, () => time('save', () => fs.writeBytes(uri, out.bytes)));
     // Checked before each publish; a publish once started is never interrupted.
     throwIfCancelled(signal);
     onProgress('saving', from);
-    const info = await as(null, null, () => native.publishToolOutput(uri, out.name));
+    const info = await as(null, null, () =>
+      time('publish', () => native.publishToolOutput(uri, out.name)),
+    );
     published.push(info);
     try {
       deps.recordOutput(jobId, info);
@@ -260,14 +265,16 @@ export async function runTool(
   ) => {
     let page: PreparedPage;
     try {
-      page = await native.prepareImagePage(
-        request.sessionId,
-        source,
-        jobId,
-        index,
-        longSidePx,
-        quality,
-        request.filter,
+      page = await time('prepare', () =>
+        native.prepareImagePage(
+          request.sessionId,
+          source,
+          jobId,
+          index,
+          longSidePx,
+          quality,
+          request.filter,
+        ),
       );
     } catch (e) {
       throwIfCancelled(signal);
@@ -291,12 +298,18 @@ export async function runTool(
     const preset = IMAGE_QUALITY_PRESETS[request.quality];
     const budget = JS_MAX_TOTAL_BYTES * IMAGE_TOTAL_BUDGET;
     let total = 0;
+    // Once one page had to be prepared smaller, the later pages of this job would almost always
+    // run over too: they are prepared smaller at once, so each page is decoded only once.
+    let smaller = false;
     for (const [index, source] of request.images.entries()) {
       throwIfCancelled(signal);
-      let page = await prepare(request, source, index, preset.longSidePx, preset.jpegQuality);
+      let page = smaller
+        ? await prepare(request, source, index, preset.smallerLongSidePx, preset.smallerJpegQuality)
+        : await prepare(request, source, index, preset.longSidePx, preset.jpegQuality);
       // Over its share of what is left: prepared once more, smaller (it overwrites the same page).
-      if (page.sizeBytes > (budget - total) / (n - index)) {
+      if (!smaller && page.sizeBytes > (budget - total) / (n - index)) {
         throwIfCancelled(signal);
+        smaller = true;
         page = await prepare(
           request,
           source,
@@ -316,10 +329,12 @@ export async function runTool(
     onProgress('processing', 0);
     let bytes: Uint8Array;
     try {
-      bytes = await imagesToPdf(
-        prepared.map((p) => () => fs.readBytes(p.uri)),
-        request.layout,
-        { signal, onProgress: processing },
+      bytes = await time('embed', () =>
+        imagesToPdf(
+          prepared.map((p) => () => time('read', () => fs.readBytes(p.uri))),
+          request.layout,
+          { signal, onProgress: processing },
+        ),
       );
     } catch (e) {
       if (isPdfToolError(e, 'invalid')) throw new ToolRunFailure('imageInvalid', e.inputIndex);
@@ -351,7 +366,7 @@ export async function runTool(
     for (const [i, row] of rows.entries()) {
       throwIfCancelled(signal);
       const input = await as(null, i, () =>
-        native.stageToolInput(row.uri, jobId, i, JS_MAX_FILE_BYTES),
+        time('stage', () => native.stageToolInput(row.uri, jobId, i, JS_MAX_FILE_BYTES)),
       );
       if (!Number.isFinite(input.sizeBytes) || input.sizeBytes < 0) {
         throw new ToolRunFailure('unknown', i);
@@ -363,40 +378,45 @@ export async function runTool(
       onProgress('preparing', (i + 1) / rows.length);
     }
 
-    const read = (i: number) => as('io', i, () => fs.readBytes(staged[i]!.uri));
+    const read = (i: number) => as('io', i, () => time('read', () => fs.readBytes(staged[i]!.uri)));
 
     throwIfCancelled(signal);
     onProgress('processing', 0);
     const first = rows[0]!;
     if (request.toolId === 'merge') {
       const sources = staged.map((_, i) => () => read(i));
-      const bytes = await mergePdfs(sources, {
-        signal,
-        onProgress: processing,
-        onPageCount: (n) => {
-          pages = n;
-        },
-      });
+      const bytes = await time('embed', () =>
+        mergePdfs(sources, {
+          signal,
+          onProgress: processing,
+          onPageCount: (n) => {
+            pages = n;
+          },
+        }),
+      );
       await save({ bytes, name: mergedName(first.name, t) }, 0, 1);
     } else if (request.toolId === 'organize') {
-      const bytes = await organizePdf(await read(0), request.pages, {
-        signal,
-        onProgress: processing,
-      });
+      const source = await read(0);
+      const bytes = await time('embed', () =>
+        organizePdf(source, request.pages, { signal, onProgress: processing }),
+      );
       pages = request.pages.length;
       await save({ bytes, name: organisedName(first.name, t) }, 0, 1);
     } else {
       const bytes = await read(0);
-      const pageCount = (await loadPdf(bytes, 0)).getPageCount();
+      const pageCount = await time('embed', async () => (await loadPdf(bytes, 0)).getPageCount());
       const groups = splitGroups(request.split, pageCount);
       const names = splitNames(first.name, request.split.mode, groups, t);
       pages = groups.reduce((n, g) => n + g.length, 0);
-      await splitPdf(bytes, groups, {
-        signal,
-        onProgress: processing,
-        onPart: (i, part) =>
-          save({ bytes: part, name: names[i]! }, i / groups.length, (i + 1) / groups.length),
-      });
+      // Each part's write and publish are timed as save / publish, not as pdf-lib work.
+      await time('embed', () =>
+        splitPdf(bytes, groups, {
+          signal,
+          onProgress: processing,
+          onPart: (i, part) =>
+            save({ bytes: part, name: names[i]! }, i / groups.length, (i + 1) / groups.length),
+        }),
+      );
     }
   };
 
@@ -408,6 +428,7 @@ export async function runTool(
     // Release builds too (counts and timing only, never names).
     const ms = deps.now() - started;
     console.log(`[tool] ${request.toolId} ${ms}ms ${pages} pages ${published.length} files`);
+    console.log(formatPhases(request.toolId, timer.totals()));
     return { ok: true, outputs };
   } catch (e) {
     if (e instanceof RegistrationFailure) {

@@ -490,6 +490,27 @@ describe('runTool release log', () => {
   });
 });
 
+describe('runTool phase log', () => {
+  it('times merge staging, reads, pdf-lib work, the write and the publish', async () => {
+    const names = ['one-page.pdf', 'mixed-sizes.pdf'];
+    const rows = names.map((n) => row(n));
+    const s = setup(rows);
+    const stage = s.native.stageToolInput.getMockImplementation()!;
+    s.native.stageToolInput.mockImplementation(async (...args) => {
+      s.clock.now += 11;
+      return stage(...args);
+    });
+    s.toolFs.readBytes.mockImplementation(async (uri) => {
+      s.clock.now += 2;
+      return nodeToolFs.readBytes(uri);
+    });
+    await s.run({ toolId: 'merge', inputIds: rows.map((r) => r.id) });
+    expect(logSpy).toHaveBeenLastCalledWith(
+      '[tool-phases] merge stage=22ms prepare=0ms read=4ms embed=0ms save=0ms publish=0ms',
+    );
+  });
+});
+
 describe('runTool registration failures', () => {
   it('keeps published outputs and reports io when registration rejects', async () => {
     const rows = [row('one-page.pdf'), row('mixed-sizes.pdf')];
@@ -700,21 +721,58 @@ describe('runTool images and scans', () => {
     const outcome = await s.run(hundred());
     expect(outcome.ok).toBe(true);
     const calls = s.native.prepareImagePage.mock.calls;
-    const smaller = calls.filter((c) => c[4] !== 2400);
-    expect(smaller.length).toBeGreaterThan(0);
-    // Each re-prepare is the same page once more, right after its first pass, at 1600 px / q75.
-    for (const [i, call] of calls.entries()) {
-      if (call[4] === 2400) continue;
-      expect(call).toEqual(['img-s1', 0, 'j1', calls[i - 1]![3], 1600, 75, 'colour']);
-      expect(calls[i - 1]!.slice(4, 6)).toEqual([2400, 85]);
-    }
-    expect(calls.length).toBe(100 + smaller.length);
-    // Pages are prepared in order, every page index 0..99.
-    const indices = calls.map((c) => c[3]);
-    expect(new Set(indices).size).toBe(100);
-    expect([...indices].sort((a, b) => a - b)).toEqual(indices);
+    // Page 0 is over its share: prepared at 2400 / q85, then once more at 1600 / q75. Every later
+    // page goes straight to 1600 / q75, so each one is decoded once.
+    expect(calls.slice(0, 2).map((c) => [c[3], c[4], c[5]])).toEqual([
+      [0, 2400, 85],
+      [0, 1600, 75],
+    ]);
+    expect(calls.slice(2).every((c) => c[4] === 1600 && c[5] === 75)).toBe(true);
+    expect(calls).toHaveLength(101);
+    expect(calls.slice(1).map((c) => c[3])).toEqual(Array.from({ length: 100 }, (_, i) => i));
     const pages = await inspectPages(new Uint8Array(fs.readFileSync(s.published[0]!.path)));
     expect(pages).toHaveLength(100);
+  });
+
+  /** Five pages; page 0 is `first0` bytes at its first pass, every other prepare is 1 MiB. */
+  const fivePhotos = (first0: number) => {
+    const s = imageSetup();
+    const real = s.native.prepareImagePage.getMockImplementation()!;
+    s.native.prepareImagePage.mockImplementation(async (...args) => ({
+      ...(await real(...args)),
+      sizeBytes: args[3] === 0 && args[4] === 2400 ? first0 : MIB,
+    }));
+    return s;
+  };
+  const five = () => images({ images: [0, 1, 0, 1, 0] });
+
+  it('once a page was re-prepared smaller, prepares every later page smaller at once', async () => {
+    // Page 0's share is 0.95 × 100 MiB / 5 ≈ 19 MiB.
+    const s = fivePhotos(30 * MIB);
+    expect((await s.run(five())).ok).toBe(true);
+    expect(s.native.prepareImagePage.mock.calls.map((c) => [c[3], c[4], c[5]])).toEqual([
+      [0, 2400, 85],
+      [0, 1600, 75],
+      [1, 1600, 75],
+      [2, 1600, 75],
+      [3, 1600, 75],
+      [4, 1600, 75],
+    ]);
+  });
+
+  it('keeps the preset for every page while no page runs over its share', async () => {
+    const s = fivePhotos(MIB);
+    expect((await s.run(five())).ok).toBe(true);
+    expect(s.native.prepareImagePage.mock.calls.map((c) => [c[3], c[4], c[5]])).toEqual([
+      [0, 2400, 85],
+      [1, 2400, 85],
+      [2, 2400, 85],
+      [3, 2400, 85],
+      [4, 2400, 85],
+    ]);
+    const lines = logSpy.mock.calls.map((c) => String(c[0]));
+    expect(lines.some((l) => l.startsWith('[tool-phases] images-to-pdf '))).toBe(true);
+    expect(lines.join('\n')).not.toMatch(/\.pdf|\//);
   });
 
   it('re-prepares a compact job at its own smaller preset and a high job at 1600 / q75', async () => {
@@ -776,6 +834,43 @@ describe('runTool images and scans', () => {
     expect(s.native.prepareImagePage).toHaveBeenCalledTimes(1);
     expect(s.native.publishToolOutput).not.toHaveBeenCalled();
     expect(fs.existsSync(path.join(s.tmp, 'j1'))).toBe(false);
+  });
+
+  it('logs per-phase timings after the [tool] line, with counts and milliseconds only', async () => {
+    const s = imageSetup();
+    const prepare = s.native.prepareImagePage.getMockImplementation()!;
+    s.native.prepareImagePage.mockImplementation(async (...args) => {
+      s.clock.now += 30;
+      return prepare(...args);
+    });
+    s.toolFs.readBytes.mockImplementation(async (uri) => {
+      s.clock.now += 4;
+      return nodeToolFs.readBytes(uri);
+    });
+    s.toolFs.writeBytes.mockImplementation(async (uri, bytes) => {
+      s.clock.now += 6;
+      return nodeToolFs.writeBytes(uri, bytes);
+    });
+    const publish = s.native.publishToolOutput.getMockImplementation()!;
+    s.native.publishToolOutput.mockImplementation(async (...args) => {
+      s.clock.now += 9;
+      return publish(...args);
+    });
+    expect((await s.run(images())).ok).toBe(true);
+    const lines = logSpy.mock.calls.map((c) => String(c[0]));
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatch(/^\[tool\] images-to-pdf /);
+    expect(lines[1]).toBe(
+      '[tool-phases] images-to-pdf stage=0ms prepare=60ms read=8ms embed=0ms save=6ms publish=9ms',
+    );
+    expect(lines[1]).not.toMatch(/\.pdf|\//);
+  });
+
+  it('logs no phases when the job fails', async () => {
+    const s = imageSetup();
+    s.native.prepareImagePage.mockRejectedValueOnce(nativeError('ERR_FILE_NOT_FOUND'));
+    await s.run(images());
+    expect(logSpy).not.toHaveBeenCalled();
   });
 
   it('a read failing because of a cancel reads as cancelled, never as a damaged image', async () => {

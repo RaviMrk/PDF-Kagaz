@@ -24,7 +24,8 @@ export const IMAGE_QUALITIES: readonly ImageQuality[] = ['compact', 'standard', 
 
 /**
  * Images and scans: the first pass prepares a page at `longSidePx` / `jpegQuality`; a page over its
- * share of the total budget is prepared once more at the smaller pair.
+ * share of the total budget is prepared once more at the smaller pair, and every later page of that
+ * job is prepared at the smaller pair directly.
  */
 export const IMAGE_QUALITY_PRESETS: Record<
   ImageQuality,
