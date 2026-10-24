@@ -9,7 +9,6 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import expo.modules.kotlin.exception.CodedException
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 
 /**
@@ -109,19 +108,41 @@ class FileOps(private val context: Context, private val hasAllFilesAccess: () ->
     if (!file.isFile) throw Volumes.missingFileError(file, volumes())
     val dir = file.parentFile ?: throw PermissionDeniedException()
     val target = AppFolderLock.withLock {
-      copyClaimed(Uri.fromFile(file), PartClaim.claim(dir) { taken -> FileNames.duplicateName(file.name, taken) })
+      copyClaimed(Uri.fromFile(file), PartClaim.claim(dir) { taken -> FileNames.duplicateName(file.name, taken) }, dir)
     }
     return PdfFileInfos.ofFile(target, volumes())
   }
 
-  /** Copies [source] into the claimed part then renames it into place; the part never survives a failure. */
-  private fun copyClaimed(source: Uri, claim: PartClaim): File =
+  /**
+   * Copies [source] into the claimed part (flushed and fsynced, [DurableWrites]) then renames it
+   * into place; the part never survives a failure.
+   */
+  private fun copyClaimed(source: Uri, claim: PartClaim, dir: File): File =
     try {
-      copy(source) { FileOutputStream(claim.part) }
-      claim.commit() ?: throw IoCodedException()
+      val input = resolver.openInputStream(source) ?: throw FileNotFoundCodedException()
+      input.use { inp -> DurableWrites.writeFile(claim.part) { out -> inp.copyTo(out) } }
+      val target = claim.commit() ?: throw IoCodedException()
+      DurableWrites.syncDir(dir)
+      target
     } finally {
       claim.release()
     }
+
+  /**
+   * Copies [source] into [dir] under a free variant of [name] (synced) and only then runs
+   * [deleteSource]: a crash before the sync keeps the original. A failed delete removes the copy.
+   * Call under [AppFolderLock].
+   */
+  internal fun moveByCopy(source: Uri, dir: File, name: String, deleteSource: () -> Unit): File {
+    val copied = copyClaimed(source, PartClaim.claim(dir) { taken -> ToolPaths.uniqueTarget(name, taken) }, dir)
+    try {
+      deleteSource()
+    } catch (e: Throwable) {
+      copied.delete()
+      throw e
+    }
+    return copied
+  }
 
   // endregion
 
@@ -147,7 +168,12 @@ class FileOps(private val context: Context, private val hasAllFilesAccess: () ->
     val created = DocumentsContract.createDocument(resolver, parentUri, PDF_MIME, name)
       ?: throw PermissionDeniedException("Could not create document")
     try {
-      copy(uri) { resolver.openOutputStream(created, "w") ?: throw IOException("No output stream") }
+      // Synced before close where the provider's descriptor allows it (not a pipe).
+      val input = resolver.openInputStream(uri) ?: throw FileNotFoundCodedException()
+      input.use { inp ->
+        val pfd = resolver.openFileDescriptor(created, "w") ?: throw IOException("No output stream")
+        DurableWrites.writeFd(pfd, requireSync = false) { out -> inp.copyTo(out) }
+      }
     } catch (e: Throwable) {
       runCatching { DocumentsContract.deleteDocument(resolver, created) }
       throw e
@@ -221,14 +247,7 @@ class FileOps(private val context: Context, private val hasAllFilesAccess: () ->
       val renamed = File(dir, name)
       // Same volume: a plain rename is instant and atomic.
       if (sourceFile != null && sourceFile.renameTo(renamed)) return@withLock renamed
-      val copied = copyClaimed(source, PartClaim.claim(dir) { taken -> ToolPaths.uniqueTarget(stat.name, taken) })
-      try {
-        deleteSource(source)
-      } catch (e: Throwable) {
-        copied.delete()
-        throw e
-      }
-      copied
+      moveByCopy(source, dir, stat.name) { deleteSource(source) }
     }
     return PdfFileInfos.ofFile(target, volumes())
   }
@@ -246,11 +265,6 @@ class FileOps(private val context: Context, private val hasAllFilesAccess: () ->
       else -> resolver.delete(source, null, null) > 0
     }
     if (!deleted) throw PermissionDeniedException("Could not remove the original file")
-  }
-
-  private fun copy(source: Uri, openOutput: () -> java.io.OutputStream) {
-    val input = resolver.openInputStream(source) ?: throw FileNotFoundCodedException()
-    input.use { inp -> openOutput().use { out -> inp.copyTo(out) } }
   }
 
   private fun fileOf(uri: Uri): File = File(uri.path ?: throw FileNotFoundCodedException())
