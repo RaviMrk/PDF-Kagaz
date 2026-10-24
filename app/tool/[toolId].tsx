@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { CompressOptions } from '@/components/tools/CompressOptions';
 import { ImagesToPdfFlow } from '@/components/tools/ImagesToPdfFlow';
 import { MergeOptions } from '@/components/tools/MergeOptions';
+import { PdfToImagesOptions } from '@/components/tools/PdfToImagesOptions';
 import { PickFilesList } from '@/components/tools/PickFilesList';
 import { ProgressSheet } from '@/components/tools/ProgressSheet';
 import { ProtectOptions } from '@/components/tools/ProtectOptions';
@@ -206,6 +207,19 @@ function ToolFlow({ tool, inputIds }: { tool: ToolDef; inputIds: string[] }) {
             <UnlockOptions
               row={rows[0]}
               onRun={() => void runAsked({ toolId: 'unlock', inputIds: [rows[0]!.id] })}
+            />
+          ) : null}
+          {tool.id === 'pdf-to-images' && rows[0] ? (
+            <PdfToImagesOptions
+              row={rows[0]}
+              onRun={(opts, passwords) =>
+                run({
+                  toolId: 'pdf-to-images',
+                  inputIds: [rows[0]!.id],
+                  ...opts,
+                  ...(passwords ? { passwords } : {}),
+                })
+              }
             />
           ) : null}
           {tool.id === 'split' && rows[0] ? (

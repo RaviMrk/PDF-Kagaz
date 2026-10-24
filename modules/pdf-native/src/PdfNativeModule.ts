@@ -4,6 +4,7 @@ import type {
   CompressLevel,
   CompressResult,
   FolderChange,
+  ImageFormat,
   ImportedImage,
   PasswordCheck,
   PdfLock,
@@ -13,6 +14,8 @@ import type {
   PickedImageUris,
   PreparedPage,
   ReaderFile,
+  RenderedPage,
+  SavedImage,
   ScanResult,
   StagedInput,
   WorkspaceFile,
@@ -95,6 +98,19 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
   compressPdf(fileUri: string, jobId: string, level: CompressLevel): Promise<CompressResult>;
   /** Workspace files of `jobId` only; writes `out-protected.pdf` (AES-256). */
   protectPdf(fileUri: string, jobId: string, password: string): Promise<WorkspaceFile>;
+  /** Workspace files of `jobId` only; 1-based page; dpi 72 / 150 / 300; writes `img-<page>.<format>`. */
+  renderPdfPage(
+    fileUri: string,
+    jobId: string,
+    page: number,
+    dpi: number,
+    format: ImageFormat,
+  ): Promise<RenderedPage>;
+  releasePageExport(): Promise<void>;
+  /** Workspace file → Pictures/PDFToolkit/<folder>/ under a free name; deletes the workspace file. */
+  publishImageOutput(tempUri: string, fileName: string, folder: string): Promise<SavedImage>;
+  shareImages(uris: string[], chooserTitle: string): Promise<void>;
+  viewImage(uri: string, chooserTitle: string): Promise<void>;
   /** Workspace files only; 1-based page, width clamped to 1..512; own lane (not reader / Files list). */
   renderToolThumbnail(fileUri: string, page: number, width: number): Promise<string>;
   getToolPageCount(fileUri: string): Promise<number>;

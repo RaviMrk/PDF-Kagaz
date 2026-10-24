@@ -5,6 +5,7 @@ import type {
   FolderChange,
   FolderStamp,
   ImageFilter,
+  ImageFormat,
   ImportedImage,
   IncomingPdfEvent,
   PasswordCheck,
@@ -14,6 +15,8 @@ import type {
   PickedImageUris,
   PreparedPage,
   ReaderFile,
+  RenderedPage,
+  SavedImage,
   ScanProgressEvent,
   ScanResult,
   StagedInput,
@@ -27,6 +30,7 @@ export type {
   FolderChange,
   FolderStamp,
   ImageFilter,
+  ImageFormat,
   ImportedImage,
   IncomingPdfEvent,
   PasswordCheck,
@@ -36,6 +40,8 @@ export type {
   PickedImageUris,
   PreparedPage,
   ReaderFile,
+  RenderedPage,
+  SavedImage,
   ScanProgressEvent,
   ScanResult,
   StagedInput,
@@ -176,6 +182,34 @@ export interface PdfNativeApi {
    * The password is never logged or put into an error.
    */
   protectPdf(fileUri: string, jobId: string, password: string): Promise<WorkspaceFile>;
+  /**
+   * PDF to images: renders 1-based `page` of workspace file `fileUri` of job `jobId` (anything
+   * else: ERR_PERMISSION_DENIED) at `dpi` (72 / 150 / 300, else ERR_INVALID_NAME) on white as
+   * `img-<page>.<format>` in the workspace (JPEG quality 90 or PNG). A page over RENDER_MAX_PIXELS
+   * at that DPI is rendered smaller (`reduced`). A native job: cancelNativeTool stops it before it
+   * renders. The file's renderer stays open between pages: call releasePageExport after the job.
+   * A page out of range or a damaged file: ERR_PDF_INVALID; encrypted: ERR_PDF_ENCRYPTED.
+   */
+  renderPdfPage(
+    fileUri: string,
+    jobId: string,
+    page: number,
+    dpi: number,
+    format: ImageFormat,
+  ): Promise<RenderedPage>;
+  /** Closes the document kept open for page export and frees its bitmap; idempotent. */
+  releasePageExport(): Promise<void>;
+  /**
+   * Saves a workspace image (`.jpg` / `.png` name, else ERR_INVALID_NAME) to the gallery in
+   * Pictures/PDFToolkit/<folder> under a free name (never overwrites), then deletes the workspace
+   * file. API 29+: MediaStore, no permission. API 24–28: needs storage access, else
+   * ERR_PERMISSION_DENIED.
+   */
+  publishImageOutput(tempUri: string, fileName: string, folder: string): Promise<SavedImage>;
+  /** Share sheet for saved images (one: ACTION_SEND, more: ACTION_SEND_MULTIPLE); this app is excluded. */
+  shareImages(uris: string[], chooserTitle: string): Promise<void>;
+  /** "Open with" chooser (ACTION_VIEW) for one saved image; this app is excluded. */
+  viewImage(uri: string, chooserTitle: string): Promise<void>;
   /**
    * Page thumbnail of a tool workspace file (anything else: ERR_PERMISSION_DENIED), on its own
    * lane apart from the reader and Files list; 1-based page, width clamped to 1..512.
@@ -322,6 +356,13 @@ export const pdfNative: PdfNativeApi = {
     PdfNative.assemblePdf(jobId, inputUris, outputsJson, firstOutput),
   compressPdf: (fileUri, jobId, level) => PdfNative.compressPdf(fileUri, jobId, level),
   protectPdf: (fileUri, jobId, password) => PdfNative.protectPdf(fileUri, jobId, password),
+  renderPdfPage: (fileUri, jobId, page, dpi, format) =>
+    PdfNative.renderPdfPage(fileUri, jobId, page, dpi, format),
+  releasePageExport: () => PdfNative.releasePageExport(),
+  publishImageOutput: (tempUri, fileName, folder) =>
+    PdfNative.publishImageOutput(tempUri, fileName, folder),
+  shareImages: (uris, chooserTitle) => PdfNative.shareImages(uris, chooserTitle),
+  viewImage: (uri, chooserTitle) => PdfNative.viewImage(uri, chooserTitle),
   renderToolThumbnail: (fileUri, page, width) =>
     PdfNative.renderToolThumbnail(fileUri, page, width),
   getToolPageCount: (fileUri) => PdfNative.getToolPageCount(fileUri),

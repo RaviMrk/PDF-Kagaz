@@ -275,6 +275,37 @@ class PdfNativeModule : Module() {
       toolThumbnails.release()
     }
 
+    // PDF to images: one page per call (a native job, so an early cancel stops it before it renders).
+    AsyncFunction("renderPdfPage") Coroutine { fileUri: String, jobId: String, page: Int, dpi: Int, format: String ->
+      RenderSupport.mapErrors {
+        val control = beginToolJob(jobId)
+        try {
+          pageExport.render(fileUri, jobId, page, dpi, format, control::check)
+        } finally {
+          NativeJobs.end(jobId)
+        }
+      }
+    }
+
+    AsyncFunction("releasePageExport") Coroutine { ->
+      pageExport.release()
+    }
+
+    AsyncFunction("publishImageOutput") Coroutine { tempUri: String, fileName: String, folder: String ->
+      imagePublisher.publish(tempUri, fileName, folder)
+    }
+
+    AsyncFunction("shareImages") Coroutine { uris: List<String>, chooserTitle: String ->
+      if (uris.isEmpty()) throw FileNotFoundCodedException()
+      val shareUris = uris.map { intents.shareUriOf(it) }
+      withContext(Dispatchers.Main) { intents.start(appContext.currentActivity, intents.sendImagesChooser(shareUris, chooserTitle)) }
+    }
+
+    AsyncFunction("viewImage") Coroutine { uri: String, chooserTitle: String ->
+      val shareUri = intents.shareUriOf(uri)
+      withContext(Dispatchers.Main) { intents.start(appContext.currentActivity, intents.viewImageChooser(shareUri, chooserTitle)) }
+    }
+
     RegisterActivityContracts { registerLaunchers(this) }
 
     AsyncFunction("saveCopyAs") Coroutine { uri: String, suggestedName: String ->
@@ -378,6 +409,10 @@ class PdfNativeModule : Module() {
   private val toolFiles by lazy { ToolFiles(context) }
 
   private val toolThumbnails by lazy { ToolThumbnails(context) }
+
+  private val pageExport by lazy { PageExport(context) }
+
+  private val imagePublisher by lazy { ImagePublisher(context) }
 
   private val security by lazy { PdfSecurity(context) }
 

@@ -4,7 +4,7 @@ import { renderRouter, screen } from 'expo-router/testing-library';
 import path from 'path';
 
 import { interstitial } from '@/services/ads/interstitial';
-import type { ToolOutcome } from '@/services/tools/runTool';
+import type { SavedImages, ToolOutcome } from '@/services/tools/runTool';
 import { useFiles } from '@/stores/filesStore';
 import { useSettings } from '@/stores/settingsStore';
 import { useStorage } from '@/stores/storageStore';
@@ -363,6 +363,96 @@ describe('result screen', () => {
       await press('Close');
       expect(dismiss).toHaveBeenCalledWith('j1');
       expect(showAfterDone).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('pdf to images', () => {
+    const URIS = [1, 2, 3].map((n) => `content://media/external/images/media/${n}`);
+    const images = (over: Partial<SavedImages> = {}): SavedImages => ({
+      count: 3,
+      folder: 'Pictures/PDFToolkit/Report pages',
+      uris: URIS,
+      reducedPages: 0,
+      ...over,
+    });
+    const imagesDone = (outcome: ToolOutcome): JobView => ({
+      kind: 'done',
+      toolId: 'pdf-to-images',
+      outcome,
+    });
+
+    it('says where the images were saved and shares or opens them', async () => {
+      outcomeOf.mockReturnValue(
+        imagesDone({ ok: true, outputs: [], extras: { images: images(), passwordRemoved: true } }),
+      );
+      await open();
+      expect(screen.getByText('Saved 3 images to Pictures/PDFToolkit/Report pages')).toBeTruthy();
+      expect(screen.queryByText('Saved to Documents/PDFToolkit')).toBeNull();
+      expect(screen.queryByText(NO_PASSWORD_NOTE)).toBeNull();
+      expect(screen.queryByText(/lower resolution/)).toBeNull();
+      await press('Share');
+      expect(PdfNativeModule.shareImages).toHaveBeenCalledWith(URIS, 'Share images');
+      await press('Open');
+      expect(PdfNativeModule.viewImage).toHaveBeenCalledWith(URIS[0], 'Open');
+    });
+
+    it('says one image in the singular and notes reduced pages', async () => {
+      outcomeOf.mockReturnValue(
+        imagesDone({
+          ok: true,
+          outputs: [],
+          extras: { images: images({ count: 1, uris: [URIS[0]!], reducedPages: 1 }) },
+        }),
+      );
+      await open();
+      expect(screen.getByText('Saved 1 image to Pictures/PDFToolkit/Report pages')).toBeTruthy();
+      expect(
+        screen.getByText(
+          "1 large pages were saved at a lower resolution to fit this phone's memory.",
+        ),
+      ).toBeTruthy();
+    });
+
+    it('a recovered row says where without Open or Share', async () => {
+      outcomeOf.mockReturnValue(
+        imagesDone({
+          ok: true,
+          outputs: [],
+          extras: { images: { count: 0, folder: '', uris: [], reducedPages: 0 } },
+        }),
+      );
+      await open();
+      expect(screen.getByText('Saved to Pictures/PDFToolkit')).toBeTruthy();
+      expect(screen.getByLabelText('Open')).toBeDisabled();
+      expect(screen.getByLabelText('Share')).toBeDisabled();
+    });
+
+    it('a cancelled job lists the images already saved', async () => {
+      outcomeOf.mockReturnValue(
+        imagesDone({
+          ok: false,
+          failure: 'cancelled',
+          inputIndex: null,
+          outputs: [],
+          extras: { images: images({ count: 1, uris: [URIS[0]!] }) },
+        }),
+      );
+      await open();
+      expect(screen.getByText('Saved 1 image to Pictures/PDFToolkit/Report pages')).toBeTruthy();
+      await press('Share');
+      expect(PdfNativeModule.shareImages).toHaveBeenCalledWith([URIS[0]], 'Share images');
+    });
+
+    it('says so when a saved image is gone', async () => {
+      jest
+        .mocked(PdfNativeModule.viewImage)
+        .mockRejectedValueOnce(nativeError('ERR_FILE_NOT_FOUND'));
+      outcomeOf.mockReturnValue(
+        imagesDone({ ok: true, outputs: [], extras: { images: images() } }),
+      );
+      await open();
+      await press('Open');
+      expect(screen.getByText('This file no longer exists')).toBeTruthy();
     });
   });
 });

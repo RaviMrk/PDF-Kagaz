@@ -30,7 +30,7 @@ const CARDS = [
   'Organise pages',
   'Images to PDF',
   'Scan',
-  'PDF to images, coming soon',
+  'PDF to images',
   'Make searchable (OCR), coming soon',
   'Compress',
   'Protect with password',

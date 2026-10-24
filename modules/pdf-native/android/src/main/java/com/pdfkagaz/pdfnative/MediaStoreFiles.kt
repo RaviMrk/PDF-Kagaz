@@ -17,16 +17,24 @@ import java.io.InputStream
 internal class MediaStoreFiles(private val context: Context) {
   private val resolver get() = context.contentResolver
 
-  /** A new pending PDF item named [name] under [relativePath]; MediaStore makes a taken name unique. */
-  fun insertPending(name: String, relativePath: String): Uri {
+  /**
+   * A new pending item named [name] under [relativePath] (a PDF in Files by default, or e.g. an
+   * image in the Images collection); MediaStore makes a taken name unique.
+   */
+  fun insertPending(
+    name: String,
+    relativePath: String,
+    mime: String = PDF_MIME,
+    collection: Uri = MediaStore.Files.getContentUri("external"),
+  ): Uri {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) throw PermissionDeniedException("Storage permission required")
     val values = ContentValues().apply {
       put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-      put(MediaStore.MediaColumns.MIME_TYPE, PDF_MIME)
+      put(MediaStore.MediaColumns.MIME_TYPE, mime)
       put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
       put(MediaStore.MediaColumns.IS_PENDING, 1)
     }
-    return resolver.insert(MediaStore.Files.getContentUri("external"), values)
+    return resolver.insert(collection, values)
       ?: throw PermissionDeniedException("Could not create file")
   }
 

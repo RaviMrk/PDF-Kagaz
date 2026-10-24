@@ -54,6 +54,24 @@ export type CompressLevel = 'low' | 'medium' | 'high';
 /** The compressed copy in the job workspace and how many images were replaced. */
 export type CompressResult = { uri: string; sizeBytes: number; imagesRecompressed: number };
 
+/** Page image format of PDF to images: JPEG (quality 90) or PNG. */
+export type ImageFormat = 'jpg' | 'png';
+
+/**
+ * One page rendered into the job workspace (`file://` uri, `img-<page>.<ext>`); size in pixels.
+ * `reduced`: rendered below the asked DPI to stay within the per-page pixel cap.
+ */
+export type RenderedPage = {
+  uri: string;
+  page: number;
+  width: number;
+  height: number;
+  reduced: boolean;
+};
+
+/** A page image saved to the gallery: its uri (MediaStore content:// on API 29+) and final name. */
+export type SavedImage = { uri: string; name: string };
+
 /** A tool input copied into the job workspace; `sizeBytes` is the number of bytes copied. */
 export type StagedInput = WorkspaceFile;
 

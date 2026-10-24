@@ -84,7 +84,7 @@ export const TOOLS: readonly ToolDef[] = [
   def('compress', 'T-06', 'optimise', 'arrow-collapse-vertical', true),
   def('protect', 'T-07', 'security', 'lock-outline', true),
   def('unlock', 'T-08', 'security', 'lock-open-outline', true),
-  def('pdf-to-images', 'T-09', 'convert', 'file-image-outline'),
+  def('pdf-to-images', 'T-09', 'convert', 'file-image-outline', true),
   def('watermark', 'T-10', 'edit', 'water-outline'),
   def('page-numbers', 'T-11', 'edit', 'numeric'),
   def('sign', 'T-12', 'edit', 'draw'),

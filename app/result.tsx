@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 
 import { EmptyState } from '@/components/EmptyState';
 import { OutputRow } from '@/components/tools/OutputRow';
+import { SavedImagesCard } from '@/components/tools/SavedImagesCard';
 import { SizeChange } from '@/components/tools/SizeChange';
 import type { FileRow } from '@/db/schema';
 import { interstitial } from '@/services/ads/interstitial';
@@ -135,11 +136,17 @@ export default function ResultScreen() {
     const asking = sizes !== undefined && sizes.after >= sizes.before && notSmaller === 'ask';
     const deleted = sizes !== undefined && notSmaller === 'deleted';
     const firstOutput = view.outcome.outputs[0];
+    // PDF to images saves gallery images (no PDF, so no "new file has no password" note).
+    const images = view.outcome.extras?.images;
     body = (
       <View style={styles.section}>
         {header(t('result.successTitle'))}
-        <Text style={{ color: colors.textMuted }}>{t('result.savedTo')}</Text>
-        {view.outcome.extras?.passwordRemoved ? (
+        {images ? (
+          <SavedImagesCard images={images} onNotice={setNotice} />
+        ) : (
+          <Text style={{ color: colors.textMuted }}>{t('result.savedTo')}</Text>
+        )}
+        {view.outcome.extras?.passwordRemoved && !images ? (
           <Text style={{ color: colors.text }}>{t('result.passwordRemoved')}</Text>
         ) : null}
         {sizes && (sizes.after < sizes.before || asking) ? (
@@ -182,6 +189,7 @@ export default function ResultScreen() {
     );
   } else {
     const { failure, inputIndex, outputs: partial } = view.outcome;
+    const savedImages = view.outcome.extras?.images;
     body = (
       <View style={styles.section}>
         {header(t('result.failedTitle'))}
@@ -198,6 +206,9 @@ export default function ResultScreen() {
           <Text accessibilityLiveRegion="polite" style={{ color: colors.danger }}>
             {t(retryFailed)}
           </Text>
+        ) : null}
+        {savedImages && savedImages.count > 0 ? (
+          <SavedImagesCard images={savedImages} onNotice={setNotice} />
         ) : null}
         {partial.length > 0 ? (
           <>

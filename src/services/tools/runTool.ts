@@ -3,6 +3,7 @@ import {
   isPdfNativeError,
   type CompressLevel,
   type ImageFilter,
+  type ImageFormat,
   type PdfFileInfo,
   type PdfNativeApi,
   type PreparedPage,
@@ -40,6 +41,7 @@ import { runProtect } from './runners/protect';
 import { runUnlock } from './runners/unlock';
 import { runMerge } from './runners/merge';
 import { runOrganize } from './runners/organize';
+import { runPdfToImages } from './runners/pdfToImages';
 import { runSplit } from './runners/split';
 import { knownSize, toToolFailure } from './toolFailure';
 import type { ToolFs } from './toolFs';
@@ -70,8 +72,7 @@ export type ImagesRequest = {
  * with the job, logged or sent anywhere.
  */
 export type Passwords = Partial<Record<number, string>>;
-export type { CompressLevel };
-export type ImageFormat = 'jpg' | 'png';
+export type { CompressLevel, ImageFormat };
 export type ExportDpi = 72 | 150 | 300;
 export type StampPosition =
   | 'top-left'
@@ -205,6 +206,9 @@ export type ToolRunDeps = {
     | 'assemblePdf'
     | 'compressPdf'
     | 'protectPdf'
+    | 'renderPdfPage'
+    | 'releasePageExport'
+    | 'publishImageOutput'
   >;
   fs: ToolFs;
   getRows(ids: string[]): FileRow[];
@@ -296,6 +300,7 @@ export const RUNNERS: { [K in PdfToolRequest['toolId']]?: ToolRunner<PdfRequestO
   compress: runCompress,
   protect: runProtect,
   unlock: runUnlock,
+  'pdf-to-images': runPdfToImages,
 };
 
 type PdfRequestOf<K extends PdfToolRequest['toolId']> = Extract<PdfToolRequest, { toolId: K }>;
@@ -553,7 +558,10 @@ export async function runTool(
     const outputs = await register().catch((r: unknown) =>
       r instanceof RegistrationFailure ? r.outputs : [],
     );
-    return { ok: false, failure, inputIndex, outputs };
+    // Extras of what was already saved (images of PDF to images) stay with a failure or cancel.
+    return extras
+      ? { ok: false, failure, inputIndex, outputs, extras }
+      : { ok: false, failure, inputIndex, outputs };
   } finally {
     if (workspaceUsed) {
       try {

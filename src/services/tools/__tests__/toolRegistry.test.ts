@@ -33,7 +33,7 @@ describe('toolRegistry', () => {
       'ocr',
     ]);
   });
-  it('merge, split, organize, images to PDF, scan, compress, protect and unlock are available', () => {
+  it('merge, split, organize, images to PDF, scan, compress, protect, unlock and PDF to images are available', () => {
     expect(TOOLS.filter((t) => t.available).map((t) => t.id)).toEqual([
       'merge',
       'split',
@@ -43,6 +43,7 @@ describe('toolRegistry', () => {
       'compress',
       'protect',
       'unlock',
+      'pdf-to-images',
     ]);
   });
   it('looks tools up by id', () => {

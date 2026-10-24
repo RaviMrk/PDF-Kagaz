@@ -348,6 +348,61 @@ describe('tool flow', () => {
     );
   });
 
+  it('saves the chosen pages as PNG images at 300 DPI', async () => {
+    const r = await open('/tools');
+    await press('PDF to images');
+    expect(r.pathname()).toBe('/tool/pdf-to-images');
+    await press('Select ha.pdf');
+    await press('Next');
+    expect(screen.getByLabelText('JPG')).toBeChecked();
+    expect(screen.getByLabelText('150 DPI')).toBeChecked();
+    expect(screen.getByText('Higher DPI makes sharper, bigger images.')).toBeTruthy();
+    expect(screen.getByLabelText('All pages')).toBeChecked();
+    expect(screen.getByLabelText('Save 10 images')).toBeEnabled();
+    await press('PNG');
+    await press('300 DPI');
+    await press('Choose pages');
+    expect(screen.getByLabelText('Save images')).toBeDisabled();
+    await fireEvent.changeText(screen.getByPlaceholderText('e.g. 1-3, 5, 8-10'), '2');
+    await act(async () => {});
+    expect(screen.getByLabelText('Save 1 image')).toBeEnabled();
+    await fireEvent.changeText(screen.getByPlaceholderText('e.g. 1-3, 5, 8-10'), '2-3');
+    await act(async () => {});
+    await press('Save 2 images');
+    expect(start).toHaveBeenCalledWith(
+      { toolId: 'pdf-to-images', inputIds: [ID_A], format: 'png', dpi: 300, pages: [2, 3] },
+      expect.any(Function),
+    );
+  });
+
+  it('saves every page as JPG by default and passes the password that opened the file', async () => {
+    preview.mockImplementation((_row, opts) =>
+      Promise.resolve(
+        opts?.password === 'secret'
+          ? {
+              ok: true as const,
+              preview: { fileUri: 'file:///cache/p.open.pdf', pageCount: 4, close: jest.fn() },
+            }
+          : { ok: false as const, failure: 'encrypted' as const, lock: 'password' as const },
+      ),
+    );
+    await open(`/tool/pdf-to-images?inputs=${ID_A}`);
+    await fireEvent.changeText(screen.getByPlaceholderText('Password'), 'secret');
+    await press('Use');
+    await press('Save 4 images');
+    expect(start).toHaveBeenCalledWith(
+      {
+        toolId: 'pdf-to-images',
+        inputIds: [ID_A],
+        format: 'jpg',
+        dpi: 150,
+        pages: null,
+        passwords: { 0: 'secret' },
+      },
+      expect.any(Function),
+    );
+  });
+
   it('shows coming soon for tools that are not ready', async () => {
     await open('/tool/watermark');
     expect(screen.getByText('Coming soon')).toBeTruthy();

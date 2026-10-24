@@ -10,6 +10,8 @@ import type {
   PdfFileInfo,
   PdfLock,
   PreparedPage,
+  RenderedPage,
+  SavedImage,
   ToolProgressEvent,
 } from '@/services/native/pdfNative';
 import type { ImageLayoutOptions } from '@/services/pdf/imageLayout';
@@ -25,6 +27,7 @@ import {
   RUNNERS,
   runTool,
   type CompressLevel,
+  type ImageFormat,
   type ImagesRequest,
   type ToolPhase,
   type ToolRequest,
@@ -51,6 +54,7 @@ function setup(rows: FileRow[], sources: string[] = []) {
   const docs = path.join(tmp, 'Documents', 'PDFToolkit');
   fs.mkdirSync(docs, { recursive: true });
   const published: { name: string; path: string }[] = [];
+  const savedImages: { name: string; folder: string }[] = [];
   const stagedFrom = new Map<string, string>();
   const progressListeners = new Set<(e: ToolProgressEvent) => void>();
   const native = {
@@ -156,6 +160,31 @@ function setup(rows: FileRow[], sources: string[] = []) {
       fs.writeFileSync(dest, new Uint8Array(300));
       return { uri: `file://${dest}`, sizeBytes: 300 };
     }),
+    // A page image: a stand-in written where PageExport would write it.
+    renderPdfPage: jest.fn(
+      async (
+        _fileUri: string,
+        jobId: string,
+        page: number,
+        _dpi: number,
+        format: ImageFormat,
+      ): Promise<RenderedPage> => {
+        const dest = path.join(tmp, jobId, `img-${page}.${format}`);
+        fs.writeFileSync(dest, new Uint8Array(10));
+        return { uri: `file://${dest}`, page, width: 1240, height: 1754, reduced: false };
+      },
+    ),
+    releasePageExport: jest.fn(async () => {}),
+    publishImageOutput: jest.fn(
+      async (tempUri: string, fileName: string, folder: string): Promise<SavedImage> => {
+        fs.rmSync(tempPathOf(tempUri));
+        savedImages.push({ name: fileName, folder });
+        return {
+          uri: `content://media/external/images/media/${savedImages.length}`,
+          name: fileName,
+        };
+      },
+    ),
     cancelNativeTool: jest.fn(async (_jobId: string) => {}),
     addToolProgressListener: jest.fn((cb: (e: ToolProgressEvent) => void) => {
       progressListeners.add(cb);
@@ -199,6 +228,7 @@ function setup(rows: FileRow[], sources: string[] = []) {
     registerOutputs,
     recordOutput,
     published,
+    savedImages,
     phases,
     events,
     controller,
@@ -1745,5 +1775,179 @@ describe('runTool protect and unlock', () => {
     const s = setup([r]);
     const outcome = await s.run({ toolId: 'unlock', inputIds: [r.id], passwords: { 0: 'nope' } });
     expect(outcome).toMatchObject({ ok: false, failure: 'wrongPassword', inputIndex: 0 });
+  });
+});
+
+describe('runTool pdf to images', () => {
+  // Three pages (A4, landscape letter, rotated A4) staged as "Report.pdf".
+  const report = () =>
+    row('Report.pdf', { uri: 'file:///storage/emulated/0/Download/mixed-sizes.pdf' });
+
+  it('renders every page and saves each to the gallery folder', async () => {
+    const r = report();
+    const s = setup([r]);
+    const outcome = await s.run({
+      toolId: 'pdf-to-images',
+      inputIds: [r.id],
+      format: 'jpg',
+      dpi: 150,
+      pages: null,
+    });
+    expect(s.native.renderPdfPage.mock.calls).toEqual([
+      [`file://${s.tmp}/j1/in-0.pdf`, 'j1', 1, 150, 'jpg'],
+      [`file://${s.tmp}/j1/in-0.pdf`, 'j1', 2, 150, 'jpg'],
+      [`file://${s.tmp}/j1/in-0.pdf`, 'j1', 3, 150, 'jpg'],
+    ]);
+    expect(s.native.publishImageOutput.mock.calls).toEqual([
+      [`file://${s.tmp}/j1/img-1.jpg`, 'Report p1.jpg', 'Report pages'],
+      [`file://${s.tmp}/j1/img-2.jpg`, 'Report p2.jpg', 'Report pages'],
+      [`file://${s.tmp}/j1/img-3.jpg`, 'Report p3.jpg', 'Report pages'],
+    ]);
+    expect(s.native.releasePageExport).toHaveBeenCalledTimes(1);
+    expect(s.native.publishToolOutput).not.toHaveBeenCalled();
+    expect(outcome).toEqual({
+      ok: true,
+      outputs: [],
+      extras: {
+        images: {
+          count: 3,
+          folder: 'Pictures/PDFToolkit/Report pages',
+          uris: [1, 2, 3].map((n) => `content://media/external/images/media/${n}`),
+          reducedPages: 0,
+        },
+      },
+    });
+    expect(s.events.filter(([p]) => p === 'processing').map(([, f]) => f)).toEqual(
+      expect.arrayContaining([1 / 3, 2 / 3, 1]),
+    );
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/^\[tool\] pdf-to-images \d+ms 3 pages 0 files$/),
+    );
+    expect(fs.existsSync(path.join(s.tmp, 'j1'))).toBe(false);
+  });
+
+  it('renders only the chosen pages', async () => {
+    const r = report();
+    const s = setup([r]);
+    const outcome = await s.run({
+      toolId: 'pdf-to-images',
+      inputIds: [r.id],
+      format: 'png',
+      dpi: 300,
+      pages: [2],
+    });
+    expect(s.native.renderPdfPage).toHaveBeenCalledTimes(1);
+    expect(s.native.renderPdfPage).toHaveBeenCalledWith(
+      `file://${s.tmp}/j1/in-0.pdf`,
+      'j1',
+      2,
+      300,
+      'png',
+    );
+    expect(s.savedImages).toEqual([{ name: 'Report p2.png', folder: 'Report pages' }]);
+    expect(outcome).toMatchObject({ ok: true, extras: { images: { count: 1 } } });
+  });
+
+  it('refuses pages outside the PDF', async () => {
+    const r = report();
+    const s = setup([r]);
+    const outcome = await s.run({
+      toolId: 'pdf-to-images',
+      inputIds: [r.id],
+      format: 'jpg',
+      dpi: 72,
+      pages: [4],
+    });
+    expect(outcome).toMatchObject({ ok: false, failure: 'badPages' });
+    expect(s.native.renderPdfPage).not.toHaveBeenCalled();
+  });
+
+  it('a cancel after the first page keeps the image already saved', async () => {
+    const r = report();
+    const s = setup([r]);
+    s.native.publishImageOutput.mockImplementationOnce(async (tempUri, fileName, folder) => {
+      fs.rmSync(tempPathOf(tempUri));
+      s.savedImages.push({ name: fileName, folder });
+      s.controller.abort();
+      return { uri: 'content://media/external/images/media/1', name: fileName };
+    });
+    const outcome = await s.run({
+      toolId: 'pdf-to-images',
+      inputIds: [r.id],
+      format: 'jpg',
+      dpi: 150,
+      pages: null,
+    });
+    expect(outcome).toEqual({
+      ok: false,
+      failure: 'cancelled',
+      inputIndex: null,
+      outputs: [],
+      extras: {
+        images: {
+          count: 1,
+          folder: 'Pictures/PDFToolkit/Report pages',
+          uris: ['content://media/external/images/media/1'],
+          reducedPages: 0,
+        },
+      },
+    });
+    expect(s.native.renderPdfPage).toHaveBeenCalledTimes(1);
+    expect(s.native.releasePageExport).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts the pages saved at a lower resolution', async () => {
+    const r = report();
+    const s = setup([r]);
+    s.native.renderPdfPage.mockImplementation(async (_uri, jobId, page, _dpi, format) => {
+      const dest = path.join(s.tmp, jobId, `img-${page}.${format}`);
+      fs.writeFileSync(dest, new Uint8Array(10));
+      return { uri: `file://${dest}`, page, width: 10, height: 10, reduced: page === 2 };
+    });
+    const outcome = await s.run({
+      toolId: 'pdf-to-images',
+      inputIds: [r.id],
+      format: 'jpg',
+      dpi: 300,
+      pages: null,
+    });
+    expect(outcome).toMatchObject({ ok: true, extras: { images: { count: 3, reducedPages: 1 } } });
+  });
+
+  it('a refused gallery write fails as permission', async () => {
+    const r = report();
+    const s = setup([r]);
+    s.native.publishImageOutput.mockRejectedValue(nativeError('ERR_PERMISSION_DENIED'));
+    const outcome = await s.run({
+      toolId: 'pdf-to-images',
+      inputIds: [r.id],
+      format: 'jpg',
+      dpi: 150,
+      pages: null,
+    });
+    expect(outcome).toMatchObject({ ok: false, failure: 'permission', inputIndex: null });
+    expect(s.native.releasePageExport).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the decrypted copy of a protected input', async () => {
+    const r = row('protected.pdf');
+    const s = setup([r]);
+    const outcome = await s.run({
+      toolId: 'pdf-to-images',
+      inputIds: [r.id],
+      format: 'jpg',
+      dpi: 72,
+      pages: null,
+      passwords: { 0: 'secret' },
+    });
+    expect(s.native.renderPdfPage).toHaveBeenCalledWith(
+      `file://${s.tmp}/j1/in-0.open.pdf`,
+      'j1',
+      1,
+      72,
+      'jpg',
+    );
+    expect(s.savedImages).toEqual([{ name: 'protected p1.jpg', folder: 'protected pages' }]);
+    expect(outcome).toMatchObject({ ok: true, extras: { images: { count: 1 } } });
   });
 });

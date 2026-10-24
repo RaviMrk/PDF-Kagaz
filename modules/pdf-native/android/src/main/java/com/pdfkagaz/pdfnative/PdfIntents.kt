@@ -13,13 +13,16 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Share / open-with chooser intents for a PDF; file:// sources go through [PdfNativeFileProvider]. */
+/**
+ * Share / open-with chooser intents for a PDF or saved page images; file:// sources go through
+ * [PdfNativeFileProvider].
+ */
 class PdfIntents(private val context: Context) {
   /**
    * Stats [uri] on IO (missing → ERR_FILE_NOT_FOUND / ERR_VOLUME_UNAVAILABLE, no grant →
    * ERR_PERMISSION_DENIED) and returns the URI other apps can read: content:// (other apps'
-   * providers only) as is; reader cache copies through the provider; any other file:// PDF as a
-   * share-cache copy through the provider. Our own providers and app-private files are refused ([UriGuard]).
+   * providers only, MediaStore included) as is; reader cache copies through the provider; any other
+   * file:// PDF or image as a share-cache copy through the provider. Our own providers and app-private files are refused ([UriGuard]).
    */
   suspend fun shareUriOf(uri: String): Uri = RenderSupport.mapErrors {
     withContext(Dispatchers.IO) {
@@ -65,6 +68,40 @@ class PdfIntents(private val context: Context) {
       chooserTitle,
     )
 
+  /** One image: ACTION_SEND; several: ACTION_SEND_MULTIPLE; any image type ([IMAGE_MIME]), a read grant on each. */
+  fun sendImagesChooser(shareUris: List<Uri>, chooserTitle: String): Intent {
+    if (shareUris.isEmpty()) throw FileNotFoundCodedException()
+    val clip = ClipData.newRawUri("", shareUris[0]).apply {
+      for (uri in shareUris.drop(1)) addItem(ClipData.Item(uri))
+    }
+    val target = if (shareUris.size == 1) {
+      Intent(Intent.ACTION_SEND).apply { putExtra(Intent.EXTRA_STREAM, shareUris[0]) }
+    } else {
+      Intent(Intent.ACTION_SEND_MULTIPLE).apply { putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(shareUris)) }
+    }
+    target.type = IMAGE_MIME
+    target.clipData = clip
+    target.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    return chooser(target, chooserTitle)
+  }
+
+  /** ACTION_VIEW of one image (its own type when the provider reports one, else [IMAGE_MIME]). */
+  fun viewImageChooser(shareUri: Uri, chooserTitle: String): Intent {
+    val type = try {
+      context.contentResolver.getType(shareUri)?.takeIf { it.startsWith("image/") }
+    } catch (_: Exception) {
+      null
+    }
+    return chooser(
+      Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(shareUri, type ?: IMAGE_MIME)
+        clipData = ClipData.newRawUri("", shareUri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      },
+      chooserTitle,
+    )
+  }
+
   /** Starts [intent] from the current activity; call on the main thread. */
   fun start(activity: Activity?, intent: Intent) {
     try {
@@ -87,5 +124,6 @@ class PdfIntents(private val context: Context) {
 
   companion object {
     const val AUTHORITY_SUFFIX = ".pdfnative.files"
+    const val IMAGE_MIME = "image/*"
   }
 }

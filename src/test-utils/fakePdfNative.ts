@@ -1,6 +1,7 @@
 import type {
   CompressLevel,
   ImageFilter,
+  ImageFormat,
   IncomingPdfEvent,
   PdfFileInfo,
   PdfNativeApi,
@@ -131,6 +132,22 @@ function createNativeFns(): jest.Mocked<NativeFns> {
         sizeBytes: 900,
       }),
     ),
+    renderPdfPage: jest.fn(
+      (_uri: string, jobId: string, page: number, _dpi: number, format: ImageFormat) =>
+        Promise.resolve({
+          uri: `file:///data/cache/tools/${jobId}/img-${page}.${format}`,
+          page,
+          width: 1240,
+          height: 1754,
+          reduced: false,
+        }),
+    ),
+    releasePageExport: jest.fn().mockResolvedValue(undefined),
+    publishImageOutput: jest.fn((_temp: string, name: string, _folder: string) =>
+      Promise.resolve({ uri: `content://media/external/images/media/${name.length}`, name }),
+    ),
+    shareImages: jest.fn().mockResolvedValue(undefined),
+    viewImage: jest.fn().mockResolvedValue(undefined),
     renderToolThumbnail: jest.fn().mockResolvedValue('file:///tool-thumb.jpg'),
     getToolPageCount: jest.fn().mockResolvedValue(3),
     releaseToolDocument: jest.fn().mockResolvedValue(undefined),
