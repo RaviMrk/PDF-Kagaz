@@ -200,6 +200,35 @@ export interface PdfNativeApi {
   /** Closes the document kept open for page export and frees its bitmap; idempotent. */
   releasePageExport(): Promise<void>;
   /**
+   * Stamps with PdfBox (a native job): workspace file `fileUri` of job `jobId` gets the stamps of
+   * `specJson` (a JSON `StampSpec`, see src/services/pdf/stamp.ts) and is written as
+   * `out-stamped.pdf`. Image `png` URIs must be files of the same workspace (else
+   * ERR_PERMISSION_DENIED); a malformed spec: ERR_INVALID_NAME; encrypted: ERR_PDF_ENCRYPTED.
+   */
+  stampPdf(fileUri: string, jobId: string, specJson: string): Promise<WorkspaceFile>;
+  /**
+   * Renders `text` (any script, bold) in `colorArgb` as a one-line transparent PNG
+   * `stamp-text.png` in the workspace of `jobId`, `heightPx` tall (clamped 64..512). Blank text:
+   * ERR_INVALID_NAME.
+   */
+  renderTextStamp(
+    jobId: string,
+    text: string,
+    colorArgb: number,
+    heightPx: number,
+  ): Promise<PreparedPage>;
+  /**
+   * Prepares source `sourceIndex` of image session `sessionId` as `stamp-image-<sourceIndex>.png`
+   * in the workspace of `jobId`: alpha kept, EXIF-upright, long side at most `maxLongSidePx`
+   * (clamped 256..2048).
+   */
+  prepareStampImage(
+    sessionId: string,
+    sourceIndex: number,
+    jobId: string,
+    maxLongSidePx: number,
+  ): Promise<PreparedPage>;
+  /**
    * Saves a workspace image (`.jpg` / `.png` name, else ERR_INVALID_NAME) to the gallery in
    * Pictures/PDFToolkit/<folder> under a free name (never overwrites), then deletes the workspace
    * file. API 29+: MediaStore, no permission. API 24–28: needs storage access, else
@@ -359,6 +388,11 @@ export const pdfNative: PdfNativeApi = {
   renderPdfPage: (fileUri, jobId, page, dpi, format) =>
     PdfNative.renderPdfPage(fileUri, jobId, page, dpi, format),
   releasePageExport: () => PdfNative.releasePageExport(),
+  stampPdf: (fileUri, jobId, specJson) => PdfNative.stampPdf(fileUri, jobId, specJson),
+  renderTextStamp: (jobId, text, colorArgb, heightPx) =>
+    PdfNative.renderTextStamp(jobId, text, colorArgb, heightPx),
+  prepareStampImage: (sessionId, sourceIndex, jobId, maxLongSidePx) =>
+    PdfNative.prepareStampImage(sessionId, sourceIndex, jobId, maxLongSidePx),
   publishImageOutput: (tempUri, fileName, folder) =>
     PdfNative.publishImageOutput(tempUri, fileName, folder),
   shareImages: (uris, chooserTitle) => PdfNative.shareImages(uris, chooserTitle),

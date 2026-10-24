@@ -107,6 +107,22 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
     format: ImageFormat,
   ): Promise<RenderedPage>;
   releasePageExport(): Promise<void>;
+  /** Workspace files of `jobId` only (PNGs too); `specJson` = a JSON `StampSpec`; writes `out-stamped.pdf`. */
+  stampPdf(fileUri: string, jobId: string, specJson: string): Promise<WorkspaceFile>;
+  /** One line of bold text as a transparent PNG (`stamp-text.png`), height clamped 64..512 px. */
+  renderTextStamp(
+    jobId: string,
+    text: string,
+    colorArgb: number,
+    heightPx: number,
+  ): Promise<PreparedPage>;
+  /** Image session source → `stamp-image-<sourceIndex>.png` (alpha kept, upright, long side 256..2048). */
+  prepareStampImage(
+    sessionId: string,
+    sourceIndex: number,
+    jobId: string,
+    maxLongSidePx: number,
+  ): Promise<PreparedPage>;
   /** Workspace file → Pictures/PDFToolkit/<folder>/ under a free name; deletes the workspace file. */
   publishImageOutput(tempUri: string, fileName: string, folder: string): Promise<SavedImage>;
   shareImages(uris: string[], chooserTitle: string): Promise<void>;

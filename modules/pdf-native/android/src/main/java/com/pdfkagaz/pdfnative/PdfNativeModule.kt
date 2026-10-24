@@ -263,6 +263,36 @@ class PdfNativeModule : Module() {
       }
     }
 
+    // Watermark / page numbers / signatures over the JS caps; the spec comes as a JSON string.
+    AsyncFunction("stampPdf") Coroutine { fileUri: String, jobId: String, specJson: String ->
+      RenderSupport.mapErrors {
+        withContext(Dispatchers.IO) {
+          val control = beginToolJob(jobId)
+          try {
+            PdfStamper.stampInWorkspace(context, jobId, fileUri, specJson, control)
+          } finally {
+            NativeJobs.end(jobId)
+          }
+        }
+      }
+    }
+
+    // ARGB arrives as a JS number (0xff808080 is over Int.MAX_VALUE), so it is read as a Double.
+    AsyncFunction("renderTextStamp") Coroutine { jobId: String, text: String, colorArgb: Double, heightPx: Int ->
+      RenderSupport.mapErrors {
+        withContext(Dispatchers.IO) {
+          if (!ToolPaths.isValidJobId(jobId) || !colorArgb.isFinite()) throw InvalidNameException()
+          val dir = File(File(context.cacheDir, ToolPaths.DIR), jobId)
+          if (!dir.isDirectory && !dir.mkdirs()) throw IoCodedException()
+          TextStamp.render(text, colorArgb.toLong().toInt(), heightPx, File(dir, "stamp-text.png"))
+        }
+      }
+    }
+
+    AsyncFunction("prepareStampImage") Coroutine { sessionId: String, sourceIndex: Int, jobId: String, maxLongSidePx: Int ->
+      stampImages.prepare(sessionId, sourceIndex, jobId, maxLongSidePx)
+    }
+
     AsyncFunction("renderToolThumbnail") Coroutine { fileUri: String, page: Int, width: Int ->
       toolThumbnails.render(fileUri, page, width)
     }
@@ -417,6 +447,8 @@ class PdfNativeModule : Module() {
   private val security by lazy { PdfSecurity(context) }
 
   private val imageFiles by lazy { ImageFiles(context) }
+
+  private val stampImages by lazy { StampImages(context) }
 
   private val imageThumbnails by lazy { ImageThumbnails(context) }
 

@@ -76,3 +76,95 @@ export async function inspectImages(bytes: Uint8Array): Promise<
     };
   });
 }
+
+type Matrix = [number, number, number, number, number, number];
+
+function multiply(m: Matrix, n: Matrix): Matrix {
+  // m (new cm) applied before the current CTM n: m × n
+  return [
+    m[0] * n[0] + m[1] * n[2],
+    m[0] * n[1] + m[1] * n[3],
+    m[2] * n[0] + m[3] * n[2],
+    m[2] * n[1] + m[3] * n[3],
+    m[4] * n[0] + m[5] * n[2] + n[4],
+    m[4] * n[1] + m[5] * n[3] + n[5],
+  ];
+}
+
+const CONTENT_TOKEN = /\((?:\\.|[^\\)])*\)|<[^>]*>|\[|\]|\/[^\s/[\]()<>]+|[^\s/[\]()<>]+/g;
+
+/**
+ * Per page: the decoded content, how many image XObjects it draws (`Do`), which image objects,
+ * the `/ca` of its ExtGStates, and where each image lands: the CTM at its `Do` read as a
+ * placement (origin x/y, width, height, rotation in degrees counter-clockwise, 0..360).
+ */
+export async function inspectStamps(bytes: Uint8Array) {
+  const doc = await loadStrict(bytes);
+  return doc.getPages().map((page) => {
+    const streams = page.node.Contents();
+    const refs = streams instanceof PDFArray ? streams.asArray() : streams ? [streams] : [];
+    let content = '';
+    for (const ref of refs) {
+      const stream = doc.context.lookup(ref);
+      if (stream instanceof PDFRawStream) {
+        content += Buffer.from(decodePDFRawStream(stream).decode()).toString('latin1') + '\n';
+      }
+    }
+    const resources = page.node.Resources();
+    const xObjects = resources?.lookupMaybe(PDFName.of('XObject'), PDFDict);
+    const images = new Map<string, string>();
+    for (const [name, ref] of xObjects?.entries() ?? []) {
+      const stream = doc.context.lookup(ref);
+      if (
+        stream instanceof PDFRawStream &&
+        stream.dict.lookup(PDFName.of('Subtype')) === PDFName.of('Image')
+      ) {
+        images.set(name.asString(), ref.toString());
+      }
+    }
+    const opacities: number[] = [];
+    const states = resources?.lookupMaybe(PDFName.of('ExtGState'), PDFDict);
+    for (const [, ref] of states?.entries() ?? []) {
+      const state = doc.context.lookup(ref);
+      const ca = state instanceof PDFDict ? state.lookup(PDFName.of('ca')) : undefined;
+      if (ca instanceof PDFNumber) opacities.push(ca.asNumber());
+    }
+    const placements: { x: number; y: number; width: number; height: number; rotate: number }[] =
+      [];
+    const imageRefs: string[] = [];
+    let ctm: Matrix = [1, 0, 0, 1, 0, 0];
+    const stack: Matrix[] = [];
+    const operands: string[] = [];
+    for (const token of content.match(CONTENT_TOKEN) ?? []) {
+      if (
+        /^[A-Za-z'"*]+$/.test(token) &&
+        token !== 'true' &&
+        token !== 'false' &&
+        token !== 'null'
+      ) {
+        if (token === 'q') stack.push(ctm);
+        else if (token === 'Q') ctm = stack.pop() ?? [1, 0, 0, 1, 0, 0];
+        else if (token === 'cm') ctm = multiply(operands.slice(-6).map(Number) as Matrix, ctm);
+        else if (token === 'Do') {
+          const ref = images.get(operands[operands.length - 1] ?? '');
+          if (ref !== undefined) {
+            imageRefs.push(ref);
+            const [a, b, c, d, e, f] = ctm;
+            const rotate = ((((Math.atan2(b, a) * 180) / Math.PI) % 360) + 360) % 360;
+            placements.push({
+              x: e,
+              y: f,
+              width: Math.hypot(a, b),
+              height: Math.hypot(c, d),
+              rotate,
+            });
+          }
+        }
+        operands.length = 0;
+      } else {
+        operands.push(token);
+      }
+    }
+    return { content, imageDraws: imageRefs.length, imageRefs, opacities, placements };
+  });
+}

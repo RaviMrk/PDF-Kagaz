@@ -143,6 +143,29 @@ function createNativeFns(): jest.Mocked<NativeFns> {
         }),
     ),
     releasePageExport: jest.fn().mockResolvedValue(undefined),
+    stampPdf: jest.fn((_uri: string, jobId: string, _specJson: string) =>
+      Promise.resolve({
+        uri: `file:///data/cache/tools/${jobId}/out-stamped.pdf`,
+        sizeBytes: 1200,
+      }),
+    ),
+    renderTextStamp: jest.fn((jobId: string, _text: string, _color: number, heightPx: number) =>
+      Promise.resolve({
+        uri: `file:///data/cache/tools/${jobId}/stamp-text.png`,
+        width: heightPx * 4,
+        height: heightPx,
+        sizeBytes: 2000,
+      }),
+    ),
+    prepareStampImage: jest.fn(
+      (_session: string, sourceIndex: number, jobId: string, _maxLongSide: number) =>
+        Promise.resolve({
+          uri: `file:///data/cache/tools/${jobId}/stamp-image-${sourceIndex}.png`,
+          width: 200,
+          height: 100,
+          sizeBytes: 2000,
+        }),
+    ),
     publishImageOutput: jest.fn((_temp: string, name: string, folder: string) =>
       Promise.resolve({
         uri: `content://media/external/images/media/${name.length}`,

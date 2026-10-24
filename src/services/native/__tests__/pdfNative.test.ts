@@ -192,6 +192,26 @@ describe('pdfNative', () => {
     expect(mockedModule.assemblePdf).toHaveBeenCalledWith('j1', inputs, json, 4);
   });
 
+  it('forwards the stamping calls with every argument in order', async () => {
+    const spec = '{"stamps":[]}';
+    await expect(
+      pdfNative.stampPdf('file:///data/cache/tools/j1/in-0.pdf', 'j1', spec),
+    ).resolves.toEqual({ uri: 'file:///data/cache/tools/j1/out-stamped.pdf', sizeBytes: 1200 });
+    expect(mockedModule.stampPdf).toHaveBeenCalledWith(
+      'file:///data/cache/tools/j1/in-0.pdf',
+      'j1',
+      spec,
+    );
+    await expect(pdfNative.renderTextStamp('j1', 'DRAFT', 0xff808080, 256)).resolves.toMatchObject({
+      uri: 'file:///data/cache/tools/j1/stamp-text.png',
+    });
+    expect(mockedModule.renderTextStamp).toHaveBeenCalledWith('j1', 'DRAFT', 0xff808080, 256);
+    await expect(pdfNative.prepareStampImage('img-a', 1, 'j1', 2048)).resolves.toMatchObject({
+      uri: 'file:///data/cache/tools/j1/stamp-image-1.png',
+    });
+    expect(mockedModule.prepareStampImage).toHaveBeenCalledWith('img-a', 1, 'j1', 2048);
+  });
+
   it('forwards the image pipeline with every argument in order', async () => {
     await expect(pdfNative.importImage('content://x/1', 'img-a', 2, 52428800)).resolves.toEqual({
       index: 2,
