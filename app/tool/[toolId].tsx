@@ -10,10 +10,11 @@ import { MergeOptions } from '@/components/tools/MergeOptions';
 import { PickFilesList } from '@/components/tools/PickFilesList';
 import { ProgressSheet } from '@/components/tools/ProgressSheet';
 import { SplitOptions } from '@/components/tools/SplitOptions';
+import { usePasswordPrompts } from '@/components/tools/usePasswordPrompts';
 import type { FileRow } from '@/db/schema';
 import { checkInputSizes } from '@/services/tools/limits';
 import { pickDocuments } from '@/services/tools/pickDocuments';
-import type { ToolRequest } from '@/services/tools/runTool';
+import type { Passwords, PdfToolRequest, ToolRequest } from '@/services/tools/runTool';
 import { knownSize } from '@/services/tools/toolFailure';
 import {
   canContinue,
@@ -73,6 +74,8 @@ function ToolFlow({ tool, inputIds }: { tool: ToolDef; inputIds: string[] }) {
   );
   // One start per tap: a second press can land before the job id re-renders.
   const starting = useRef(false);
+  const asking = useRef(false);
+  const { dialog, ask } = usePasswordPrompts();
   const [notice, setNotice] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const active = useToolJobs((s) => s.active);
@@ -120,6 +123,22 @@ function ToolFlow({ tool, inputIds }: { tool: ToolDef; inputIds: string[] }) {
     setNotice(t(result.reason === 'busy' ? 'toolError.busy' : 'toolError.unknown'));
   };
 
+  // Locked inputs are asked for first; Cancel starts nothing.
+  const runAsked = async (request: PdfToolRequest) => {
+    if (starting.current || asking.current) return;
+    asking.current = true;
+    setNotice(null);
+    let passwords: Passwords | null;
+    try {
+      // In request order: a password belongs to its input index.
+      passwords = await ask(request.inputIds.flatMap((id) => rows.find((r) => r.id === id) ?? []));
+    } finally {
+      asking.current = false;
+    }
+    if (passwords === null) return;
+    run(Object.keys(passwords).length > 0 ? { ...request, passwords } : request);
+  };
+
   const back = () => {
     setNotice(null);
     if (backToPick) setFlow((f) => ({ ...f, step: 'pick' }));
@@ -158,17 +177,25 @@ function ToolFlow({ tool, inputIds }: { tool: ToolDef; inputIds: string[] }) {
             <MergeOptions
               rows={rows}
               onChange={(ids) => setFlow((f) => ({ ...f, selectedIds: ids }))}
-              onRun={() => run({ toolId: 'merge', inputIds: rows.map((r) => r.id) })}
+              onRun={() => void runAsked({ toolId: 'merge', inputIds: rows.map((r) => r.id) })}
             />
           ) : null}
           {tool.id === 'split' && rows[0] ? (
             <SplitOptions
               row={rows[0]}
-              onRun={(split) => run({ toolId: 'split', inputIds: [rows[0]!.id], split })}
+              onRun={(split, passwords) =>
+                run({
+                  toolId: 'split',
+                  inputIds: [rows[0]!.id],
+                  split,
+                  ...(passwords ? { passwords } : {}),
+                })
+              }
             />
           ) : null}
         </View>
       )}
+      {dialog}
       <ProgressSheet
         visible={running !== null}
         title={t(`progress.title.${tool.id}`)}

@@ -5,7 +5,9 @@ import type {
   ImageFilter,
   ImportedImage,
   IncomingPdfEvent,
+  PasswordCheck,
   PdfFileInfo,
+  PdfLock,
   PickedFolder,
   PickedImageUris,
   PreparedPage,
@@ -14,6 +16,7 @@ import type {
   ScanResult,
   StagedInput,
   ToolProgressEvent,
+  WorkspaceFile,
 } from '../../../modules/pdf-native';
 
 export type {
@@ -22,7 +25,9 @@ export type {
   ImageFilter,
   ImportedImage,
   IncomingPdfEvent,
+  PasswordCheck,
   PdfFileInfo,
+  PdfLock,
   PickedFolder,
   PickedImageUris,
   PreparedPage,
@@ -121,6 +126,25 @@ export interface PdfNativeApi {
   cleanToolWorkspace(jobId: string): Promise<void>;
   /** Deletes tool leftovers older than `olderThanMs` (epoch ms); returns how many. */
   cleanupToolLeftovers(olderThanMs: number): Promise<number>;
+  /**
+   * How a PDF (a source this app may read, or a tool workspace file) is locked; read in place
+   * through a descriptor. Damaged → ERR_PDF_INVALID.
+   */
+  inspectPdf(uri: string): Promise<PdfLock>;
+  /** Whether `password` opens the PDF with permission to change it. Never logged or stored. */
+  checkPdfPassword(uri: string, password: string): Promise<PasswordCheck>;
+  /**
+   * Writes a decrypted copy of workspace file `fileUri` of job `jobId` as `in-<index>.open.pdf`
+   * (a native job: cancelNativeTool stops it). Null `password` tries the empty one. Rejects with
+   * ERR_PDF_ENCRYPTED (a password is needed), ERR_PASSWORD_WRONG, or ERR_PASSWORD_RESTRICTED (it
+   * opens, but without permission to change it). Other files: ERR_PERMISSION_DENIED.
+   */
+  unlockToolInput(
+    fileUri: string,
+    jobId: string,
+    index: number,
+    password: string | null,
+  ): Promise<WorkspaceFile>;
   /**
    * Page thumbnail of a tool workspace file (anything else: ERR_PERMISSION_DENIED), on its own
    * lane apart from the reader and Files list; 1-based page, width clamped to 1..512.
@@ -259,6 +283,10 @@ export const pdfNative: PdfNativeApi = {
   cancelNativeTool: (jobId) => PdfNative.cancelNativeTool(jobId),
   cleanToolWorkspace: (jobId) => PdfNative.cleanToolWorkspace(jobId),
   cleanupToolLeftovers: (olderThanMs) => PdfNative.cleanupToolLeftovers(olderThanMs),
+  inspectPdf: (uri) => PdfNative.inspectPdf(uri),
+  checkPdfPassword: (uri, password) => PdfNative.checkPdfPassword(uri, password),
+  unlockToolInput: (fileUri, jobId, index, password) =>
+    PdfNative.unlockToolInput(fileUri, jobId, index, password),
   renderToolThumbnail: (fileUri, page, width) =>
     PdfNative.renderToolThumbnail(fileUri, page, width),
   getToolPageCount: (fileUri) => PdfNative.getToolPageCount(fileUri),

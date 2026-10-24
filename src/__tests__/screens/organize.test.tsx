@@ -177,10 +177,45 @@ describe('organise screen', () => {
   });
 
   it('explains an encrypted file without offering Save', async () => {
-    preview.mockResolvedValue({ ok: false, failure: 'encrypted' });
+    preview.mockResolvedValue({ ok: false, failure: 'encrypted', lock: 'password' });
     await open();
+    // The password prompt comes first; without a password nothing can be organised.
+    await press('Cancel');
     expect(screen.getByText(/password/i)).toBeTruthy();
     expect(screen.queryByLabelText('Save as new PDF')).toBeNull();
+  });
+
+  it('asks for the password of a locked file, then edits and saves it with that password', async () => {
+    preview.mockImplementation((_row, opts) =>
+      Promise.resolve(
+        opts?.password === 'secret'
+          ? { ok: true as const, preview: { fileUri: FILE_URI, pageCount: 3, close } }
+          : { ok: false as const, failure: 'encrypted' as const, lock: 'password' as const },
+      ),
+    );
+    await open();
+    expect(
+      screen.getByText('"a.pdf" is protected. Enter its password to use it in this tool.'),
+    ).toBeTruthy();
+    await fireEvent.changeText(screen.getByPlaceholderText('Password'), 'secret');
+    await press('Use');
+    expect(preview).toHaveBeenLastCalledWith(a, { password: 'secret' });
+    expect(screen.getByText('Page 3')).toBeTruthy();
+    await select(3);
+    await press('Delete page 3');
+    await press('Save as new PDF');
+    expect(start).toHaveBeenCalledWith(
+      {
+        toolId: 'organize',
+        inputIds: ['id-a.pdf'],
+        pages: [
+          { source: 1, rotate: 0 },
+          { source: 2, rotate: 0 },
+        ],
+        passwords: { 0: 'secret' },
+      },
+      expect.any(Function),
+    );
   });
 
   it('rejects documents over 300 pages', async () => {

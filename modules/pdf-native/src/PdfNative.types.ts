@@ -38,6 +38,16 @@ export type ReaderFile = { uri: string; copied: boolean; sizeBytes: number };
  */
 export type WorkspaceFile = { uri: string; sizeBytes: number };
 
+/**
+ * How a PDF is locked: not encrypted (`none`), encrypted but the empty password allows changes
+ * (`open`), a password is needed to open it (`password`), or it opens but forbids changes, so the
+ * owner password is needed (`restricted`).
+ */
+export type PdfLock = 'none' | 'open' | 'password' | 'restricted';
+
+/** A password opens the PDF with permission to change it (`ok`), does not open it, or only views it. */
+export type PasswordCheck = 'ok' | 'wrong' | 'restricted';
+
 /** A tool input copied into the job workspace; `sizeBytes` is the number of bytes copied. */
 export type StagedInput = WorkspaceFile;
 

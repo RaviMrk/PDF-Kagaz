@@ -198,6 +198,29 @@ class PdfNativeModule : Module() {
       toolFiles.cleanupLeftovers(olderThanMs)
     }
 
+    // Passwords stay in these calls: never logged, never put into an error.
+    AsyncFunction("inspectPdf") Coroutine { uri: String ->
+      RenderSupport.mapErrors { withContext(Dispatchers.IO) { security.inspect(Uri.parse(uri)) } }
+    }
+
+    AsyncFunction("checkPdfPassword") Coroutine { uri: String, password: String ->
+      RenderSupport.mapErrors { withContext(Dispatchers.IO) { security.check(Uri.parse(uri), password) } }
+    }
+
+    // A native job of [jobId], so cancelNativeTool stops it before it writes.
+    AsyncFunction("unlockToolInput") Coroutine { fileUri: String, jobId: String, index: Int, password: String? ->
+      RenderSupport.mapErrors {
+        withContext(Dispatchers.IO) {
+          val control = beginToolJob(jobId)
+          try {
+            security.unlockWorkspaceInput(Uri.parse(fileUri), jobId, index, password, control::check)
+          } finally {
+            NativeJobs.end(jobId)
+          }
+        }
+      }
+    }
+
     AsyncFunction("renderToolThumbnail") Coroutine { fileUri: String, page: Int, width: Int ->
       toolThumbnails.render(fileUri, page, width)
     }
@@ -313,6 +336,8 @@ class PdfNativeModule : Module() {
   private val toolFiles by lazy { ToolFiles(context) }
 
   private val toolThumbnails by lazy { ToolThumbnails(context) }
+
+  private val security by lazy { PdfSecurity(context) }
 
   private val imageFiles by lazy { ImageFiles(context) }
 

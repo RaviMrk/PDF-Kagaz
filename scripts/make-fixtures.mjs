@@ -51,10 +51,23 @@ const many = await newDoc();
 for (let i = 1; i <= 200; i++) addTextPage(many.doc, many.font, `Page ${i}`);
 write('two-hundred-pages.pdf', await many.doc.save());
 
-// protected.pdf
+// protected.pdf: needs the user password "secret", which allows everything (pdf-lib's default
+// permissions are none, which would make it restricted too: see owner-only.pdf for that case)
 const prot = await newDoc();
 addTextPage(prot.doc, prot.font, 'Protected');
-prot.doc.encrypt({ userPassword: 'secret', ownerPassword: 'owner' });
+prot.doc.encrypt({
+  userPassword: 'secret',
+  ownerPassword: 'owner',
+  permissions: {
+    printing: 'highResolution',
+    modifying: true,
+    copying: true,
+    annotating: true,
+    fillingForms: true,
+    contentAccessibility: true,
+    documentAssembly: true,
+  },
+});
 write('protected.pdf', await prot.doc.save());
 
 // owner-only.pdf: opens without a password, but the owner password forbids changes and copying

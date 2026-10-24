@@ -167,6 +167,21 @@ describe('pdfNative', () => {
     expect(mockedModule.releaseToolDocument).toHaveBeenCalledTimes(1);
   });
 
+  it('forwards inspect, the password check and unlock with every argument', async () => {
+    mockedModule.inspectPdf.mockResolvedValueOnce('password');
+    await expect(pdfNative.inspectPdf('content://p/a.pdf')).resolves.toBe('password');
+    expect(mockedModule.inspectPdf).toHaveBeenCalledWith('content://p/a.pdf');
+    mockedModule.checkPdfPassword.mockResolvedValueOnce('wrong');
+    await expect(pdfNative.checkPdfPassword('content://p/a.pdf', 'pw')).resolves.toBe('wrong');
+    expect(mockedModule.checkPdfPassword).toHaveBeenCalledWith('content://p/a.pdf', 'pw');
+    const staged = 'file:///data/cache/tools/j1/in-1.pdf';
+    await expect(pdfNative.unlockToolInput(staged, 'j1', 1, null)).resolves.toEqual({
+      uri: 'file:///data/cache/tools/j1/in-1.open.pdf',
+      sizeBytes: 1000,
+    });
+    expect(mockedModule.unlockToolInput).toHaveBeenCalledWith(staged, 'j1', 1, null);
+  });
+
   it('forwards the image pipeline with every argument in order', async () => {
     await expect(pdfNative.importImage('content://x/1', 'img-a', 2, 52428800)).resolves.toEqual({
       index: 2,

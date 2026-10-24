@@ -35,6 +35,8 @@ let retry: jest.Mock<StartResult>;
 let cancel: jest.Mock;
 let dismiss: jest.Mock;
 
+const NO_PASSWORD_NOTE =
+  'The new file has no password. Use Protect with password to lock it again.';
 const done = (outcome: ToolOutcome): JobView => ({ kind: 'done', toolId: 'merge', outcome });
 
 async function open(url = '/result?jobId=j1') {
@@ -85,7 +87,16 @@ describe('result screen', () => {
     expect(screen.getByText('Saved to Documents/PDFToolkit')).toBeTruthy();
     expect(screen.getByText('a merged.pdf')).toBeTruthy();
     expect(screen.getByText('b.pdf')).toBeTruthy();
+    expect(screen.queryByText(NO_PASSWORD_NOTE)).toBeNull();
     expect(markSeen).toHaveBeenCalledWith('j1');
+  });
+
+  it('says when the new file has no password (a locked input was decrypted)', async () => {
+    outcomeOf.mockReturnValue(
+      done({ ok: true, outputs: [merged], extras: { passwordRemoved: true } }),
+    );
+    await open();
+    expect(screen.getByText(NO_PASSWORD_NOTE)).toBeTruthy();
   });
 
   it('opens, shares and saves a copy of an output', async () => {

@@ -12,10 +12,25 @@ type Props = {
   wrong: boolean;
   onSubmit(password: string): void;
   onCancel(): void;
+  /** Replaces the reader's body text (`password.body`). */
+  body?: string;
+  /** Replaces the submit label (`password.open`). */
+  submitLabel?: string;
+  /** Shown instead of `password.wrong` when `wrong`. */
+  errorText?: string | null;
 };
 
 /** Asks for a PDF's password. The value is handed to `onSubmit` and never stored here afterwards. */
-export function PasswordDialog({ visible, fileName, wrong, onSubmit, onCancel }: Props) {
+export function PasswordDialog({
+  visible,
+  fileName,
+  wrong,
+  onSubmit,
+  onCancel,
+  body,
+  submitLabel,
+  errorText,
+}: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const [value, setValue] = useState('');
@@ -41,7 +56,7 @@ export function PasswordDialog({ visible, fileName, wrong, onSubmit, onCancel }:
             {t('password.title')}
           </Text>
           <Text style={[styles.body, { color: colors.text }]}>
-            {t('password.body', { name: fileName })}
+            {body ?? t('password.body', { name: fileName })}
           </Text>
           <View style={[styles.field, { borderColor: colors.border }]}>
             <TextInput
@@ -73,7 +88,7 @@ export function PasswordDialog({ visible, fileName, wrong, onSubmit, onCancel }:
           </View>
           {wrong ? (
             <Text accessibilityLiveRegion="polite" style={{ color: colors.danger }}>
-              {t('password.wrong')}
+              {errorText ?? t('password.wrong')}
             </Text>
           ) : null}
           <View style={styles.actions}>
@@ -89,7 +104,7 @@ export function PasswordDialog({ visible, fileName, wrong, onSubmit, onCancel }:
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={t('password.open')}
+              accessibilityLabel={submitLabel ?? t('password.open')}
               accessibilityState={{ disabled: empty }}
               disabled={empty}
               onPress={submit}
@@ -98,7 +113,7 @@ export function PasswordDialog({ visible, fileName, wrong, onSubmit, onCancel }:
               <Text
                 style={[styles.buttonText, { color: empty ? colors.textMuted : colors.primary }]}
               >
-                {t('password.open')}
+                {submitLabel ?? t('password.open')}
               </Text>
             </Pressable>
           </View>

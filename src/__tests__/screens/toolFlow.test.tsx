@@ -69,6 +69,8 @@ describe('tool flow', () => {
       ok: true,
       preview: { fileUri: 'file:///cache/p.pdf', pageCount: 10, close: jest.fn() },
     });
+    jest.mocked(PdfNativeModule.inspectPdf).mockResolvedValue('none');
+    jest.mocked(PdfNativeModule.checkPdfPassword).mockResolvedValue('ok');
   });
 
   it('picks, orders and merges, then follows the job to the result', async () => {
@@ -277,8 +279,10 @@ describe('tool flow', () => {
   });
 
   it('shows why a PDF cannot be split and offers no Split button', async () => {
-    preview.mockResolvedValue({ ok: false, failure: 'encrypted' });
+    preview.mockResolvedValue({ ok: false, failure: 'encrypted', lock: 'password' });
     await open(`/tool/split?inputs=${ID_A}`);
+    // The password prompt comes first; without a password the file cannot be split.
+    await press('Cancel');
     expect(
       screen.getByText(
         '"ha.pdf" is password-protected. Start the tool again and enter its password.',
@@ -408,5 +412,82 @@ describe('tool flow', () => {
     await open(`/tool/merge?inputs=${ID_A},${ID_B}`);
     await press('Merge 2 PDFs');
     expect(screen.getByText('Another tool is still running. Wait for it to finish.')).toBeTruthy();
+  });
+  describe('password-protected inputs', () => {
+    it('asks for a locked merge input on Run; Cancel starts nothing', async () => {
+      jest
+        .mocked(PdfNativeModule.inspectPdf)
+        .mockImplementation((uri: string) => Promise.resolve(uri === b.uri ? 'password' : 'none'));
+      jest
+        .mocked(PdfNativeModule.checkPdfPassword)
+        .mockImplementation((_uri: string, pw: string) =>
+          Promise.resolve(pw === 'secret' ? 'ok' : 'wrong'),
+        );
+      await open('/tools');
+      await press('Merge');
+      await press('Select a.pdf');
+      await press('Select b.pdf');
+      await press('Next');
+      expect(screen.queryByPlaceholderText('Password')).toBeNull();
+      await press('Merge 2 PDFs');
+      expect(
+        screen.getByText('"b.pdf" is protected. Enter its password to use it in this tool.'),
+      ).toBeTruthy();
+      await press('Cancel');
+      expect(start).not.toHaveBeenCalled();
+      expect(screen.queryByPlaceholderText('Password')).toBeNull();
+
+      await press('Merge 2 PDFs');
+      await fireEvent.changeText(screen.getByPlaceholderText('Password'), 'nope');
+      await press('Use');
+      expect(screen.getByText('Wrong password. Try again.')).toBeTruthy();
+      expect(start).not.toHaveBeenCalled();
+      await fireEvent.changeText(screen.getByPlaceholderText('Password'), 'secret');
+      await press('Use');
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(start).toHaveBeenCalledWith(
+        { toolId: 'merge', inputIds: [a.id, b.id], passwords: { 1: 'secret' } },
+        expect.any(Function),
+      );
+    });
+
+    it('asks for the password of a locked file to split, then passes it with the job', async () => {
+      preview.mockImplementation((_row, opts) =>
+        Promise.resolve(
+          opts?.password === 'secret'
+            ? {
+                ok: true as const,
+                preview: { fileUri: 'file:///cache/p.open.pdf', pageCount: 10, close: jest.fn() },
+              }
+            : {
+                ok: false as const,
+                failure: opts?.password ? ('wrongPassword' as const) : ('encrypted' as const),
+                lock: 'password' as const,
+              },
+        ),
+      );
+      await open(`/tool/split?inputs=${ID_A}`);
+      expect(
+        screen.getByText('"ha.pdf" is protected. Enter its password to use it in this tool.'),
+      ).toBeTruthy();
+      await fireEvent.changeText(screen.getByPlaceholderText('Password'), 'nope');
+      await press('Use');
+      expect(screen.getByText('Wrong password. Try again.')).toBeTruthy();
+      await fireEvent.changeText(screen.getByPlaceholderText('Password'), 'secret');
+      await press('Use');
+      expect(preview).toHaveBeenLastCalledWith(hexA, { password: 'secret' });
+      expect(screen.getByText('10 pages')).toBeTruthy();
+      await fireEvent.changeText(screen.getByLabelText('Ranges (one file each)'), '1-3');
+      await press('Split');
+      expect(start).toHaveBeenCalledWith(
+        {
+          toolId: 'split',
+          inputIds: [ID_A],
+          split: { mode: 'ranges', ranges: '1-3' },
+          passwords: { 0: 'secret' },
+        },
+        expect.any(Function),
+      );
+    });
   });
 });

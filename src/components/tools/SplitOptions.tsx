@@ -1,67 +1,36 @@
-import { useEffect, useEffectEvent, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { SegmentedControl } from '@/components/SegmentedControl';
 import { PagePicker } from '@/components/tools/PagePicker';
 import { RunButton } from '@/components/tools/RunButton';
+import { useToolPreview } from '@/components/tools/useToolPreview';
 import type { FileRow } from '@/db/schema';
 import { failureMessage } from '@/services/tools/failureMessage';
-import type { SplitOptions as SplitRequest } from '@/services/tools/runTool';
-import type { ToolFailure } from '@/services/tools/toolJobRepo';
-import { openToolPreview, type ToolPreview } from '@/services/tools/toolPreview';
+import type { Passwords, SplitOptions as SplitRequest } from '@/services/tools/runTool';
 import { useTheme } from '@/theme/useTheme';
 import { toAsciiDigits } from '@/utils/digits';
 import { formatPageRanges, parsePageRanges } from '@/utils/pageRanges';
 
-type Props = { row: FileRow; onRun(split: SplitRequest): void };
+/** `passwords` is set when the file is locked: the password that opened its preview. */
+type Props = { row: FileRow; onRun(split: SplitRequest, passwords?: Passwords): void };
 type Mode = SplitRequest['mode'];
-type Loaded =
-  | { kind: 'loading' }
-  | { kind: 'failed'; failure: ToolFailure }
-  | { kind: 'ready'; fileUri: string; pageCount: number };
-const LOADING: Loaded = { kind: 'loading' };
 
 const capitalise = (s: string) => `${s[0]!.toUpperCase()}${s.slice(1)}`;
 
 export function SplitOptions({ row, onRun }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const fileKey = `${row.id}\n${row.uri}`;
-  // A result for another file (the row changed) reads as loading until its own preview opens.
-  const [result, setResult] = useState<{ fileKey: string; loaded: Loaded } | null>(null);
-  const loaded = result?.fileKey === fileKey ? result.loaded : LOADING;
-
-  const open = useEffectEvent(() => openToolPreview(row));
   // The preview stages the file for page counts and thumbnails; it lives as long as this step.
-  // Keyed by file, not row object: a thumbnail or favourite update must not restage the file.
-  useEffect(() => {
-    let alive = true;
-    let preview: ToolPreview | null = null;
-    void open().then((r) => {
-      if (!r.ok) {
-        if (alive) setResult({ fileKey, loaded: { kind: 'failed', failure: r.failure } });
-        return;
-      }
-      if (!alive) {
-        r.preview.close();
-        return;
-      }
-      preview = r.preview;
-      const { fileUri, pageCount } = r.preview;
-      setResult({ fileKey, loaded: { kind: 'ready', fileUri, pageCount } });
-    });
-    return () => {
-      alive = false;
-      preview?.close();
-    };
-  }, [fileKey]);
+  const { state: loaded, password, dialog } = useToolPreview(row);
 
   if (loaded.kind === 'loading') {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={colors.primary} />
         <Text style={{ color: colors.textMuted }}>{t('tool.loadingPages')}</Text>
+        {dialog}
       </View>
     );
   }
@@ -74,7 +43,13 @@ export function SplitOptions({ row, onRun }: Props) {
       </View>
     );
   }
-  return <SplitForm fileUri={loaded.fileUri} pageCount={loaded.pageCount} onRun={onRun} />;
+  return (
+    <SplitForm
+      fileUri={loaded.fileUri}
+      pageCount={loaded.pageCount}
+      onRun={(split) => (password === null ? onRun(split) : onRun(split, { 0: password }))}
+    />
+  );
 }
 
 type FormProps = { fileUri: string; pageCount: number; onRun(split: SplitRequest): void };

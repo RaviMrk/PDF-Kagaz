@@ -74,4 +74,67 @@ describe('openToolPreview', () => {
     expect(native.cleanToolWorkspace).toHaveBeenCalledTimes(1);
     expect(native.cleanToolWorkspace).toHaveBeenCalledWith('preview-id-a.pdf');
   });
+  describe('locked files', () => {
+    const OPEN = 'file:///data/cache/tools/preview-id-a.pdf/in-0.open.pdf';
+    const STAGED = 'file:///data/cache/tools/preview-id-a.pdf/in-0.pdf';
+
+    it('counts the pages of an unlocked file without decrypting it', async () => {
+      const native = createFakePdfNative();
+      await openToolPreview(row, {}, { native });
+      expect(native.inspectPdf).toHaveBeenCalledWith(STAGED);
+      expect(native.unlockToolInput).not.toHaveBeenCalled();
+      expect(native.getToolPageCount).toHaveBeenCalledWith(STAGED);
+    });
+
+    it('decrypts a protected file with its password and previews the decrypted copy', async () => {
+      const native = createFakePdfNative();
+      native.inspectPdf.mockResolvedValue('password');
+      native.getToolPageCount.mockResolvedValue(4);
+      const result = await openToolPreview(row, { password: 'secret' }, { native });
+      expect(native.unlockToolInput).toHaveBeenCalledWith(STAGED, 'preview-id-a.pdf', 0, 'secret');
+      expect(native.getToolPageCount).toHaveBeenCalledWith(OPEN);
+      expect(result).toMatchObject({ ok: true, preview: { fileUri: OPEN, pageCount: 4 } });
+    });
+
+    it('decrypts a file that opens with the empty password silently', async () => {
+      const native = createFakePdfNative();
+      native.inspectPdf.mockResolvedValue('open');
+      const result = await openToolPreview(row, {}, { native });
+      expect(native.unlockToolInput).toHaveBeenCalledWith(STAGED, 'preview-id-a.pdf', 0, null);
+      expect(result).toMatchObject({ ok: true, preview: { fileUri: OPEN } });
+    });
+
+    it('reports the lock with the failure, and cleans up', async () => {
+      const native = createFakePdfNative();
+      native.inspectPdf.mockResolvedValue('password');
+      native.unlockToolInput.mockRejectedValue(nativeError('ERR_PDF_ENCRYPTED'));
+      expect(await openToolPreview(row, {}, { native })).toEqual({
+        ok: false,
+        failure: 'encrypted',
+        lock: 'password',
+      });
+      expect(native.cleanToolWorkspace).toHaveBeenCalledWith('preview-id-a.pdf');
+
+      native.unlockToolInput.mockRejectedValue(nativeError('ERR_PASSWORD_WRONG'));
+      expect(await openToolPreview(row, { password: 'nope' }, { native })).toEqual({
+        ok: false,
+        failure: 'wrongPassword',
+        lock: 'password',
+      });
+
+      native.inspectPdf.mockResolvedValue('restricted');
+      native.unlockToolInput.mockRejectedValue(nativeError('ERR_PASSWORD_RESTRICTED'));
+      expect(await openToolPreview(row, {}, { native })).toEqual({
+        ok: false,
+        failure: 'restricted',
+        lock: 'restricted',
+      });
+    });
+
+    it('a failed inspect is a plain failure', async () => {
+      const native = createFakePdfNative();
+      native.inspectPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+      expect(await openToolPreview(row, {}, { native })).toEqual({ ok: false, failure: 'invalid' });
+    });
+  });
 });

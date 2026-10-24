@@ -8,6 +8,7 @@ import { initI18n } from '@/i18n';
 import type {
   ImageFilter,
   PdfFileInfo,
+  PdfLock,
   PreparedPage,
   ToolProgressEvent,
 } from '@/services/native/pdfNative';
@@ -38,12 +39,18 @@ const sha = (name: string) =>
     .update(fs.readFileSync(path.join(FIXTURES, name.normalize('NFC'))))
     .digest('hex');
 
+const LOCKS: Record<string, PdfLock> = {
+  'protected.pdf': 'password',
+  'owner-only.pdf': 'restricted',
+};
+
 /** `sources[i]` is the fixture under `images/` that image session source `i` holds. */
 function setup(rows: FileRow[], sources: string[] = []) {
   const tmp = makeTempDir();
   const docs = path.join(tmp, 'Documents', 'PDFToolkit');
   fs.mkdirSync(docs, { recursive: true });
   const published: { name: string; path: string }[] = [];
+  const stagedFrom = new Map<string, string>();
   const progressListeners = new Set<(e: ToolProgressEvent) => void>();
   const native = {
     createToolWorkspace: jest.fn(async (jobId: string) => {
@@ -58,8 +65,28 @@ function setup(rows: FileRow[], sources: string[] = []) {
       if (bytes.length > maxBytes) throw nativeError('ERR_TOO_LARGE');
       const dest = path.join(tmp, jobId, `in-${i}.pdf`);
       fs.writeFileSync(dest, bytes);
+      stagedFrom.set(`file://${dest}`, name);
       return { uri: `file://${dest}`, sizeBytes: bytes.length };
     }),
+    // protected.pdf needs "secret"; owner-only.pdf opens but needs "owner" for changes.
+    inspectPdf: jest.fn(
+      async (uri: string): Promise<PdfLock> => LOCKS[stagedFrom.get(uri) ?? ''] ?? 'none',
+    ),
+    unlockToolInput: jest.fn(
+      async (fileUri: string, jobId: string, i: number, password: string | null) => {
+        const lock = LOCKS[stagedFrom.get(fileUri) ?? ''] ?? 'none';
+        if (lock === 'password' && password === null) throw nativeError('ERR_PDF_ENCRYPTED');
+        if (lock === 'password' && password !== 'secret') throw nativeError('ERR_PASSWORD_WRONG');
+        if (lock === 'restricted' && password !== 'owner') {
+          throw nativeError(password === null ? 'ERR_PASSWORD_RESTRICTED' : 'ERR_PASSWORD_WRONG');
+        }
+        // The decrypted copy: a plain one-page PDF stands in for it.
+        const bytes = fs.readFileSync(path.join(FIXTURES, 'one-page.pdf'));
+        const dest = path.join(tmp, jobId, `in-${i}.open.pdf`);
+        fs.writeFileSync(dest, bytes);
+        return { uri: `file://${dest}`, sizeBytes: bytes.length };
+      },
+    ),
     publishToolOutput: jest.fn(async (tempUri: string, fileName: string): Promise<PdfFileInfo> => {
       let name = fileName;
       for (let n = 1; fs.existsSync(path.join(docs, name)); n++) {
@@ -1160,5 +1187,163 @@ describe('runTool engine', () => {
     expect(outcome).toMatchObject({ ok: true, extras: { sizes: { before: 10, after: 5 } } });
     expect(s.published.map((p) => p.name)).toEqual(['one-page compressed.pdf']);
     expect(s.recordOutput).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('runTool locked inputs', () => {
+  afterEach(() => {
+    delete RUNNERS.compress;
+    delete RUNNERS.unlock;
+  });
+
+  it('unlocks a protected input with its password, then splits the decrypted copy', async () => {
+    const r = row('protected.pdf');
+    const s = setup([r]);
+    const outcome = await s.run({
+      toolId: 'split',
+      inputIds: [r.id],
+      split: { mode: 'ranges', ranges: '1' },
+      passwords: { 0: 'secret' },
+    });
+    expect(outcome).toMatchObject({ ok: true, extras: { passwordRemoved: true } });
+    expect(s.native.unlockToolInput).toHaveBeenCalledWith(
+      `file://${s.tmp}/j1/in-0.pdf`,
+      'j1',
+      0,
+      'secret',
+    );
+    expect(s.toolFs.readBytes).toHaveBeenCalledWith(`file://${s.tmp}/j1/in-0.open.pdf`);
+    expect(s.toolFs.readBytes).not.toHaveBeenCalledWith(`file://${s.tmp}/j1/in-0.pdf`);
+    expect(s.published.map((p) => p.name)).toEqual(['protected page 1.pdf']);
+    const logged = logSpy.mock.calls.map((c) => String(c[0]));
+    expect(logged.some((l) => l.startsWith('[tool] split'))).toBe(true);
+    for (const line of logged) expect(line).not.toContain('secret');
+  });
+
+  it('fails a protected input without a password as encrypted at its index', async () => {
+    const r = row('protected.pdf');
+    const s = setup([r]);
+    const outcome = await s.run({
+      toolId: 'split',
+      inputIds: [r.id],
+      split: { mode: 'ranges', ranges: '1' },
+    });
+    expect(outcome).toEqual({ ok: false, failure: 'encrypted', inputIndex: 0, outputs: [] });
+    expect(s.native.unlockToolInput).toHaveBeenCalledWith(
+      `file://${s.tmp}/j1/in-0.pdf`,
+      'j1',
+      0,
+      null,
+    );
+    expect(s.native.publishToolOutput).not.toHaveBeenCalled();
+  });
+
+  it('maps a wrong password to wrongPassword and a restricted input to restricted', async () => {
+    const p = row('protected.pdf');
+    const s = setup([p]);
+    const split = { mode: 'ranges', ranges: '1' } as const;
+    expect(
+      await s.run({ toolId: 'split', inputIds: [p.id], split, passwords: { 0: 'nope' } }),
+    ).toEqual({ ok: false, failure: 'wrongPassword', inputIndex: 0, outputs: [] });
+
+    const o = row('owner-only.pdf');
+    const s2 = setup([o]);
+    expect(await s2.run({ toolId: 'split', inputIds: [o.id], split })).toEqual({
+      ok: false,
+      failure: 'restricted',
+      inputIndex: 0,
+      outputs: [],
+    });
+  });
+
+  it('unlocks only the locked input of a merge, by its own index', async () => {
+    const rows = [row('one-page.pdf'), row('protected.pdf')];
+    const s = setup(rows);
+    const outcome = await s.run({
+      toolId: 'merge',
+      inputIds: rows.map((x) => x.id),
+      passwords: { 1: 'secret' },
+    });
+    expect(outcome).toMatchObject({ ok: true, extras: { passwordRemoved: true } });
+    expect(s.native.inspectPdf).toHaveBeenCalledTimes(2);
+    expect(s.native.unlockToolInput).toHaveBeenCalledTimes(1);
+    expect(s.native.unlockToolInput).toHaveBeenCalledWith(
+      `file://${s.tmp}/j1/in-1.pdf`,
+      'j1',
+      1,
+      'secret',
+    );
+    const doc = await loadStrict(new Uint8Array(fs.readFileSync(s.published[0]!.path)));
+    expect(doc.getPageCount()).toBe(2);
+  });
+
+  it('leaves unlocked inputs alone and reports no removed password', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    const outcome = await s.run({
+      toolId: 'split',
+      inputIds: [r.id],
+      split: { mode: 'ranges', ranges: '1' },
+    });
+    expect(outcome).toEqual({ ok: true, outputs: expect.any(Array) });
+    expect(s.native.unlockToolInput).not.toHaveBeenCalled();
+  });
+
+  it('decrypts an input that opens with the empty password without asking', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    s.native.inspectPdf.mockResolvedValue('open');
+    const outcome = await s.run({
+      toolId: 'split',
+      inputIds: [r.id],
+      split: { mode: 'ranges', ranges: '1' },
+    });
+    expect(outcome).toMatchObject({ ok: true, extras: { passwordRemoved: true } });
+    expect(s.native.unlockToolInput).toHaveBeenCalledWith(expect.any(String), 'j1', 0, null);
+  });
+
+  it('gives the runner each input lock and keeps extras it adds', async () => {
+    const r = row('protected.pdf');
+    const s = setup([r]);
+    let locks: unknown = null;
+    RUNNERS.compress = async (ctx) => {
+      locks = ctx.locks;
+      ctx.setExtras({ sizes: { before: 10, after: 5 } });
+    };
+    const outcome = await s.run({
+      toolId: 'compress',
+      inputIds: [r.id],
+      level: 'medium',
+      passwords: { 0: 'secret' },
+    });
+    expect(locks).toEqual(['password']);
+    expect(outcome).toMatchObject({
+      ok: true,
+      extras: { passwordRemoved: true, sizes: { before: 10, after: 5 } },
+    });
+  });
+
+  it('Remove password reports no removed-password note (its output is the point)', async () => {
+    const r = row('protected.pdf');
+    const s = setup([r]);
+    let locks: unknown = null;
+    RUNNERS.unlock = async (ctx) => {
+      locks = ctx.locks;
+    };
+    const outcome = await s.run({ toolId: 'unlock', inputIds: [r.id], passwords: { 0: 'secret' } });
+    expect(locks).toEqual(['password']);
+    expect(outcome).toEqual({ ok: true, outputs: [] });
+  });
+
+  it('a failed inspect fails the job at that input', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    s.native.inspectPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+    const outcome = await s.run({
+      toolId: 'split',
+      inputIds: [r.id],
+      split: { mode: 'ranges', ranges: '1' },
+    });
+    expect(outcome).toEqual({ ok: false, failure: 'invalid', inputIndex: 0, outputs: [] });
   });
 });

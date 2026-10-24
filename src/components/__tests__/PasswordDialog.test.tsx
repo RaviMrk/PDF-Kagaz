@@ -8,7 +8,9 @@ const i18n = initI18n('en');
 const onSubmit = jest.fn();
 const onCancel = jest.fn();
 
-function dialog(wrong = false) {
+type Extra = { body?: string; submitLabel?: string; errorText?: string | null };
+
+function dialog(wrong = false, extra: Extra = {}) {
   return (
     <I18nextProvider i18n={i18n}>
       <PasswordDialog
@@ -17,6 +19,7 @@ function dialog(wrong = false) {
         wrong={wrong}
         onSubmit={onSubmit}
         onCancel={onCancel}
+        {...extra}
       />
     </I18nextProvider>
   );
@@ -56,5 +59,30 @@ describe('PasswordDialog', () => {
     await render(dialog());
     await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
     expect(onCancel).toHaveBeenCalled();
+  });
+  it('keeps the reader copy by default', async () => {
+    await render(dialog());
+    expect(screen.getByText('"a.pdf" is protected. Enter its password to open it.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open' })).toBeTruthy();
+  });
+
+  it('takes its body and submit label from the caller', async () => {
+    await render(dialog(false, { body: 'Use it here', submitLabel: 'Use' }));
+    expect(screen.getByText('Use it here')).toBeTruthy();
+    expect(screen.queryByText(/Enter its password to open it/)).toBeNull();
+    await fireEvent.changeText(screen.getByPlaceholderText('Password'), 'secret');
+    await fireEvent.press(screen.getByRole('button', { name: 'Use' }));
+    expect(onSubmit).toHaveBeenCalledWith('secret');
+    expect(screen.queryByRole('button', { name: 'Open' })).toBeNull();
+  });
+
+  it('shows the given error text instead of wrong-password when wrong', async () => {
+    await render(dialog(false, { errorText: 'Needs the owner password' }));
+    expect(screen.queryByText('Needs the owner password')).toBeNull();
+    await screen.rerender(dialog(true, { errorText: 'Needs the owner password' }));
+    expect(screen.getByText('Needs the owner password')).toBeTruthy();
+    expect(screen.queryByText('Wrong password. Try again.')).toBeNull();
+    await screen.rerender(dialog(true, { errorText: null }));
+    expect(screen.getByText('Wrong password. Try again.')).toBeTruthy();
   });
 });

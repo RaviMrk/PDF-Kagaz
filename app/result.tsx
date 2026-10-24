@@ -121,6 +121,9 @@ export default function ResultScreen() {
       <View style={styles.section}>
         {header(t('result.successTitle'))}
         <Text style={{ color: colors.textMuted }}>{t('result.savedTo')}</Text>
+        {view.outcome.extras?.passwordRemoved ? (
+          <Text style={{ color: colors.text }}>{t('result.passwordRemoved')}</Text>
+        ) : null}
         {outputs(view.outcome.outputs)}
         <View style={styles.actions}>
           {button(

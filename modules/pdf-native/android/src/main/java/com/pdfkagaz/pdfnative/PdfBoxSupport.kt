@@ -5,6 +5,7 @@ import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
+import expo.modules.kotlin.exception.CodedException
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -60,6 +61,8 @@ object PdfBoxSupport {
   internal fun <T> mapOpenErrors(password: String?, block: () -> T): T =
     try {
       block()
+    } catch (e: CodedException) {
+      throw e
     } catch (e: InvalidPasswordException) {
       throw if (password == null) PdfEncryptedException() else PasswordWrongException()
     } catch (e: IOException) {
@@ -75,6 +78,8 @@ object PdfBoxSupport {
   internal fun <T> mapSaveErrors(block: () -> T): T =
     try {
       block()
+    } catch (e: CodedException) {
+      throw e
     } catch (e: IOException) {
       throw IoCodedException()
     } catch (e: RuntimeException) {

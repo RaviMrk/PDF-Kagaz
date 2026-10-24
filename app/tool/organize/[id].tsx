@@ -1,13 +1,5 @@
 import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
-import {
-  useCallback,
-  useEffect,
-  useEffectEvent,
-  useMemo,
-  useReducer,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -26,6 +18,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { OrganizeActionBar } from '@/components/tools/OrganizeActionBar';
 import { OrganizeGrid } from '@/components/tools/OrganizeGrid';
 import { ProgressSheet } from '@/components/tools/ProgressSheet';
+import { useToolPreview } from '@/components/tools/useToolPreview';
 import type { FileRow } from '@/db/schema';
 import type { PageThumbLoader } from '@/services/reader/pageThumbLoader';
 import { failureMessage } from '@/services/tools/failureMessage';
@@ -37,8 +30,7 @@ import {
   toPageEdits,
   type OrganizeState,
 } from '@/services/tools/organizeState';
-import type { ToolFailure } from '@/services/tools/toolJobRepo';
-import { openToolPreview, type ToolPreview } from '@/services/tools/toolPreview';
+import type { OrganizeRequest } from '@/services/tools/runTool';
 import { createToolThumbLoader } from '@/services/tools/toolThumbs';
 import { useFiles } from '@/stores/filesStore';
 import { useToolJobs } from '@/stores/toolJobStore';
@@ -60,51 +52,20 @@ export default function OrganizeScreen() {
   return <OrganizeLoader key={row.id} row={row} />;
 }
 
-type Loaded =
-  | { kind: 'loading' }
-  | { kind: 'failed'; failure: ToolFailure }
-  | { kind: 'tooMany' }
-  | { kind: 'ready'; fileUri: string; pageCount: number };
-
 function OrganizeLoader({ row }: { row: FileRow }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const fileKey = `${row.id}\n${row.uri}`;
-  const [result, setResult] = useState<{ fileKey: string; loaded: Loaded } | null>(null);
-  const loaded: Loaded = result?.fileKey === fileKey ? result.loaded : { kind: 'loading' };
-  const open = useEffectEvent(() => openToolPreview(row));
-
   // The preview stages the file for thumbnails; it lives as long as this screen.
-  useEffect(() => {
-    let alive = true;
-    let preview: ToolPreview | null = null;
-    void open().then((r) => {
-      if (!r.ok) {
-        if (alive) setResult({ fileKey, loaded: { kind: 'failed', failure: r.failure } });
-        return;
-      }
-      if (!alive) {
-        r.preview.close();
-        return;
-      }
-      preview = r.preview;
-      const { fileUri, pageCount } = r.preview;
-      setResult({
-        fileKey,
-        loaded:
-          pageCount > ORGANIZE_MAX_PAGES
-            ? { kind: 'tooMany' }
-            : { kind: 'ready', fileUri, pageCount },
-      });
-    });
-    return () => {
-      alive = false;
-      preview?.close();
-    };
-  }, [fileKey]);
+  const { state, password, dialog } = useToolPreview(row);
+  const loaded =
+    state.kind === 'ready' && state.pageCount > ORGANIZE_MAX_PAGES
+      ? ({ kind: 'tooMany' } as const)
+      : state;
 
   if (loaded.kind === 'ready') {
-    return <Editor row={row} fileUri={loaded.fileUri} pageCount={loaded.pageCount} />;
+    return (
+      <Editor row={row} fileUri={loaded.fileUri} pageCount={loaded.pageCount} password={password} />
+    );
   }
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]}>
@@ -137,13 +98,15 @@ function OrganizeLoader({ row }: { row: FileRow }) {
           </>
         )}
       </View>
+      {dialog}
     </SafeAreaView>
   );
 }
 
-type EditorProps = { row: FileRow; fileUri: string; pageCount: number };
+/** `password`: the one that opened a locked file's preview, passed with the job. */
+type EditorProps = { row: FileRow; fileUri: string; pageCount: number; password: string | null };
 
-function Editor({ row, fileUri, pageCount }: EditorProps) {
+function Editor({ row, fileUri, pageCount, password }: EditorProps) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const navigation = useNavigation();
@@ -223,9 +186,14 @@ function Editor({ row, fileUri, pageCount }: EditorProps) {
     if (starting.current || unchanged) return;
     starting.current = true;
     setNotice(null);
+    const request: OrganizeRequest = {
+      toolId: 'organize',
+      inputIds: [row.id],
+      pages: toPageEdits(state),
+    };
     const result = useToolJobs
       .getState()
-      .start({ toolId: 'organize', inputIds: [row.id], pages: toPageEdits(state) }, t);
+      .start(password === null ? request : { ...request, passwords: { 0: password } }, t);
     if (result.ok) {
       setJobId(result.jobId);
       return;

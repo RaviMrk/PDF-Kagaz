@@ -30,6 +30,7 @@ import {
   as,
   createNativeOp,
   ToolRunFailure,
+  unlockInputs,
   type RunContext,
   type ToolRunner,
 } from './runners/context';
@@ -193,6 +194,8 @@ export type ToolRunDeps = {
     | 'cleanToolWorkspace'
     | 'cancelNativeTool'
     | 'addToolProgressListener'
+    | 'inspectPdf'
+    | 'unlockToolInput'
   >;
   fs: ToolFs;
   getRows(ids: string[]): FileRow[];
@@ -284,14 +287,6 @@ export const RUNNERS: { [K in PdfToolRequest['toolId']]?: ToolRunner<PdfRequestO
 };
 
 type PdfRequestOf<K extends PdfToolRequest['toolId']> = Extract<PdfToolRequest, { toolId: K }>;
-
-/**
- * Decrypts locked staged inputs into the workspace (Task 3); a no-op until then. Returns the
- * inputs the runner works from.
- */
-async function unlockInputs(ctx: Omit<RunContext, 'route'>): Promise<WorkspaceFile[]> {
-  return ctx.inputs;
-}
 
 /**
  * Runs one job. PDF tools: inputs are staged into the job workspace first (picked documents only
@@ -494,7 +489,7 @@ export async function runTool(
       onProgress('preparing', (i + 1) / rows.length);
     }
 
-    const base: Omit<RunContext, 'route'> = {
+    const base: Omit<RunContext, 'route' | 'locks'> = {
       jobId,
       request,
       rows,
@@ -511,10 +506,10 @@ export async function runTool(
         pages = n;
       },
       setExtras: (e) => {
-        extras = e;
+        extras = { ...extras, ...e };
       },
     };
-    const inputs = await unlockInputs(base);
+    const { inputs, locks } = await unlockInputs(base);
     const route = routeFor(
       request.toolId,
       inputs.map((input) => input.sizeBytes),
@@ -525,7 +520,7 @@ export async function runTool(
     if (!runner) throw new ToolRunFailure('unknown', null);
     throwIfCancelled(signal);
     onProgress('processing', 0);
-    await runner({ ...base, inputs, route });
+    await runner({ ...base, inputs, locks, route });
   };
 
   try {

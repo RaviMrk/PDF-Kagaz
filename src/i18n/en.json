@@ -253,7 +253,11 @@
     "open": "Open",
     "cancel": "Cancel",
     "show": "Show password",
-    "hide": "Hide password"
+    "hide": "Hide password",
+    "toolBody": "\"{{name}}\" is protected. Enter its password to use it in this tool.",
+    "restrictedBody": "\"{{name}}\" doesn't allow changes. Enter its owner password to use it in this tool.",
+    "restrictedError": "That password opens the PDF but doesn't allow changes. Enter the owner password.",
+    "use": "Use"
   },
   "open": {
     "opening": "Opening PDF…",
@@ -423,7 +427,8 @@
     "retry": "Try again",
     "failedTitle": "Couldn't finish",
     "partial": "These files were saved before the problem:",
-    "notFoundJob": "This result is no longer available"
+    "notFoundJob": "This result is no longer available",
+    "passwordRemoved": "The new file has no password. Use Protect with password to lock it again."
   },
   "images": {
     "item": "Image {{n}}",

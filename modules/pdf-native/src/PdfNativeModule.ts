@@ -3,6 +3,8 @@ import { NativeModule, requireNativeModule } from 'expo';
 import type {
   FolderChange,
   ImportedImage,
+  PasswordCheck,
+  PdfLock,
   PdfFileInfo,
   PdfNativeModuleEvents,
   PickedFolder,
@@ -11,6 +13,7 @@ import type {
   ReaderFile,
   ScanResult,
   StagedInput,
+  WorkspaceFile,
 } from './PdfNative.types';
 
 declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
@@ -70,6 +73,15 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
   cancelNativeTool(jobId: string): Promise<void>;
   cleanToolWorkspace(jobId: string): Promise<void>;
   cleanupToolLeftovers(olderThanMs: number): Promise<number>;
+  inspectPdf(uri: string): Promise<PdfLock>;
+  checkPdfPassword(uri: string, password: string): Promise<PasswordCheck>;
+  /** Workspace files of `jobId` only; writes `in-<index>.open.pdf`. */
+  unlockToolInput(
+    fileUri: string,
+    jobId: string,
+    index: number,
+    password: string | null,
+  ): Promise<WorkspaceFile>;
   /** Workspace files only; 1-based page, width clamped to 1..512; own lane (not reader / Files list). */
   renderToolThumbnail(fileUri: string, page: number, width: number): Promise<string>;
   getToolPageCount(fileUri: string): Promise<number>;

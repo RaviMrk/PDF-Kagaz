@@ -1,5 +1,5 @@
 import type { FileRow } from '@/db/schema';
-import { isPdfNativeError, type WorkspaceFile } from '@/services/native/pdfNative';
+import { isPdfNativeError, type PdfLock, type WorkspaceFile } from '@/services/native/pdfNative';
 import { PdfToolError, isPdfToolError, throwIfCancelled } from '@/services/pdf/pdfErrors';
 
 import type { ToolRoute } from '../limits';
@@ -42,6 +42,8 @@ export type RunContext<R extends PdfToolRequest = PdfToolRequest> = {
   request: R;
   rows: FileRow[];
   inputs: WorkspaceFile[];
+  /** Each staged input's lock as inspected before unlocking (`inputs` are the decrypted copies). */
+  locks: PdfLock[];
   route: ToolRoute;
   deps: ToolRunDeps;
   signal: AbortSignal;
@@ -56,6 +58,7 @@ export type RunContext<R extends PdfToolRequest = PdfToolRequest> = {
   nativeOp<T>(fn: () => Promise<T>): Promise<T>;
   /** Pages written, for the release log. */
   setPages(n: number): void;
+  /** Adds to the job's extras (earlier ones, like `passwordRemoved`, are kept). */
   setExtras(e: ToolExtras): void;
 };
 
@@ -131,6 +134,45 @@ export function createNativeOp(
       sub.remove();
     }
   };
+}
+
+/** Tools whose output's password state is the point of the tool: no "password removed" note. */
+const PASSWORD_TOOLS: readonly PdfToolRequest['toolId'][] = ['protect', 'unlock'];
+
+/**
+ * Decrypts the locked staged inputs into the workspace, so the runner works on copies without
+ * encryption: an input that is not encrypted is kept, any other is replaced by its decrypted copy,
+ * opened with `request.passwords[i]` (null: the empty password). A failure belongs to input i
+ * (`encrypted` without a password, `wrongPassword`, `restricted`). The note that the output has no
+ * password is set unless the tool is Protect or Remove password. Passwords are never logged.
+ */
+export async function unlockInputs(
+  ctx: Omit<RunContext, 'route' | 'locks'>,
+): Promise<{ inputs: WorkspaceFile[]; locks: PdfLock[] }> {
+  const { native } = ctx.deps;
+  const inputs: WorkspaceFile[] = [];
+  const locks: PdfLock[] = [];
+  for (const [i, staged] of ctx.inputs.entries()) {
+    throwIfCancelled(ctx.signal);
+    const lock = await as(null, i, () => ctx.time('stage', () => native.inspectPdf(staged.uri)));
+    locks.push(lock);
+    if (lock === 'none') {
+      inputs.push(staged);
+      continue;
+    }
+    const password = ctx.request.passwords?.[i] ?? null;
+    const open = await as(null, i, () =>
+      ctx.nativeOp(() =>
+        ctx.time('stage', () => native.unlockToolInput(staged.uri, ctx.jobId, i, password)),
+      ),
+    );
+    if (!Number.isFinite(open.sizeBytes) || open.sizeBytes < 0) {
+      throw new ToolRunFailure('unknown', i);
+    }
+    inputs.push(open);
+    if (!PASSWORD_TOOLS.includes(ctx.request.toolId)) ctx.setExtras({ passwordRemoved: true });
+  }
+  return { inputs, locks };
 }
 
 /** Reads staged input `i` into memory (the JS route only); a failed read is `io` at `i`. */
