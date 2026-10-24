@@ -1,0 +1,95 @@
+// Applied to android/app by plugins/withStoragePermissions.js after it sets
+// ext.pdfToolkitStorageCaps (permission name -> maxSdkVersion).
+//
+// expo-max-sdk-override-plugin rewrites the merged manifest in a MERGED_MANIFEST transform and
+// strips WRITE_EXTERNAL_STORAGE's maxSdkVersion: its merge-report parser counts the sources of the
+// element after the permission (`queries`), which include expo-filesystem's uncapped declaration.
+// It has no switch. Two steps, neither tied to the name of Expo's task:
+//  1. pdfToolkit<Variant>RestoreStorageCaps: our own MERGED_MANIFEST transform. Expo's plugin is
+//     applied with com.android.application (the first line of the app build.gradle), so its
+//     onVariants callback, and its transform, are registered before ours; ours runs after it.
+//  2. pdfToolkit<Variant>VerifyStorageCaps: reads the final merged manifest (after every transform)
+//     and fails the build when a capped permission is uncapped. assemble<Variant> and
+//     bundle<Variant> depend on it.
+
+// A script plugin's classloader does not see AGP, so load the artifact type through AGP's own.
+def MERGED_MANIFEST = Class.forName(
+    'com.android.build.api.artifact.SingleArtifact$MERGED_MANIFEST', true,
+    androidComponents.getClass().classLoader).INSTANCE
+
+class PdfToolkitStorageCaps {
+    static String nameOf(String element) {
+        def m = element =~ /android:name="([^"]+)"/
+        return m.find() ? m.group(1) : null
+    }
+
+    static String maxSdkOf(String element) {
+        def m = element =~ /android:maxSdkVersion="([^"]*)"/
+        return m.find() ? m.group(1) : null
+    }
+
+    /** Sets maxSdkVersion on every capped uses-permission element. */
+    static String restore(String xml, Map<String, String> caps) {
+        return xml.replaceAll(/<uses-permission\b[^>]*>/) { String element ->
+            def name = nameOf(element)
+            if (!caps.containsKey(name)) return element
+            def withoutCap = element.replaceAll(/\s+android:maxSdkVersion="[^"]*"/, '')
+            return withoutCap.replaceFirst(/android:name="[^"]+"/,
+                "android:name=\"${name}\" android:maxSdkVersion=\"${caps[name]}\"")
+        }
+    }
+
+    /** Capped permissions whose maxSdkVersion is missing or different. */
+    static List<String> uncapped(String xml, Map<String, String> caps) {
+        return (xml =~ /<uses-permission\b[^>]*>/).collect { it }.findAll { String element ->
+            def name = nameOf(element)
+            caps.containsKey(name) && maxSdkOf(element) != caps[name]
+        }
+    }
+}
+
+abstract class PdfToolkitRestoreStorageCapsTask extends DefaultTask {
+    @InputFile abstract RegularFileProperty getMergedManifestIn()
+    @OutputFile abstract RegularFileProperty getModifiedManifestOut()
+    @Input abstract MapProperty<String, String> getCaps()
+
+    @TaskAction
+    void restore() {
+        def xml = mergedManifestIn.get().asFile.text
+        modifiedManifestOut.get().asFile.text = PdfToolkitStorageCaps.restore(xml, caps.get())
+    }
+}
+
+abstract class PdfToolkitVerifyStorageCapsTask extends DefaultTask {
+    @InputFile abstract RegularFileProperty getMergedManifest()
+    @Input abstract MapProperty<String, String> getCaps()
+
+    @TaskAction
+    void verify() {
+        def bad = PdfToolkitStorageCaps.uncapped(mergedManifest.get().asFile.text, caps.get())
+        if (!bad.isEmpty()) {
+            throw new GradleException("Storage permission without its maxSdkVersion cap in the final manifest: ${bad}")
+        }
+    }
+}
+
+def storageCaps = project.ext.pdfToolkitStorageCaps
+
+androidComponents.onVariants(androidComponents.selector().all()) { variant ->
+    def cap = variant.name.capitalize()
+
+    def restore = tasks.register("pdfToolkit${cap}RestoreStorageCaps", PdfToolkitRestoreStorageCapsTask) {
+        it.caps.set(storageCaps)
+    }
+    variant.artifacts.use(restore)
+        .wiredWithFiles({ it.mergedManifestIn }, { it.modifiedManifestOut })
+        .toTransform(MERGED_MANIFEST)
+
+    def verify = tasks.register("pdfToolkit${cap}VerifyStorageCaps", PdfToolkitVerifyStorageCapsTask) {
+        it.caps.set(storageCaps)
+        it.mergedManifest.set(variant.artifacts.get(MERGED_MANIFEST))
+    }
+    tasks.matching { it.name == "assemble${cap}" || it.name == "bundle${cap}" }.configureEach {
+        it.dependsOn(verify)
+    }
+}

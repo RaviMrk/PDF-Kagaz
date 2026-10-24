@@ -5,14 +5,14 @@ const PREFIX = 'android.permission.';
 /** maxSdkVersion caps: READ is replaced by the photo picker/SAF on 33+, WRITE by scoped storage on 30+. */
 const MAX_SDK = { READ_EXTERNAL_STORAGE: '32', WRITE_EXTERNAL_STORAGE: '29' };
 
-const RESTORE_MARKER = '// pdf-toolkit: restore storage maxSdkVersion caps';
+const RESTORE_MARKER = '// pdf-toolkit: storage maxSdkVersion caps (plugins/storage-caps.gradle)';
 
 /**
- * expo-max-sdk-override-plugin removes maxSdkVersion from a permission that some library declares
- * without it. Its merge-report parser also counts the sources of the element after the permission
- * (`queries`), so WRITE_EXTERNAL_STORAGE loses its cap even though tools:node="replace" rejected
- * every library declaration. This appends a last action to that task (it has no switch) that puts
- * the caps back, and fails the build if a capped permission is still uncapped.
+ * expo-max-sdk-override-plugin strips WRITE_EXTERNAL_STORAGE's maxSdkVersion from the merged
+ * manifest (its merge-report parser misattributes the `queries` sources to the permission), even
+ * though tools:node="replace" rejected every library declaration. plugins/storage-caps.gradle
+ * restores the caps in its own merged-manifest transform and fails assemble/bundle when the final
+ * manifest still lacks them. This hands it the caps and applies it to the app module.
  */
 function restoreMaxSdkCaps(buildGradle) {
   if (buildGradle.includes(RESTORE_MARKER)) return buildGradle;
@@ -21,26 +21,8 @@ function restoreMaxSdkCaps(buildGradle) {
     .join(', ');
   return `${buildGradle}
 ${RESTORE_MARKER}
-tasks.matching { it.name ==~ /expo\\w*OverrideMaxSdkConflicts/ }.configureEach { task ->
-    task.doLast {
-        def caps = [${caps}]
-        def file = task.modifiedManifestOut.get().asFile
-        def nameOf = { String element ->
-            def m = element =~ /android:name="([^"]+)"/
-            m.find() ? m.group(1) : null
-        }
-        def text = file.text.replaceAll(/<uses-permission\\b[^>]*>/) { String element ->
-            def name = nameOf(element)
-            if (!caps.containsKey(name) || element.contains('android:maxSdkVersion')) return element
-            element.replaceFirst(/android:name="[^"]+"/, "android:name=\\"\${name}\\" android:maxSdkVersion=\\"\${caps[name]}\\"")
-        }
-        def uncapped = (text =~ /<uses-permission\\b[^>]*>/).collect { it }.findAll { String element ->
-            caps.containsKey(nameOf(element)) && !element.contains('android:maxSdkVersion')
-        }
-        if (!uncapped.isEmpty()) throw new GradleException("Storage permission lost its maxSdkVersion: \${uncapped}")
-        file.text = text
-    }
-}
+ext.pdfToolkitStorageCaps = [${caps}]
+apply from: "\${projectRoot}/plugins/storage-caps.gradle"
 `;
 }
 

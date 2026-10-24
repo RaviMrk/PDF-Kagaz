@@ -59,24 +59,42 @@ describe('applyStoragePermissions', () => {
 
 describe('restoreMaxSdkCaps', () => {
   const GRADLE = "apply plugin: 'com.android.application'\n\nandroid {\n}\n";
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('fs');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require('path');
+  const script: string = fs.readFileSync(path.join(__dirname, '../storage-caps.gradle'), 'utf8');
 
-  it("re-applies both caps after Expo's max-SDK override task in every variant", () => {
+  it('hands the caps to the Gradle script and applies it from the project root', () => {
     const out: string = restoreMaxSdkCaps(GRADLE);
     expect(out.startsWith(GRADLE)).toBe(true);
-    // expo-max-sdk-override-plugin misattributes the `queries` merge entries to the permission
-    // before them and strips WRITE's cap; the restore runs as the last action of that task.
-    expect(out).toMatch(/tasks\.matching \{ it\.name ==~ \/expo\\w\*OverrideMaxSdkConflicts\/ \}/);
-    expect(out).toContain('doLast');
-    expect(out).toContain('modifiedManifestOut');
-    expect(out).toContain("'android.permission.READ_EXTERNAL_STORAGE': '32'");
-    expect(out).toContain("'android.permission.WRITE_EXTERNAL_STORAGE': '29'");
-    // A permission still uncapped after the restore fails the build instead of shipping silently.
-    expect(out).toContain('GradleException');
+    expect(out).toContain(
+      "ext.pdfToolkitStorageCaps = ['android.permission.READ_EXTERNAL_STORAGE': '32', 'android.permission.WRITE_EXTERNAL_STORAGE': '29']",
+    );
+    expect(out).toContain('apply from: "${projectRoot}/plugins/storage-caps.gradle"');
+    // Independent of the name of Expo's max-SDK override task (it can be renamed upstream).
+    expect(out).not.toContain('OverrideMaxSdkConflicts');
   });
 
   it('adds the block only once', () => {
     const once: string = restoreMaxSdkCaps(GRADLE);
     expect(restoreMaxSdkCaps(once)).toBe(once);
+  });
+
+  // String checks only: the Groovy itself is proven by the release manifest dumps (APK and AAB).
+  it('restores the caps in its own merged-manifest transform, registered after Expo', () => {
+    expect(script).toContain('androidComponents.onVariants');
+    expect(script).toContain('.toTransform(MERGED_MANIFEST)');
+    expect(script).toContain('pdfToolkitStorageCaps');
+  });
+
+  it('verifies the final merged manifest in a separate task that assemble and bundle need', () => {
+    expect(script).toContain('variant.artifacts.get(MERGED_MANIFEST)');
+    expect(script).toMatch(/VerifyStorageCaps/);
+    expect(script).toMatch(/assemble\$\{cap\}/);
+    expect(script).toMatch(/bundle\$\{cap\}/);
+    expect(script).toContain('dependsOn');
+    expect(script).toContain('GradleException');
   });
 });
 
