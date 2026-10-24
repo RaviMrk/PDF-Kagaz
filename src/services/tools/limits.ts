@@ -22,28 +22,38 @@ export const IMAGE_MAX_BYTES = 52_428_800;
 export type ImageQuality = 'compact' | 'standard' | 'high';
 export const IMAGE_QUALITIES: readonly ImageQuality[] = ['compact', 'standard', 'high'];
 
+export type ImageQualityLevel = { longSidePx: number; jpegQuality: number };
+
 /**
- * Images and scans: the first pass prepares a page at `longSidePx` / `jpegQuality`; a page over its
- * share of the total budget is prepared once more at the smaller pair, and every later page of that
- * job is prepared at the smaller pair directly. High's smaller pair is Standard's first pair, so a
- * stepped-down Sharper job is never softer than Standard.
+ * Images and scans: each preset is a ladder of levels, sharpest first. The first page is prepared
+ * at the first level; a page over its share of the total budget is prepared once more one level
+ * lower (again, while it is still over and a lower level exists), and the job never goes back up.
+ * High's ladder passes through Standard's levels, so Sharper never ends softer than Standard or
+ * fails where Standard fits.
  */
-export const IMAGE_QUALITY_PRESETS: Record<
-  ImageQuality,
-  { longSidePx: number; jpegQuality: number; smallerLongSidePx: number; smallerJpegQuality: number }
-> = {
-  compact: { longSidePx: 1600, jpegQuality: 75, smallerLongSidePx: 1200, smallerJpegQuality: 65 },
-  standard: { longSidePx: 2400, jpegQuality: 85, smallerLongSidePx: 1600, smallerJpegQuality: 75 },
-  high: { longSidePx: 3200, jpegQuality: 90, smallerLongSidePx: 2400, smallerJpegQuality: 85 },
+export const IMAGE_QUALITY_PRESETS: Record<ImageQuality, readonly ImageQualityLevel[]> = {
+  compact: [
+    { longSidePx: 1600, jpegQuality: 75 },
+    { longSidePx: 1200, jpegQuality: 65 },
+  ],
+  standard: [
+    { longSidePx: 2400, jpegQuality: 85 },
+    { longSidePx: 1600, jpegQuality: 75 },
+  ],
+  high: [
+    { longSidePx: 3200, jpegQuality: 90 },
+    { longSidePx: 2400, jpegQuality: 85 },
+    { longSidePx: 1600, jpegQuality: 75 },
+  ],
 };
 
-export const IMAGE_MAX_LONG_SIDE_PX = IMAGE_QUALITY_PRESETS.standard.longSidePx;
-export const IMAGE_JPEG_QUALITY = IMAGE_QUALITY_PRESETS.standard.jpegQuality;
+export const IMAGE_MAX_LONG_SIDE_PX = IMAGE_QUALITY_PRESETS.standard[0]!.longSidePx;
+export const IMAGE_JPEG_QUALITY = IMAGE_QUALITY_PRESETS.standard[0]!.jpegQuality;
 
 /**
  * Images and scans: a prepared page over its share of `JS_MAX_TOTAL_BYTES × IMAGE_TOTAL_BUDGET`
- * (what is left, split over the pages left) is prepared once more at the preset's smaller pair.
+ * (what is left, split over the pages left) is prepared once more at the preset's next level.
  */
 export const IMAGE_TOTAL_BUDGET = 0.95;
-export const IMAGE_SMALLER_LONG_SIDE_PX = IMAGE_QUALITY_PRESETS.standard.smallerLongSidePx;
-export const IMAGE_SMALLER_JPEG_QUALITY = IMAGE_QUALITY_PRESETS.standard.smallerJpegQuality;
+export const IMAGE_SMALLER_LONG_SIDE_PX = IMAGE_QUALITY_PRESETS.standard[1]!.longSidePx;
+export const IMAGE_SMALLER_JPEG_QUALITY = IMAGE_QUALITY_PRESETS.standard[1]!.jpegQuality;

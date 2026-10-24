@@ -819,10 +819,54 @@ describe('runTool images and scans', () => {
     expect(Math.min(...high)).toBeGreaterThanOrEqual(Math.max(...standard));
   });
 
-  it('still fails a high job with totalTooLarge when its 2400 px pages exceed the cap', async () => {
-    const s = hundredPhotos(1.2 * MIB, 1.1 * MIB, 3200, 90);
+  /** 100 photos whose page size depends only on the long side / quality pair. */
+  const sizedHundred = (bySize: Record<string, number>) => {
+    const s = imageSetup();
+    const real = s.native.prepareImagePage.getMockImplementation()!;
+    s.native.prepareImagePage.mockImplementation(async (...args) => ({
+      ...(await real(...args)),
+      sizeBytes: bySize[`${args[4]}/${args[5]}`] ?? MIB,
+    }));
+    return s;
+  };
+  /** Long side of the kept (last) prepare of each page. */
+  const keptSides = (s: ReturnType<typeof imageSetup>) => {
+    const kept = new Map<number, number>();
+    for (const c of s.native.prepareImagePage.mock.calls) kept.set(c[3], c[4]);
+    return [...kept.values()];
+  };
+
+  it('steps a high job down through 2400 to 1600 when only 1600 fits, like a standard job', async () => {
+    // Share ≈ 0.95 MiB a page: 3200 / q90 and 2400 / q85 run over, 1600 / q75 fits (70 MiB total).
+    const bySize = { '3200/90': 3 * MIB, '2400/85': 1.5 * MIB, '1600/75': 0.7 * MIB };
+    const standard = sizedHundred(bySize);
+    expect((await standard.run({ ...hundred(), quality: 'standard' })).ok).toBe(true);
+    const high = sizedHundred(bySize);
+    expect((await high.run({ ...hundred(), quality: 'high' })).ok).toBe(true);
+    const calls = high.native.prepareImagePage.mock.calls;
+    expect(calls.slice(0, 3).map((c) => [c[3], c[4], c[5]])).toEqual([
+      [0, 3200, 90],
+      [0, 2400, 85],
+      [0, 1600, 75],
+    ]);
+    // Sticky: every later page goes straight to 1600 / q75, decoded once.
+    expect(calls.slice(3).every((c) => c[4] === 1600 && c[5] === 75)).toBe(true);
+    expect(calls).toHaveLength(102);
+    expect(keptSides(high)).toEqual(Array.from({ length: 100 }, () => 1600));
+  });
+
+  it('stops a high job at 2400 when 2400 fits', async () => {
+    const high = sizedHundred({ '3200/90': 3 * MIB, '2400/85': 0.9 * MIB, '1600/75': 0.5 * MIB });
+    expect((await high.run({ ...hundred(), quality: 'high' })).ok).toBe(true);
+    expect(high.native.prepareImagePage.mock.calls.some((c) => c[4] === 1600)).toBe(false);
+    expect(keptSides(high)).toEqual(Array.from({ length: 100 }, () => 2400));
+  });
+
+  it('fails a high job with totalTooLarge only when even 1600 px pages exceed the cap', async () => {
+    const s = sizedHundred({ '3200/90': 3 * MIB, '2400/85': 1.5 * MIB, '1600/75': 1.1 * MIB });
     const outcome = await s.run({ ...hundred(), quality: 'high' });
     expect(outcome).toEqual({ ok: false, failure: 'totalTooLarge', inputIndex: null, outputs: [] });
+    expect(s.native.prepareImagePage.mock.calls.some((c) => c[4] === 1600)).toBe(true);
     expect(s.native.publishToolOutput).not.toHaveBeenCalled();
   });
 

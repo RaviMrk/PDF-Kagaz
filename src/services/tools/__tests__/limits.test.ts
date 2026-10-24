@@ -21,24 +21,24 @@ describe('image quality presets', () => {
   it('has the documented presets', () => {
     expect(IMAGE_QUALITIES).toEqual(['compact', 'standard', 'high']);
     expect(IMAGE_QUALITY_PRESETS).toEqual({
-      compact: {
-        longSidePx: 1600,
-        jpegQuality: 75,
-        smallerLongSidePx: 1200,
-        smallerJpegQuality: 65,
-      },
-      standard: {
-        longSidePx: 2400,
-        jpegQuality: 85,
-        smallerLongSidePx: 1600,
-        smallerJpegQuality: 75,
-      },
-      high: { longSidePx: 3200, jpegQuality: 90, smallerLongSidePx: 2400, smallerJpegQuality: 85 },
+      compact: [
+        { longSidePx: 1600, jpegQuality: 75 },
+        { longSidePx: 1200, jpegQuality: 65 },
+      ],
+      standard: [
+        { longSidePx: 2400, jpegQuality: 85 },
+        { longSidePx: 1600, jpegQuality: 75 },
+      ],
+      high: [
+        { longSidePx: 3200, jpegQuality: 90 },
+        { longSidePx: 2400, jpegQuality: 85 },
+        { longSidePx: 1600, jpegQuality: 75 },
+      ],
     });
   });
   it('keeps the M5 constants as the standard preset', () => {
-    expect(IMAGE_MAX_LONG_SIDE_PX).toBe(IMAGE_QUALITY_PRESETS.standard.longSidePx);
-    expect(IMAGE_JPEG_QUALITY).toBe(IMAGE_QUALITY_PRESETS.standard.jpegQuality);
+    expect(IMAGE_MAX_LONG_SIDE_PX).toBe(IMAGE_QUALITY_PRESETS.standard[0]!.longSidePx);
+    expect(IMAGE_JPEG_QUALITY).toBe(IMAGE_QUALITY_PRESETS.standard[0]!.jpegQuality);
   });
 });
 

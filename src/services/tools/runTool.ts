@@ -295,28 +295,23 @@ export async function runTool(
 
     onProgress('preparing', 0);
     const prepared: PreparedPage[] = [];
-    const preset = IMAGE_QUALITY_PRESETS[request.quality];
+    const levels = IMAGE_QUALITY_PRESETS[request.quality];
     const budget = JS_MAX_TOTAL_BYTES * IMAGE_TOTAL_BUDGET;
     let total = 0;
-    // Once one page had to be prepared smaller, the later pages of this job would almost always
-    // run over too: they are prepared smaller at once, so each page is decoded only once.
-    let smaller = false;
+    // Sticky: once a page had to step down a level, the later pages of this job would almost always
+    // run over too, so they start at that level and each page is decoded as few times as possible.
+    let level = 0;
+    const prepareAt = (source: number, index: number) =>
+      prepare(request, source, index, levels[level]!.longSidePx, levels[level]!.jpegQuality);
     for (const [index, source] of request.images.entries()) {
       throwIfCancelled(signal);
-      let page = smaller
-        ? await prepare(request, source, index, preset.smallerLongSidePx, preset.smallerJpegQuality)
-        : await prepare(request, source, index, preset.longSidePx, preset.jpegQuality);
-      // Over its share of what is left: prepared once more, smaller (it overwrites the same page).
-      if (!smaller && page.sizeBytes > (budget - total) / (n - index)) {
+      let page = await prepareAt(source, index);
+      // Over its share of what is left: prepared once more one level lower (overwriting the same
+      // page) while a lower level exists. At the last level the total cap below decides.
+      while (level < levels.length - 1 && page.sizeBytes > (budget - total) / (n - index)) {
         throwIfCancelled(signal);
-        smaller = true;
-        page = await prepare(
-          request,
-          source,
-          index,
-          preset.smallerLongSidePx,
-          preset.smallerJpegQuality,
-        );
+        level += 1;
+        page = await prepareAt(source, index);
       }
       // Bounded before any byte reaches JS.
       total += page.sizeBytes;
