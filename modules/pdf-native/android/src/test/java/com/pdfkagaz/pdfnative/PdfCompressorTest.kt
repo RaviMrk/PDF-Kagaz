@@ -26,6 +26,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Assume.assumeTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -44,6 +45,11 @@ class PdfCompressorTest {
   val tmp = TemporaryFolder()
 
   private lateinit var tempDir: File
+
+  @After
+  fun tearDown() {
+    PdfCompressor.beforeEncode = {}
+  }
 
   @Before
   fun setUp() {
@@ -185,8 +191,20 @@ class PdfCompressorTest {
       PDPageContentStream(doc, page).use { it.drawImage(image, 50f, 50f, 400f, 300f) }
       doc.save(source)
     }
+    // What the encoder gets must be opaque gray, whatever the device's JPEG encoder does with alpha.
+    var encoded: IntArray? = null
+    PdfCompressor.beforeEncode = { b ->
+      assertFalse(b.hasAlpha())
+      encoded = intArrayOf(b.getPixel(b.width / 8, b.height / 2), b.getPixel(b.width * 7 / 8, b.height / 2))
+    }
     val (out, n) = compress(source, "high")
     assertEquals(1, n)
+    for ((pixel, tone) in encoded!!.zip(listOf(55, 215))) {
+      assertEquals(255, Color.alpha(pixel))
+      assertEquals(Color.red(pixel), Color.green(pixel))
+      assertEquals(Color.red(pixel), Color.blue(pixel))
+      assertEquals(tone.toDouble(), Color.red(pixel).toDouble(), 20.0)
+    }
     images(out) { list ->
       val jpeg = rawBytes(list.single().cosObject as COSStream)
       val bitmap = android.graphics.BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)

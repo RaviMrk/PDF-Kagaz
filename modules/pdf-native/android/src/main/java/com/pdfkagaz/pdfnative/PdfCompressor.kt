@@ -38,6 +38,10 @@ object PdfCompressor {
   /** The most pixels one decoded bitmap may have (RENDER_MAX_PIXELS): 48 MB as ARGB_8888. */
   const val MAX_DECODE_PIXELS = 12_582_912L
 
+  /** Test seam: sees each bitmap right before it is JPEG-encoded. */
+  @Volatile
+  internal var beforeEncode: (Bitmap) -> Unit = {}
+
   private val MATTE = COSName.getPDFName("Matte")
   private val COLOR_TRANSFORM = COSName.getPDFName("ColorTransform")
 
@@ -116,7 +120,7 @@ object PdfCompressor {
     image.setInt(COSName.WIDTH, jpeg.width)
     image.setInt(COSName.HEIGHT, jpeg.height)
     image.setInt(COSName.BITS_PER_COMPONENT, 8)
-    // Gray and ICC images were decoded to sRGB, and Android writes three-channel JPEGs.
+    // Android writes three-channel JPEGs, gray ones included.
     image.setItem(COSName.COLORSPACE, COSName.DEVICERGB)
     return true
   }
@@ -251,13 +255,15 @@ object PdfCompressor {
         }
         image.createRawInputStream().use { BitmapFactory.decodeStream(it, null, options) }
       } else {
-        decodeWithoutSoftMask(image, subsampling)
+        val decoded = decodeWithoutSoftMask(image, subsampling) ?: return null
+        if (isOneComponent(image)) opaqueGray(decoded) else decoded
       } ?: return null
       if (bitmap.width > tw || bitmap.height > th) {
         val scaled = Bitmap.createScaledBitmap(bitmap, tw, th, true)
         if (scaled !== bitmap) bitmap.recycle()
         bitmap = scaled
       }
+      beforeEncode(bitmap)
       val out = ByteArrayOutputStream()
       if (!bitmap.compress(Bitmap.CompressFormat.JPEG, level.jpegQuality, out)) return null
       return Jpeg(out.toByteArray(), bitmap.width, bitmap.height)
@@ -270,6 +276,40 @@ object PdfCompressor {
     } finally {
       bitmap?.recycle()
     }
+  }
+
+  private fun isOneComponent(image: COSStream): Boolean = when (val cs = image.getDictionaryObject(COSName.COLORSPACE)) {
+    COSName.DEVICEGRAY -> true
+    is COSArray -> (cs.getObject(1) as? COSStream)?.getInt(COSName.N) == 1
+    else -> false
+  }
+
+  /**
+   * [src] (a one-component image as PdfBox-Android decodes it: the sample in the alpha) as an opaque
+   * ARGB_8888 bitmap with r = g = b = the sample, so the JPEG never depends on how an encoder treats
+   * alpha. [src] is recycled.
+   */
+  internal fun opaqueGray(src: Bitmap): Bitmap {
+    val w = src.width
+    val h = src.height
+    val out = try {
+      Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    } catch (e: Throwable) {
+      src.recycle()
+      throw e
+    }
+    val row = IntArray(w)
+    for (y in 0 until h) {
+      src.getPixels(row, 0, w, 0, y, w, 1)
+      for (x in 0 until w) {
+        val g = graySample(row[x])
+        row[x] = (0xff shl 24) or (g shl 16) or (g shl 8) or g
+      }
+      out.setPixels(row, 0, w, 0, y, w, 1)
+    }
+    out.setHasAlpha(false)
+    src.recycle()
+    return out
   }
 
   /** The JPEG's width and height from its header (nothing decoded); null when unreadable. */
