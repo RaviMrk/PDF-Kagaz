@@ -39,4 +39,15 @@ class CompressLevelsTest {
     assertEquals(4, CompressLevels.subsamplingFor(3600, 6400, 1600))
     assertEquals(8, CompressLevels.subsamplingFor(8192, 100, 1024))
   }
+
+  @Test
+  fun decodeSubsamplingAlsoKeepsTheDecodedBitmapUnderThePixelCap() {
+    val cap = 12_582_912L
+    // Within the cap: the plain power-of-2 choice.
+    assertEquals(2, CompressLevels.decodeSubsampling(4800, 3600, 1600, cap))
+    assertEquals(1, CompressLevels.decodeSubsampling(2400, 1800, 2400, cap))
+    // 4700² decodes to 22 MP at 1: sampled once more.
+    assertEquals(2, CompressLevels.decodeSubsampling(4700, 4700, 2400, cap))
+    assertEquals(16, CompressLevels.decodeSubsampling(20000, 20000, 1024, cap))
+  }
 }

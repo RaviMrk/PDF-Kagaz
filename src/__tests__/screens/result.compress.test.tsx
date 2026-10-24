@@ -70,6 +70,22 @@ describe('result screen after compress', () => {
     expect(screen.getByText('scan compressed.pdf')).toBeTruthy();
   });
 
+  it('never says 0% or 100% smaller', async () => {
+    outcomeOf.mockReturnValue(done({ before: 100_000, after: 99_900 }));
+    await open();
+    expect(
+      screen.getByText(`${formatBytes(100_000)} → ${formatBytes(99_900)} (1% smaller)`),
+    ).toBeTruthy();
+  });
+
+  it('never says 100% smaller for a tiny result', async () => {
+    outcomeOf.mockReturnValue(done({ before: 1_000_000, after: 1000 }));
+    await open();
+    expect(
+      screen.getByText(`${formatBytes(1_000_000)} → ${formatBytes(1000)} (99% smaller)`),
+    ).toBeTruthy();
+  });
+
   it('warns when the file did not get smaller; Delete new file removes the output', async () => {
     outcomeOf.mockReturnValue(done({ before: 1000, after: 1200 }));
     await open();

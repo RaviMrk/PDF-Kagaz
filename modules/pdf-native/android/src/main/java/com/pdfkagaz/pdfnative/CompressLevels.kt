@@ -30,4 +30,17 @@ object CompressLevels {
     while (long / (s * 2) >= targetLongSide) s *= 2
     return s
   }
+
+  /**
+   * [subsamplingFor], doubled further while the decoded bitmap (`ceil(w/s) × ceil(h/s)`) would be
+   * over [maxPixels]; such an image then comes out a little under the level's long side.
+   */
+  fun decodeSubsampling(w: Int, h: Int, targetLongSide: Int, maxPixels: Long): Int {
+    var s = subsamplingFor(w, h, targetLongSide)
+    while (decodedPixels(w, h, s) > maxPixels) s *= 2
+    return s
+  }
+
+  /** Pixels of [w]×[h] decoded at subsampling [s] (each side rounded up). */
+  fun decodedPixels(w: Int, h: Int, s: Int): Long = ((w + s - 1L) / s) * ((h + s - 1L) / s)
 }

@@ -1,12 +1,18 @@
 package com.pdfkagaz.pdfnative
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.Color
+import com.tom_roush.pdfbox.cos.COSArray
+import com.tom_roush.pdfbox.cos.COSDictionary
+import com.tom_roush.pdfbox.cos.COSInteger
 import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.cos.COSStream
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
+import com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
 import com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject
 import expo.modules.kotlin.exception.CodedException
@@ -110,32 +116,154 @@ class PdfCompressorTest {
     assertTrue(low.length() >= medium.length())
   }
 
-  @Test
-  fun smaskKept() {
-    val source = File(tmp.root, "smask.pdf")
+  /** A 1400 × 700 noise image whose SMask is opaque on the left half and 80 on the right. */
+  private fun smaskPdf(name: String, matte: Boolean): File {
+    val source = File(tmp.root, name)
     PDDocument().use { doc ->
       val page = PDPage()
       doc.addPage(page)
-      val bitmap = Bitmap.createBitmap(400, 300, Bitmap.Config.ARGB_8888)
+      val bitmap = Bitmap.createBitmap(1400, 700, Bitmap.Config.ARGB_8888)
       val rnd = Random(7)
-      for (y in 0 until 300) for (x in 0 until 400) {
-        bitmap.setPixel(x, y, Color.argb(if (x < 200) 255 else 80, rnd.nextInt(256), rnd.nextInt(256), rnd.nextInt(256)))
+      for (y in 0 until 700) for (x in 0 until 1400) {
+        bitmap.setPixel(x, y, Color.argb(if (x < 700) 255 else 80, rnd.nextInt(256), rnd.nextInt(256), rnd.nextInt(256)))
       }
       val image = LosslessFactory.createFromImage(doc, bitmap)
       assertNotNull(image.softMask)
-      PDPageContentStream(doc, page).use { it.drawImage(image, 50f, 50f, 400f, 300f) }
+      if (matte) {
+        val values = COSArray().apply { repeat(3) { add(COSInteger.ZERO) } }
+        image.softMask.cosObject.setItem(COSName.getPDFName("Matte"), values)
+      }
+      PDPageContentStream(doc, page).use { it.drawImage(image, 50f, 50f, 500f, 250f) }
       doc.save(source)
     }
-    val (out, n) = compress(source, "medium")
+    return source
+  }
+
+  private fun rawBytes(stream: COSStream) = stream.createRawInputStream().use { it.readBytes() }
+
+  @Test
+  fun smaskKeptAndResizedWithItsImage() {
+    val (out, n) = compress(smaskPdf("smask.pdf", matte = false), "high")
     assertEquals(1, n)
     images(out) { list ->
       val img = list.single()
       assertEquals(COSName.DCT_DECODE, img.cosObject.getDictionaryObject(COSName.FILTER))
+      assertEquals(1024 to 512, img.width to img.height)
       val mask = img.softMask
       assertNotNull(mask)
-      assertEquals(400, mask.width)
-      assertEquals(300, mask.height)
+      assertEquals(1024 to 512, mask.width to mask.height)
+      assertEquals(8, mask.bitsPerComponent)
+      assertEquals(COSName.FLATE_DECODE, mask.cosObject.getDictionaryObject(COSName.FILTER))
+      // The alpha itself survives the resize: opaque left, 80 right.
+      val alpha = mask.image
+      assertEquals(255.0, PdfCompressor.graySample(alpha.getPixel(100, 256)).toDouble(), 2.0)
+      assertEquals(80.0, PdfCompressor.graySample(alpha.getPixel(900, 256)).toDouble(), 2.0)
     }
+  }
+
+  @Test
+  fun grayFlateImageKeepsItsTones() {
+    // PdfBox-Android decodes 8-bit gray into the alpha of white pixels; the JPEG must keep the tones.
+    val (w, h) = 800 to 600
+    val rnd = Random(9)
+    val samples = ByteArray(w * h) { i -> ((if (i % w < w / 2) 40 else 200) + rnd.nextInt(30)).toByte() }
+    val deflated = java.io.ByteArrayOutputStream().also { o -> DeflaterOutputStream(o).use { it.write(samples) } }.toByteArray()
+    val source = File(tmp.root, "gray.pdf")
+    PDDocument().use { doc ->
+      val page = PDPage()
+      doc.addPage(page)
+      val stream = doc.document.createCOSStream()
+      stream.setItem(COSName.TYPE, COSName.XOBJECT)
+      stream.setItem(COSName.SUBTYPE, COSName.IMAGE)
+      stream.setInt(COSName.WIDTH, w)
+      stream.setInt(COSName.HEIGHT, h)
+      stream.setInt(COSName.BITS_PER_COMPONENT, 8)
+      stream.setItem(COSName.COLORSPACE, COSName.DEVICEGRAY)
+      stream.setItem(COSName.FILTER, COSName.FLATE_DECODE)
+      stream.createRawOutputStream().use { it.write(deflated) }
+      val image = PDImageXObject(com.tom_roush.pdfbox.pdmodel.common.PDStream(stream), null)
+      PDPageContentStream(doc, page).use { it.drawImage(image, 50f, 50f, 400f, 300f) }
+      doc.save(source)
+    }
+    val (out, n) = compress(source, "high")
+    assertEquals(1, n)
+    images(out) { list ->
+      val jpeg = rawBytes(list.single().cosObject as COSStream)
+      val bitmap = android.graphics.BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
+      assertEquals(55.0, Color.red(bitmap.getPixel(100, 300)).toDouble(), 20.0)
+      assertEquals(215.0, Color.red(bitmap.getPixel(700, 300)).toDouble(), 20.0)
+    }
+  }
+
+  @Test
+  fun smaskWithMatteUntouched() {
+    val source = smaskPdf("matte.pdf", matte = true)
+    val before = images(source) { list -> rawBytes(list.single().cosObject as COSStream) }
+    val (out, n) = compress(source, "high")
+    assertEquals(0, n)
+    images(out) { list ->
+      val img = list.single()
+      assertEquals(1400 to 700, img.width to img.height)
+      assertArrayEquals(before, rawBytes(img.cosObject as COSStream))
+    }
+  }
+
+  @Test
+  fun rgbCodedJpegUntouched() {
+    val source = File(tmp.root, "colortransform.pdf")
+    PDDocument().use { doc ->
+      val page = PDPage()
+      doc.addPage(page)
+      val bitmap = Bitmap.createBitmap(800, 600, Bitmap.Config.ARGB_8888)
+      val rnd = Random(11)
+      for (y in 0 until 600) for (x in 0 until 800) bitmap.setPixel(x, y, Color.rgb(rnd.nextInt(256), rnd.nextInt(256), rnd.nextInt(256)))
+      val image = JPEGFactory.createFromImage(doc, bitmap, 0.95f)
+      image.cosObject.setItem(COSName.DECODE_PARMS, COSDictionary().apply { setInt(COSName.getPDFName("ColorTransform"), 0) })
+      PDPageContentStream(doc, page).use { it.drawImage(image, 50f, 50f, 400f, 300f) }
+      doc.save(source)
+    }
+    val before = images(source) { list -> rawBytes(list.single().cosObject as COSStream) }
+    val (out, n) = compress(source, "high")
+    assertEquals(0, n)
+    images(out) { list -> assertArrayEquals(before, rawBytes(list.single().cosObject as COSStream)) }
+  }
+
+  @Test
+  fun hugeJpegIsDecodedWithinThePixelCap() {
+    // 4700 × 4700 at low (2400): power-of-2 sampling alone would decode all 22 MP; the cap halves it.
+    val side = 4700
+    val bitmap = Bitmap.createBitmap(side, side, Bitmap.Config.RGB_565)
+    val canvas = Canvas(bitmap)
+    val paint = Paint()
+    val rnd = Random(5)
+    repeat(4000) {
+      paint.color = Color.rgb(rnd.nextInt(256), rnd.nextInt(256), rnd.nextInt(256))
+      val x = rnd.nextInt(side).toFloat()
+      val y = rnd.nextInt(side).toFloat()
+      canvas.drawRect(x, y, x + 40 + rnd.nextInt(200), y + 40 + rnd.nextInt(200), paint)
+    }
+    val jpeg = java.io.ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 100, it) }.toByteArray()
+    bitmap.recycle()
+    val source = File(tmp.root, "huge.pdf")
+    PDDocument().use { doc ->
+      val page = PDPage()
+      doc.addPage(page)
+      val stream = doc.document.createCOSStream()
+      stream.setItem(COSName.TYPE, COSName.XOBJECT)
+      stream.setItem(COSName.SUBTYPE, COSName.IMAGE)
+      stream.setInt(COSName.WIDTH, side)
+      stream.setInt(COSName.HEIGHT, side)
+      stream.setInt(COSName.BITS_PER_COMPONENT, 8)
+      stream.setItem(COSName.COLORSPACE, COSName.DEVICERGB)
+      stream.setItem(COSName.FILTER, COSName.DCT_DECODE)
+      stream.createRawOutputStream().use { it.write(jpeg) }
+      val image = PDImageXObject(com.tom_roush.pdfbox.pdmodel.common.PDStream(stream), null)
+      PDPageContentStream(doc, page).use { it.drawImage(image, 0f, 0f, 500f, 500f) }
+      doc.save(source)
+    }
+    val (out, n) = compress(source, "low")
+    assertEquals(1, n)
+    images(out) { list -> assertEquals(2350 to 2350, list.single().width to list.single().height) }
   }
 
   @Test

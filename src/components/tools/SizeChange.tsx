@@ -15,7 +15,8 @@ export function SizeChange({ before, after }: Props) {
   const text = smaller
     ? t('compress.sizeChange', {
         ...sizes,
-        percent: Math.round((1 - after / before) * 100),
+        // Smaller, but never "0%" or "100%" smaller.
+        percent: Math.min(99, Math.max(1, Math.round((1 - after / before) * 100))),
       })
     : t('compress.larger', sizes);
   return (

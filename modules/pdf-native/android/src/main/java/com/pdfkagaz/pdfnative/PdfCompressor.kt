@@ -25,14 +25,21 @@ import java.util.zip.DeflaterOutputStream
  * Compress (T-06): re-encodes the eligible images of a PDF as smaller JPEGs, in place in their
  * own streams, so every page (and every page sharing an image) keeps pointing at them. Eligible:
  * 8-bit DeviceGray / DeviceRGB / ICCBased (N = 1 or 3), DCT or Flate, at least [MIN_SIDE] px each
- * side, no /Decode, /Mask or /ImageMask. JPX, JBIG2, CCITT, CMYK, Indexed, masks and inline images
- * are left alone. An image's /SMask is kept as it is. A stream is replaced only when the new one is
+ * side, no /Decode, /Mask or /ImageMask, no /SMask with /Matte or /Decode, and no RGB-coded JPEG
+ * (/ColorTransform 0). JPX, JBIG2, CCITT, CMYK, Indexed, masks and inline images are left alone.
+ * An image's /SMask is kept, resized with a downscaled image (8-bit Flate gray). A stream is replaced only when the new one is
  * under [REPLACE_RATIO] of the old; an unfiltered image stream gets Flate instead. The full rewrite
  * on save drops unreferenced objects (and the dropped thumbnails). Disk work: call on Dispatchers.IO.
  */
 object PdfCompressor {
   const val MIN_SIDE = 64
   const val REPLACE_RATIO = 0.9
+
+  /** The most pixels one decoded bitmap may have (RENDER_MAX_PIXELS): 48 MB as ARGB_8888. */
+  const val MAX_DECODE_PIXELS = 12_582_912L
+
+  private val MATTE = COSName.getPDFName("Matte")
+  private val COLOR_TRANSFORM = COSName.getPDFName("ColorTransform")
 
   /**
    * Writes [source] compressed at [level] to [target] (through a part file) and returns how many
@@ -51,7 +58,7 @@ object PdfCompressor {
       var replaced = 0
       for ((k, image) in images.withIndex()) {
         control.check()
-        if (PdfBoxSupport.mapReadErrors { replace(image, level, tempDir) }) replaced += 1
+        if (PdfBoxSupport.mapReadErrors { replace(doc, image, level, tempDir) }) replaced += 1
         control.progress((k + 1) / units)
       }
       control.check()
@@ -87,14 +94,22 @@ object PdfCompressor {
     return images.filter { it !in masks }
   }
 
-  private fun replace(image: COSStream, level: CompressLevels.Level, tempDir: File): Boolean {
+  private fun replace(doc: PDDocument, image: COSStream, level: CompressLevels.Level, tempDir: File): Boolean {
     val filters = filtersOf(image) ?: return false
     if (filters.isEmpty()) return deflate(image, tempDir)
     if (!isEligible(image, filters)) return false
     val jpeg = reencode(image, filters.single(), level) ?: return false
     if (jpeg.size >= image.length * REPLACE_RATIO) return false
+    // A soft mask sized like the old image is resized with it (before anything is written).
+    val softMask = image.getDictionaryObject(COSName.SMASK) as? COSStream
+    val newMask = if (softMask != null && !sameSize(softMask, jpeg.width, jpeg.height)) {
+      resizedMask(softMask, jpeg.width, jpeg.height) ?: return false
+    } else {
+      null
+    }
     PdfBoxSupport.mapSaveErrors {
       image.createRawOutputStream().use { it.write(jpeg.bytes) }
+      if (newMask != null) image.setItem(COSName.SMASK, maskStream(doc, newMask))
     }
     image.setItem(COSName.FILTER, COSName.DCT_DECODE)
     image.removeItem(COSName.DECODE_PARMS)
@@ -104,6 +119,66 @@ object PdfCompressor {
     // Gray and ICC images were decoded to sRGB, and Android writes three-channel JPEGs.
     image.setItem(COSName.COLORSPACE, COSName.DEVICERGB)
     return true
+  }
+
+  private fun sameSize(stream: COSStream, w: Int, h: Int) =
+    stream.getInt(COSName.WIDTH) == w && stream.getInt(COSName.HEIGHT) == h
+
+  /** An alpha plane: one byte per pixel, row by row. */
+  private class Alpha(val bytes: ByteArray, val width: Int, val height: Int)
+
+  /**
+   * [mask]'s samples scaled to [w]×[h] (decoded subsampled and bounded like an image); null when
+   * it cannot be decoded, so its image stays as it is.
+   */
+  private fun resizedMask(mask: COSStream, w: Int, h: Int): Alpha? {
+    val mw = mask.getInt(COSName.WIDTH)
+    val mh = mask.getInt(COSName.HEIGHT)
+    if (mw <= 0 || mh <= 0) return null
+    val subsampling = CompressLevels.decodeSubsampling(mw, mh, maxOf(w, h), MAX_DECODE_PIXELS)
+    var bitmap: Bitmap? = null
+    try {
+      bitmap = PDImageXObject(PDStream(mask), null).getImage(null, subsampling) ?: return null
+      if (bitmap.width != w || bitmap.height != h) {
+        val scaled = Bitmap.createScaledBitmap(bitmap, w, h, true)
+        if (scaled !== bitmap) bitmap.recycle()
+        bitmap = scaled
+      }
+      val pixels = IntArray(w)
+      val bytes = ByteArray(w * h)
+      for (y in 0 until h) {
+        bitmap.getPixels(pixels, 0, w, 0, y, w, 1)
+        for (x in 0 until w) bytes[y * w + x] = graySample(pixels[x]).toByte()
+      }
+      return Alpha(bytes, w, h)
+    } catch (e: IOException) {
+      return null
+    } catch (e: RuntimeException) {
+      return null
+    } catch (e: OutOfMemoryError) {
+      return null
+    } finally {
+      bitmap?.recycle()
+    }
+  }
+
+  /**
+   * The gray sample of a pixel PdfBox-Android decoded from a one-component image: it puts the
+   * sample into the alpha of a white pixel, so alpha × red covers that and an opaque gray alike.
+   */
+  internal fun graySample(pixel: Int): Int = (pixel ushr 24) * (pixel shr 16 and 0xff) / 255
+
+  /** A new 8-bit DeviceGray Flate soft mask holding [alpha]. */
+  private fun maskStream(doc: PDDocument, alpha: Alpha): COSStream {
+    val stream = doc.document.createCOSStream()
+    stream.setItem(COSName.TYPE, COSName.XOBJECT)
+    stream.setItem(COSName.SUBTYPE, COSName.IMAGE)
+    stream.setInt(COSName.WIDTH, alpha.width)
+    stream.setInt(COSName.HEIGHT, alpha.height)
+    stream.setInt(COSName.BITS_PER_COMPONENT, 8)
+    stream.setItem(COSName.COLORSPACE, COSName.DEVICEGRAY)
+    stream.createOutputStream(COSName.FLATE_DECODE).use { it.write(alpha.bytes) }
+    return stream
   }
 
   /** The image's filter names (empty: unfiltered); null when /Filter is malformed. */
@@ -121,7 +196,23 @@ object PdfCompressor {
     if (image.containsKey(COSName.MASK) || image.containsKey(COSName.DECODE)) return false
     if (image.getInt(COSName.BITS_PER_COMPONENT) != 8) return false
     if (image.getInt(COSName.WIDTH) < MIN_SIDE || image.getInt(COSName.HEIGHT) < MIN_SIDE) return false
+    if (filters[0] == COSName.DCT_DECODE && isRgbCoded(image)) return false
+    val softMask = image.getDictionaryObject(COSName.SMASK)
+    if (softMask != null) {
+      // /Matte (pre-multiplied colour) ties the mask to the image's exact samples and size.
+      if (softMask !is COSStream || softMask.containsKey(MATTE) || softMask.containsKey(COSName.DECODE)) return false
+    }
     return isGrayOrRgb(image.getDictionaryObject(COSName.COLORSPACE))
+  }
+
+  /** `/DecodeParms << /ColorTransform 0 >>`: RGB-coded samples, which BitmapFactory would read as YCbCr. */
+  private fun isRgbCoded(image: COSStream): Boolean {
+    val parms = when (val p = image.getDictionaryObject(COSName.DECODE_PARMS)) {
+      is COSDictionary -> p
+      is COSArray -> p.getObject(0) as? COSDictionary
+      else -> null
+    } ?: return false
+    return parms.getInt(COLOR_TRANSFORM, -1) == 0
   }
 
   private fun isGrayOrRgb(cs: COSBase?): Boolean = when (cs) {
@@ -144,12 +235,15 @@ object PdfCompressor {
    * subsampling, and misreads JPEGs when subsampled); Flate images through PdfBox.
    */
   private fun reencode(image: COSStream, filter: COSName, level: CompressLevels.Level): Jpeg? {
-    val w = image.getInt(COSName.WIDTH)
-    val h = image.getInt(COSName.HEIGHT)
-    val (tw, th) = CompressLevels.targetSize(w, h, level.maxLongSidePx)
-    val subsampling = CompressLevels.subsamplingFor(w, h, maxOf(tw, th))
     var bitmap: Bitmap? = null
     try {
+      // A JPEG's own bounds (not the dictionary's) decide the sampling, before any pixel is decoded;
+      // the decoded bitmap never has more than MAX_DECODE_PIXELS.
+      val bounds = if (filter == COSName.DCT_DECODE) jpegBounds(image) else image.getInt(COSName.WIDTH) to image.getInt(COSName.HEIGHT)
+      val (w, h) = bounds ?: return null
+      if (w <= 0 || h <= 0) return null
+      val (tw, th) = CompressLevels.targetSize(w, h, level.maxLongSidePx)
+      val subsampling = CompressLevels.decodeSubsampling(w, h, maxOf(tw, th), MAX_DECODE_PIXELS)
       bitmap = if (filter == COSName.DCT_DECODE) {
         val options = BitmapFactory.Options().apply {
           inSampleSize = subsampling
@@ -176,6 +270,13 @@ object PdfCompressor {
     } finally {
       bitmap?.recycle()
     }
+  }
+
+  /** The JPEG's width and height from its header (nothing decoded); null when unreadable. */
+  private fun jpegBounds(image: COSStream): Pair<Int, Int>? {
+    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    image.createRawInputStream().use { BitmapFactory.decodeStream(it, null, options) }
+    return if (options.outWidth > 0 && options.outHeight > 0) options.outWidth to options.outHeight else null
   }
 
   /**
