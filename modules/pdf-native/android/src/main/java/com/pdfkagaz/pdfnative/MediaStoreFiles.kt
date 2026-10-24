@@ -30,9 +30,11 @@ internal class MediaStoreFiles(private val context: Context) {
       ?: throw PermissionDeniedException("Could not create file")
   }
 
+  /** Writes [source] into pending item [created], fsynced before it can be published. */
   fun write(created: Uri, source: InputStream) {
     source.use { inp ->
-      (resolver.openOutputStream(created, "w") ?: throw IOException("No output stream")).use { out -> inp.copyTo(out) }
+      val pfd = resolver.openFileDescriptor(created, "w") ?: throw IOException("No output stream")
+      DurableWrites.writeFd(pfd, requireSync = true) { out -> inp.copyTo(out) }
     }
   }
 

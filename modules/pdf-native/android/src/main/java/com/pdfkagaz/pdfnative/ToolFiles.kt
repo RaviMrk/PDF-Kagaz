@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
@@ -160,7 +161,8 @@ class ToolFiles(private val context: Context) {
       if (SaveTargetPolicy.decide(sizeOf(target), same) == SaveTargetPolicy.Decision.REFUSE) throw FileExistsException()
       try {
         openCopySource(source).use { input ->
-          openVerifiedTarget(target).use { copyChunks(input, it, Long.MAX_VALUE) }
+          // Synced before close where the provider's descriptor allows it (not a pipe).
+          DurableWrites.writeFd(openVerifiedTarget(target), requireSync = false) { copyChunks(input, it, Long.MAX_VALUE) }
         }
       } catch (e: Throwable) {
         try {
@@ -178,10 +180,10 @@ class ToolFiles(private val context: Context) {
    * Opens a target [SaveTargetPolicy] verified empty and distinct from the source: "wt", or "w"
    * when the provider rejects "wt" ([SaveTargetPolicy.isModeUnsupported]). Failures are ERR_IO.
    */
-  private fun openVerifiedTarget(target: Uri): OutputStream {
+  private fun openVerifiedTarget(target: Uri): ParcelFileDescriptor {
     for ((i, mode) in SaveTargetPolicy.WRITE_MODES.withIndex()) {
       try {
-        return context.contentResolver.openOutputStream(target, mode) ?: throw IoCodedException()
+        return context.contentResolver.openFileDescriptor(target, mode) ?: throw IoCodedException()
       } catch (e: CodedException) {
         throw e
       } catch (e: Exception) {
@@ -234,12 +236,10 @@ class ToolFiles(private val context: Context) {
     val claim = PartClaim.claim(dir) { taken -> ToolPaths.uniqueTarget(fileName, taken) }
     try {
       FileInputStream(temp).use { input ->
-        FileOutputStream(claim.part).use { output ->
-          copyChunks(input, output, Long.MAX_VALUE)
-          output.fd.sync()
-        }
+        DurableWrites.writeFile(claim.part) { output -> copyChunks(input, output, Long.MAX_VALUE) }
       }
       val target = claim.commit() ?: throw IoCodedException()
+      DurableWrites.syncDir(dir)
       MediaScannerConnection.scanFile(context, arrayOf(target.path), arrayOf(MediaStoreFiles.PDF_MIME), null)
       return PdfFileInfos.ofFile(target, Volumes.mounted(context))
     } catch (e: IOException) {

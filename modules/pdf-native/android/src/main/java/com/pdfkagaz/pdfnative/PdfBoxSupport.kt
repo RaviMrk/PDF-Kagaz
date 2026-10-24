@@ -40,15 +40,15 @@ object PdfBoxSupport {
   }
 
   /**
-   * Saves [doc] to `<target>.part`, then renames it over [target], so [target] never holds a
-   * half-written file. The part file is removed on failure (ERR_IO, or ERR_TOO_LARGE when out of memory).
+   * Saves [doc] to `<target>.part` (flushed and fsynced, [DurableWrites]), then renames it over
+   * [target], so [target] never holds a half-written file, even after a crash. The part file is removed on failure (ERR_IO, or ERR_TOO_LARGE when out of memory).
    */
   fun saveTo(doc: PDDocument, target: File) {
     val part = File(target.parentFile, target.name + ".part")
     var done = false
     try {
       mapSaveErrors {
-        doc.save(part)
+        DurableWrites.writeFile(part) { out -> doc.save(out) }
         if (!part.renameTo(target)) throw IoCodedException()
       }
       done = true
