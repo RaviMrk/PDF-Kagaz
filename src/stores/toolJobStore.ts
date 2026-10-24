@@ -127,6 +127,7 @@ const FAILURES: readonly ToolFailure[] = [
   'wrongPassword',
   'restricted',
   'signatureGone',
+  'notProtected',
   'unknown',
 ];
 

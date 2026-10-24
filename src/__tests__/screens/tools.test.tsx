@@ -33,8 +33,8 @@ const CARDS = [
   'PDF to images, coming soon',
   'Make searchable (OCR), coming soon',
   'Compress',
-  'Protect with password, coming soon',
-  'Remove password, coming soon',
+  'Protect with password',
+  'Remove password',
   'Add watermark, coming soon',
   'Add page numbers, coming soon',
   'Sign PDF, coming soon',
@@ -91,7 +91,7 @@ describe('Tools tab', () => {
 
   it('does nothing for a tool that is coming soon', async () => {
     const r = await renderTools();
-    await fireEvent.press(screen.getByLabelText('Protect with password, coming soon'));
+    await fireEvent.press(screen.getByLabelText('Sign PDF, coming soon'));
     expect(r.pathname()).toBe('/tools');
   });
 });

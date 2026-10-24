@@ -10,7 +10,9 @@ import { ImagesToPdfFlow } from '@/components/tools/ImagesToPdfFlow';
 import { MergeOptions } from '@/components/tools/MergeOptions';
 import { PickFilesList } from '@/components/tools/PickFilesList';
 import { ProgressSheet } from '@/components/tools/ProgressSheet';
+import { ProtectOptions } from '@/components/tools/ProtectOptions';
 import { SplitOptions } from '@/components/tools/SplitOptions';
+import { UnlockOptions } from '@/components/tools/UnlockOptions';
 import { usePasswordPrompts } from '@/components/tools/usePasswordPrompts';
 import type { FileRow } from '@/db/schema';
 import { checkInputSizes } from '@/services/tools/limits';
@@ -187,6 +189,20 @@ function ToolFlow({ tool, inputIds }: { tool: ToolDef; inputIds: string[] }) {
               onRun={(level) =>
                 void runAsked({ toolId: 'compress', inputIds: [rows[0]!.id], level })
               }
+            />
+          ) : null}
+          {tool.id === 'protect' && rows[0] ? (
+            <ProtectOptions
+              row={rows[0]}
+              onRun={(newPassword) =>
+                void runAsked({ toolId: 'protect', inputIds: [rows[0]!.id], newPassword })
+              }
+            />
+          ) : null}
+          {tool.id === 'unlock' && rows[0] ? (
+            <UnlockOptions
+              row={rows[0]}
+              onRun={() => void runAsked({ toolId: 'unlock', inputIds: [rows[0]!.id] })}
             />
           ) : null}
           {tool.id === 'split' && rows[0] ? (

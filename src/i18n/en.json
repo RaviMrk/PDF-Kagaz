@@ -363,6 +363,22 @@
     "orderHint": "Drag to reorder, or use the arrows",
     "run": "Merge {{count}} PDFs"
   },
+  "protect": {
+    "password": "New password",
+    "confirm": "Confirm password",
+    "show": "Show password",
+    "hide": "Hide password",
+    "tooShort": "Use at least 4 characters",
+    "tooLong": "This password is too long",
+    "mismatch": "The passwords don't match",
+    "warning": "If you forget this password, the PDF can't be opened. PDF Toolkit can't recover it.",
+    "run": "Protect"
+  },
+  "unlock": {
+    "hint": "You'll need the PDF's current password.",
+    "notProtected": "This PDF has no password.",
+    "run": "Remove password"
+  },
   "compress": {
     "level": "Compression",
     "low": "Low",
@@ -420,7 +436,8 @@
     "wrongPassword": "That password didn't open the PDF",
     "restricted": "This PDF doesn't allow changes. Enter its owner password to use it in a tool.",
     "signatureGone": "A signature you placed was deleted. Place it again.",
-    "needsInput": "Start the tool again to enter the password."
+    "needsInput": "Start the tool again to enter the password.",
+    "notProtected": "This PDF has no password to remove"
   },
   "ads": {
     "label": "Advertisement"

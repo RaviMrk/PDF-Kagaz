@@ -150,6 +150,12 @@ function setup(rows: FileRow[], sources: string[] = []) {
       fs.writeFileSync(dest, new Uint8Array(400));
       return { uri: `file://${dest}`, sizeBytes: 400, imagesRecompressed: 2 };
     }),
+    // The protected copy: a stand-in written where PdfBox would write it.
+    protectPdf: jest.fn(async (_fileUri: string, jobId: string, _password: string) => {
+      const dest = path.join(tmp, jobId, 'out-protected.pdf');
+      fs.writeFileSync(dest, new Uint8Array(300));
+      return { uri: `file://${dest}`, sizeBytes: 300 };
+    }),
     cancelNativeTool: jest.fn(async (_jobId: string) => {}),
     addToolProgressListener: jest.fn((cb: (e: ToolProgressEvent) => void) => {
       progressListeners.add(cb);
@@ -1470,9 +1476,10 @@ describe('runTool engine', () => {
 
 describe('runTool locked inputs', () => {
   const realCompress = RUNNERS.compress;
+  const realUnlock = RUNNERS.unlock;
   afterEach(() => {
     RUNNERS.compress = realCompress;
-    delete RUNNERS.unlock;
+    RUNNERS.unlock = realUnlock;
   });
 
   it('unlocks a protected input with its password, then splits the decrypted copy', async () => {
@@ -1664,5 +1671,79 @@ describe('runTool compress', () => {
     s.native.compressPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
     const outcome = await s.run({ toolId: 'compress', inputIds: [r.id], level: 'low' });
     expect(outcome).toEqual({ ok: false, failure: 'invalid', inputIndex: 0, outputs: [] });
+  });
+});
+
+describe('runTool protect and unlock', () => {
+  it('protects an unlocked input with the new password', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    const outcome = await s.run({
+      toolId: 'protect',
+      inputIds: [r.id],
+      newPassword: 'hunter22',
+    });
+    expect(outcome).toMatchObject({ ok: true });
+    expect(outcome.ok && outcome.extras).toBeFalsy();
+    expect(s.native.protectPdf).toHaveBeenCalledWith(
+      `file://${s.tmp}/j1/in-0.pdf`,
+      'j1',
+      'hunter22',
+    );
+    expect(s.native.unlockToolInput).not.toHaveBeenCalled();
+    expect(s.published.map((p) => p.name)).toEqual(['one-page protected.pdf']);
+    for (const call of logSpy.mock.calls) expect(String(call[0])).not.toContain('hunter22');
+  });
+
+  it('unlocks a locked input first, then protects the decrypted copy', async () => {
+    const r = row('protected.pdf');
+    const s = setup([r]);
+    const outcome = await s.run({
+      toolId: 'protect',
+      inputIds: [r.id],
+      newPassword: 'hunter22',
+      passwords: { 0: 'secret' },
+    });
+    expect(outcome).toMatchObject({ ok: true });
+    expect(outcome.ok && outcome.extras?.passwordRemoved).toBeFalsy();
+    expect(s.native.unlockToolInput).toHaveBeenCalledWith(
+      `file://${s.tmp}/j1/in-0.pdf`,
+      'j1',
+      0,
+      'secret',
+    );
+    expect(s.native.protectPdf).toHaveBeenCalledWith(
+      `file://${s.tmp}/j1/in-0.open.pdf`,
+      'j1',
+      'hunter22',
+    );
+    expect(s.published.map((p) => p.name)).toEqual(['protected protected.pdf']);
+  });
+
+  it('removes a password: publishes the decrypted copy as unlocked', async () => {
+    const r = row('protected.pdf');
+    const s = setup([r]);
+    const outcome = await s.run({ toolId: 'unlock', inputIds: [r.id], passwords: { 0: 'secret' } });
+    expect(outcome).toMatchObject({ ok: true });
+    expect(outcome.ok && outcome.extras?.passwordRemoved).toBeFalsy();
+    expect(s.native.publishToolOutput).toHaveBeenCalledWith(
+      `file://${s.tmp}/j1/in-0.open.pdf`,
+      'protected unlocked.pdf',
+    );
+  });
+
+  it('fails an unlock of a PDF with no password as notProtected', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    const outcome = await s.run({ toolId: 'unlock', inputIds: [r.id] });
+    expect(outcome).toEqual({ ok: false, failure: 'notProtected', inputIndex: 0, outputs: [] });
+    expect(s.native.publishToolOutput).not.toHaveBeenCalled();
+  });
+
+  it('fails an unlock with a wrong password for its input', async () => {
+    const r = row('protected.pdf');
+    const s = setup([r]);
+    const outcome = await s.run({ toolId: 'unlock', inputIds: [r.id], passwords: { 0: 'nope' } });
+    expect(outcome).toMatchObject({ ok: false, failure: 'wrongPassword', inputIndex: 0 });
   });
 });

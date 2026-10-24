@@ -171,6 +171,12 @@ export interface PdfNativeApi {
    */
   compressPdf(fileUri: string, jobId: string, level: CompressLevel): Promise<CompressResult>;
   /**
+   * Protect with PdfBox (a native job): workspace file `fileUri` of job `jobId` (not encrypted)
+   * is written as `out-protected.pdf`, AES-256, `password` opening it and also its owner password.
+   * The password is never logged or put into an error.
+   */
+  protectPdf(fileUri: string, jobId: string, password: string): Promise<WorkspaceFile>;
+  /**
    * Page thumbnail of a tool workspace file (anything else: ERR_PERMISSION_DENIED), on its own
    * lane apart from the reader and Files list; 1-based page, width clamped to 1..512.
    */
@@ -315,6 +321,7 @@ export const pdfNative: PdfNativeApi = {
   assemblePdf: (jobId, inputUris, outputsJson, firstOutput) =>
     PdfNative.assemblePdf(jobId, inputUris, outputsJson, firstOutput),
   compressPdf: (fileUri, jobId, level) => PdfNative.compressPdf(fileUri, jobId, level),
+  protectPdf: (fileUri, jobId, password) => PdfNative.protectPdf(fileUri, jobId, password),
   renderToolThumbnail: (fileUri, page, width) =>
     PdfNative.renderToolThumbnail(fileUri, page, width),
   getToolPageCount: (fileUri) => PdfNative.getToolPageCount(fileUri),

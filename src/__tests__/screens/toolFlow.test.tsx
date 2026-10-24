@@ -349,7 +349,7 @@ describe('tool flow', () => {
   });
 
   it('shows coming soon for tools that are not ready', async () => {
-    await open('/tool/protect');
+    await open('/tool/watermark');
     expect(screen.getByText('Coming soon')).toBeTruthy();
     expect(screen.queryByText('Choose PDFs')).toBeNull();
   });
@@ -480,6 +480,66 @@ describe('tool flow', () => {
       expect(start).toHaveBeenCalledTimes(1);
       expect(start).toHaveBeenCalledWith(
         { toolId: 'merge', inputIds: [a.id, b.id], passwords: { 1: 'secret' } },
+        expect.any(Function),
+      );
+    });
+
+    it('protects a picked file with the typed password', async () => {
+      await open(`/tool/protect?inputs=${ID_A}`);
+      await fireEvent.changeText(screen.getByLabelText('New password'), 'hunter22');
+      await fireEvent.changeText(screen.getByLabelText('Confirm password'), 'hunter22');
+      await press('Protect');
+      expect(start).toHaveBeenCalledWith(
+        { toolId: 'protect', inputIds: [ID_A], newPassword: 'hunter22' },
+        expect.any(Function),
+      );
+    });
+
+    it('asks for the current password of a locked file to protect', async () => {
+      jest.mocked(PdfNativeModule.inspectPdf).mockResolvedValue('password');
+      jest
+        .mocked(PdfNativeModule.checkPdfPassword)
+        .mockImplementation((_uri: string, pw: string) =>
+          Promise.resolve(pw === 'secret' ? 'ok' : 'wrong'),
+        );
+      await open(`/tool/protect?inputs=${ID_A}`);
+      await fireEvent.changeText(screen.getByLabelText('New password'), 'hunter22');
+      await fireEvent.changeText(screen.getByLabelText('Confirm password'), 'hunter22');
+      await press('Protect');
+      await fireEvent.changeText(screen.getByPlaceholderText('Password'), 'secret');
+      await press('Use');
+      expect(start).toHaveBeenCalledWith(
+        {
+          toolId: 'protect',
+          inputIds: [ID_A],
+          newPassword: 'hunter22',
+          passwords: { 0: 'secret' },
+        },
+        expect.any(Function),
+      );
+    });
+
+    it('says a PDF with no password has none to remove and disables Run', async () => {
+      await open(`/tool/unlock?inputs=${ID_A}`);
+      expect(screen.getByText('This PDF has no password.')).toBeTruthy();
+      expect(screen.getByLabelText('Remove password')).toBeDisabled();
+      expect(start).not.toHaveBeenCalled();
+    });
+
+    it('asks for the password of a locked file to remove, then starts the unlock', async () => {
+      jest.mocked(PdfNativeModule.inspectPdf).mockResolvedValue('password');
+      jest
+        .mocked(PdfNativeModule.checkPdfPassword)
+        .mockImplementation((_uri: string, pw: string) =>
+          Promise.resolve(pw === 'secret' ? 'ok' : 'wrong'),
+        );
+      await open(`/tool/unlock?inputs=${ID_A}`);
+      expect(screen.getByText("You'll need the PDF's current password.")).toBeTruthy();
+      await press('Remove password');
+      await fireEvent.changeText(screen.getByPlaceholderText('Password'), 'secret');
+      await press('Use');
+      expect(start).toHaveBeenCalledWith(
+        { toolId: 'unlock', inputIds: [ID_A], passwords: { 0: 'secret' } },
         expect.any(Function),
       );
     });

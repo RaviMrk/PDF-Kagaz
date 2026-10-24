@@ -249,6 +249,20 @@ class PdfNativeModule : Module() {
       }
     }
 
+    // Protect (AES-256): the password stays in this call, never logged or put into an error.
+    AsyncFunction("protectPdf") Coroutine { fileUri: String, jobId: String, password: String ->
+      RenderSupport.mapErrors {
+        withContext(Dispatchers.IO) {
+          val control = beginToolJob(jobId)
+          try {
+            security.protectWorkspaceInput(Uri.parse(fileUri), jobId, password, control::check)
+          } finally {
+            NativeJobs.end(jobId)
+          }
+        }
+      }
+    }
+
     AsyncFunction("renderToolThumbnail") Coroutine { fileUri: String, page: Int, width: Int ->
       toolThumbnails.render(fileUri, page, width)
     }

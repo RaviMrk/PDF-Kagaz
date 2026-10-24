@@ -125,6 +125,12 @@ function createNativeFns(): jest.Mocked<NativeFns> {
         imagesRecompressed: 1,
       }),
     ),
+    protectPdf: jest.fn((_uri: string, jobId: string, _password: string) =>
+      Promise.resolve({
+        uri: `file:///data/cache/tools/${jobId}/out-protected.pdf`,
+        sizeBytes: 900,
+      }),
+    ),
     renderToolThumbnail: jest.fn().mockResolvedValue('file:///tool-thumb.jpg'),
     getToolPageCount: jest.fn().mockResolvedValue(3),
     releaseToolDocument: jest.fn().mockResolvedValue(undefined),

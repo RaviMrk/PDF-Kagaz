@@ -48,13 +48,47 @@ class PdfSecurity(private val context: Context) {
   }
 
   /**
+   * Writes workspace file [fileUri] (not encrypted) of job [jobId] as `out-protected.pdf` next to it
+   * ([protectTo]); [check] throws ERR_CANCELLED once the job was cancelled. Anything but a file of
+   * that job's workspace → ERR_PERMISSION_DENIED. The password is never logged or put in an error.
+   */
+  fun protectWorkspaceInput(fileUri: Uri, jobId: String, password: String, check: () -> Unit): Map<String, Any?> {
+    if (!ToolPaths.isValidJobId(jobId)) throw InvalidNameException()
+    val source = ToolFiles.workspaceFile(context, fileUri)
+    val dir = source.parentFile ?: throw PermissionDeniedException()
+    if (dir.name != jobId) throw PermissionDeniedException()
+    if (!source.isFile) throw FileNotFoundCodedException()
+    val target = File(dir, "out-protected.pdf")
+    val tempDir = File(dir, "pdfbox-protect")
+    try {
+      check()
+      protectTo(source, target, password, tempDir)
+      check()
+    } finally {
+      tempDir.deleteRecursively()
+    }
+    return mapOf("uri" to Uri.fromFile(target).toString(), "sizeBytes" to target.length())
+  }
+
+  /**
    * Runs [block] on [uri] opened read-only through a descriptor (`/proc/self/fd/<n>`), so a source
    * is never copied in full; PdfBox spills to a temp dir in the tools cache, deleted afterwards.
    */
   private fun <T> withSource(uri: Uri, block: (File, File) -> T): T {
     val tempDir = File(File(context.cacheDir, ToolPaths.DIR), "lock-${UUID.randomUUID()}")
     try {
-      return openSource(uri).use { fd -> block(File("/proc/self/fd/${fd.fd}"), tempDir) }
+      return openSource(uri).use { fd ->
+        // A descriptor from a content provider cannot be reopened through /proc (the app may not
+        // be allowed to open that path itself): its bytes go to a scratch copy, deleted afterwards.
+        if (uri.scheme == "content") {
+          tempDir.mkdirs()
+          val copy = File(tempDir, "source.pdf")
+          java.io.FileInputStream(fd.fileDescriptor).use { input -> copy.outputStream().use { input.copyTo(it) } }
+          block(copy, tempDir)
+        } else {
+          block(File("/proc/self/fd/${fd.fd}"), tempDir)
+        }
+      }
     } finally {
       tempDir.deleteRecursively()
     }

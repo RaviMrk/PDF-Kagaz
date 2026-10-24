@@ -26,6 +26,7 @@ export type ToolFailure =
   | 'wrongPassword'
   | 'restricted'
   | 'signatureGone'
+  | 'notProtected'
   | 'unknown';
 
 /**

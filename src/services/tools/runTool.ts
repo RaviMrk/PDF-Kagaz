@@ -36,6 +36,8 @@ import {
   type ToolRunner,
 } from './runners/context';
 import { runCompress } from './runners/compress';
+import { runProtect } from './runners/protect';
+import { runUnlock } from './runners/unlock';
 import { runMerge } from './runners/merge';
 import { runOrganize } from './runners/organize';
 import { runSplit } from './runners/split';
@@ -202,6 +204,7 @@ export type ToolRunDeps = {
     | 'releaseToolDocument'
     | 'assemblePdf'
     | 'compressPdf'
+    | 'protectPdf'
   >;
   fs: ToolFs;
   getRows(ids: string[]): FileRow[];
@@ -291,6 +294,8 @@ export const RUNNERS: { [K in PdfToolRequest['toolId']]?: ToolRunner<PdfRequestO
   split: runSplit,
   organize: runOrganize,
   compress: runCompress,
+  protect: runProtect,
+  unlock: runUnlock,
 };
 
 type PdfRequestOf<K extends PdfToolRequest['toolId']> = Extract<PdfToolRequest, { toolId: K }>;
