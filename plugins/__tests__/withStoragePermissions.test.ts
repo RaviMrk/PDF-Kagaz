@@ -1,7 +1,7 @@
 import appJson from '../../app.json';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { applyStoragePermissions } = require('../withStoragePermissions');
+const { applyStoragePermissions, restoreMaxSdkCaps } = require('../withStoragePermissions');
 
 type Perm = { $: Record<string, string> };
 
@@ -54,6 +54,29 @@ describe('applyStoragePermissions', () => {
     const once = applyStoragePermissions(makeManifest(), { allFilesAccess: true });
     const twice = applyStoragePermissions(once, { allFilesAccess: true });
     expect(perms(twice)).toHaveLength(3);
+  });
+});
+
+describe('restoreMaxSdkCaps', () => {
+  const GRADLE = "apply plugin: 'com.android.application'\n\nandroid {\n}\n";
+
+  it("re-applies both caps after Expo's max-SDK override task in every variant", () => {
+    const out: string = restoreMaxSdkCaps(GRADLE);
+    expect(out.startsWith(GRADLE)).toBe(true);
+    // expo-max-sdk-override-plugin misattributes the `queries` merge entries to the permission
+    // before them and strips WRITE's cap; the restore runs as the last action of that task.
+    expect(out).toMatch(/tasks\.matching \{ it\.name ==~ \/expo\\w\*OverrideMaxSdkConflicts\/ \}/);
+    expect(out).toContain('doLast');
+    expect(out).toContain('modifiedManifestOut');
+    expect(out).toContain("'android.permission.READ_EXTERNAL_STORAGE': '32'");
+    expect(out).toContain("'android.permission.WRITE_EXTERNAL_STORAGE': '29'");
+    // A permission still uncapped after the restore fails the build instead of shipping silently.
+    expect(out).toContain('GradleException');
+  });
+
+  it('adds the block only once', () => {
+    const once: string = restoreMaxSdkCaps(GRADLE);
+    expect(restoreMaxSdkCaps(once)).toBe(once);
   });
 });
 
