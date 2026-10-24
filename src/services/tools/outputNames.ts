@@ -32,6 +32,47 @@ export function organisedName(inputName: string, t: Translate): string {
   return build(t, 'output.organised', inputName);
 }
 
+export function compressedName(inputName: string, t: Translate): string {
+  return build(t, 'output.compressed', inputName);
+}
+
+export function protectedName(inputName: string, t: Translate): string {
+  return build(t, 'output.protected', inputName);
+}
+
+export function unlockedName(inputName: string, t: Translate): string {
+  return build(t, 'output.unlocked', inputName);
+}
+
+export function watermarkedName(inputName: string, t: Translate): string {
+  return build(t, 'output.watermarked', inputName);
+}
+
+export function numberedName(inputName: string, t: Translate): string {
+  return build(t, 'output.numbered', inputName);
+}
+
+export function signedName(inputName: string, t: Translate): string {
+  return build(t, 'output.signed', inputName);
+}
+
+/** PDF to images: the gallery folder for one input's pages. */
+export function imageFolderName(inputName: string, t: Translate): string {
+  return t('output.imageFolder', { name: outputBaseName(inputName) });
+}
+
+/** PDF to images: one page's file, its number zero-padded to the width of the page count. */
+export function imageFileName(
+  inputName: string,
+  page: number,
+  pageCount: number,
+  format: 'jpg' | 'png',
+  t: Translate,
+): string {
+  const padded = String(page).padStart(String(pageCount).length, '0');
+  return `${t('output.imageFile', { name: outputBaseName(inputName), page: padded })}.${format}`;
+}
+
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
 /** Local `YYYY-MM-DD HH.mm` with ASCII digits (no colon: not valid in file names). */

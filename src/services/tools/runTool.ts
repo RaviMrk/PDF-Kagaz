@@ -5,37 +5,37 @@ import {
   type PdfFileInfo,
   type PdfNativeApi,
   type PreparedPage,
-  type StagedInput,
+  type WorkspaceFile,
 } from '@/services/native/pdfNative';
 import type { ImageLayoutOptions } from '@/services/pdf/imageLayout';
 import { imagesToPdf } from '@/services/pdf/imagesToPdf';
-import { loadPdf } from '@/services/pdf/loadPdf';
-import { mergePdfs } from '@/services/pdf/merge';
-import { organizePdf, type PageEdit } from '@/services/pdf/organize';
-import { PdfToolError, isPdfToolError, throwIfCancelled } from '@/services/pdf/pdfErrors';
-import { splitPdf } from '@/services/pdf/split';
+import type { PageEdit } from '@/services/pdf/organize';
+import { isPdfToolError, throwIfCancelled } from '@/services/pdf/pdfErrors';
 import { fileIdForUri } from '@/utils/fileId';
-import { everyNGroups, parsePageRanges, uniqueSortedPages } from '@/utils/pageRanges';
 
 import {
+  capsFor,
   checkInputSizes,
   IMAGE_QUALITY_PRESETS,
+  type Caps,
   type ImageQuality,
   IMAGE_TOTAL_BUDGET,
   IMAGES_MAX,
-  JS_MAX_FILE_BYTES,
   JS_MAX_TOTAL_BYTES,
+  routeFor,
 } from './limits';
-import {
-  customOutputName,
-  imagesName,
-  mergedName,
-  organisedName,
-  scanName,
-  splitNames,
-  type Translate,
-} from './outputNames';
+import { customOutputName, imagesName, scanName, type Translate } from './outputNames';
 import { createPhaseTimer, formatPhases } from './phaseTimer';
+import {
+  as,
+  createNativeOp,
+  ToolRunFailure,
+  type RunContext,
+  type ToolRunner,
+} from './runners/context';
+import { runMerge } from './runners/merge';
+import { runOrganize } from './runners/organize';
+import { runSplit } from './runners/split';
 import { knownSize, toToolFailure } from './toolFailure';
 import type { ToolFs } from './toolFs';
 import type { ToolFailure } from './toolJobRepo';
@@ -60,21 +60,128 @@ export type ImagesRequest = {
   quality: ImageQuality;
 };
 
-export type ToolRequest =
-  | { toolId: 'merge'; inputIds: string[] }
-  | { toolId: 'split'; inputIds: [string]; split: SplitOptions }
-  | { toolId: 'organize'; inputIds: [string]; pages: PageEdit[] }
-  | ImagesRequest;
+/**
+ * Input index → password. Lives only in component state and this in-memory request: never stored
+ * with the job, logged or sent anywhere.
+ */
+export type Passwords = Partial<Record<number, string>>;
+export type CompressLevel = 'low' | 'medium' | 'high';
+export type ImageFormat = 'jpg' | 'png';
+export type ExportDpi = 72 | 150 | 300;
+export type StampPosition =
+  | 'top-left'
+  | 'top-center'
+  | 'top-right'
+  | 'middle-left'
+  | 'center'
+  | 'middle-right'
+  | 'bottom-left'
+  | 'bottom-center'
+  | 'bottom-right';
+export type WatermarkOptions = {
+  source:
+    | { kind: 'text'; text: string; color: 'grey' | 'red' | 'blue' }
+    | { kind: 'image'; sessionId: string; index: number };
+  opacity: number;
+  angle: 0 | 45 | 90 | -45;
+  size: 'small' | 'medium' | 'large';
+  position: StampPosition;
+  pages: number[] | null;
+};
+export type PageNumberOptions = {
+  position: Exclude<StampPosition, 'middle-left' | 'center' | 'middle-right'>;
+  format: 'n' | 'pageOfTotal';
+  start: number;
+  fontSize: 10 | 12 | 14 | 18;
+  pages: number[] | null;
+};
+/** `cx`, `cy` (centre) and `width` are fractions of the visual page; `page` is 1-based. */
+export type SignaturePlacement = {
+  signatureId: number;
+  page: number;
+  cx: number;
+  cy: number;
+  width: number;
+};
+
+export type MergeRequest = { toolId: 'merge'; inputIds: string[]; passwords?: Passwords };
+export type SplitRequest = {
+  toolId: 'split';
+  inputIds: [string];
+  split: SplitOptions;
+  passwords?: Passwords;
+};
+export type OrganizeRequest = {
+  toolId: 'organize';
+  inputIds: [string];
+  pages: PageEdit[];
+  passwords?: Passwords;
+};
+
+/** Every request that works on picked PDFs (staged into the job workspace first). */
+export type PdfToolRequest =
+  | MergeRequest
+  | SplitRequest
+  | OrganizeRequest
+  | { toolId: 'compress'; inputIds: [string]; level: CompressLevel; passwords?: Passwords }
+  | { toolId: 'protect'; inputIds: [string]; newPassword: string; passwords?: Passwords }
+  | { toolId: 'unlock'; inputIds: [string]; passwords?: Passwords }
+  | {
+      toolId: 'pdf-to-images';
+      inputIds: [string];
+      format: ImageFormat;
+      dpi: ExportDpi;
+      pages: number[] | null;
+      passwords?: Passwords;
+    }
+  | { toolId: 'watermark'; inputIds: [string]; watermark: WatermarkOptions; passwords?: Passwords }
+  | {
+      toolId: 'page-numbers';
+      inputIds: [string];
+      numbers: PageNumberOptions;
+      passwords?: Passwords;
+    }
+  | {
+      toolId: 'sign';
+      inputIds: [string];
+      placements: SignaturePlacement[];
+      passwords?: Passwords;
+    };
+
+export type ToolRequest = PdfToolRequest | ImagesRequest;
 
 export function isImagesRequest(request: ToolRequest): request is ImagesRequest {
   return request.toolId === 'images-to-pdf' || request.toolId === 'scan';
 }
 
+/** The image session a request reads from: an images request's, or a watermark image's. */
+export function sessionIdOf(request: ToolRequest): string | null {
+  if (isImagesRequest(request)) return request.sessionId;
+  if (request.toolId === 'watermark' && request.watermark.source.kind === 'image') {
+    return request.watermark.source.sessionId;
+  }
+  return null;
+}
+
 export type ToolPhase = 'preparing' | 'processing' | 'saving';
 
+/** Pages saved as images (PDF to images); `reducedPages` were rendered below the asked DPI. */
+export type SavedImages = { count: number; folder: string; uris: string[]; reducedPages: number };
+export type ToolExtras = {
+  sizes?: { before: number; after: number };
+  images?: SavedImages;
+  passwordRemoved?: true;
+};
+
 export type ToolOutcome =
-  | { ok: true; outputs: FileRow[] }
-  | { ok: false; failure: ToolFailure; inputIndex: number | null; outputs: FileRow[] };
+  | { ok: true; outputs: FileRow[]; extras?: ToolExtras }
+  | {
+      ok: false;
+      failure: ToolFailure;
+      inputIndex: number | null;
+      outputs: FileRow[];
+      extras?: ToolExtras;
+    };
 
 export type ToolRunDeps = {
   native: Pick<
@@ -84,6 +191,8 @@ export type ToolRunDeps = {
     | 'prepareImagePage'
     | 'publishToolOutput'
     | 'cleanToolWorkspace'
+    | 'cancelNativeTool'
+    | 'addToolProgressListener'
   >;
   fs: ToolFs;
   getRows(ids: string[]): FileRow[];
@@ -92,32 +201,14 @@ export type ToolRunDeps = {
   recordOutput(jobId: string, info: PdfFileInfo): void;
   t: Translate;
   now(): number;
+  /** Route caps (tests force the native route with tiny JS caps); default JS_CAPS / NATIVE_CAPS. */
+  caps?: { js: Caps; native: Caps };
 };
 
 export type ToolRunControl = {
   signal: AbortSignal;
   onProgress(phase: ToolPhase, fraction: number): void;
 };
-
-/** A failure already mapped to its code and input (thrown inside the runner only). */
-class ToolRunFailure extends Error {
-  constructor(
-    readonly failure: ToolFailure,
-    readonly inputIndex: number | null,
-  ) {
-    super(`tool failed: ${failure}`);
-  }
-}
-
-/** Runs `fn`; any error but a cancellation becomes `failure` at `inputIndex`. */
-async function as<T>(failure: ToolFailure | null, inputIndex: number | null, fn: () => Promise<T>) {
-  try {
-    return await fn();
-  } catch (e) {
-    if (e instanceof ToolRunFailure || isPdfToolError(e, 'cancelled')) throw e;
-    throw new ToolRunFailure(failure ?? toToolFailure(e), inputIndex);
-  }
-}
 
 function failureOf(
   e: unknown,
@@ -183,9 +274,27 @@ function monotonicProgress(report: ToolRunControl['onProgress']): ToolRunControl
   };
 }
 
+/** Per-tool runners for PDF tools; a runnable tool without one fails as `unknown`. */
+export const RUNNERS: { [K in PdfToolRequest['toolId']]?: ToolRunner<PdfRequestOf<K>> } = {
+  merge: runMerge,
+  split: runSplit,
+  organize: runOrganize,
+};
+
+type PdfRequestOf<K extends PdfToolRequest['toolId']> = Extract<PdfToolRequest, { toolId: K }>;
+
 /**
- * Runs one job. Merge/split/organize: inputs are staged into the job workspace first (picked
- * documents only carry a transient grant) and processed from the staged copies. Images and scans:
+ * Decrypts locked staged inputs into the workspace (Task 3); a no-op until then. Returns the
+ * inputs the runner works from.
+ */
+async function unlockInputs(ctx: Omit<RunContext, 'route'>): Promise<WorkspaceFile[]> {
+  return ctx.inputs;
+}
+
+/**
+ * Runs one job. PDF tools: inputs are staged into the job workspace first (picked documents only
+ * carry a transient grant) under the tool's caps, the route is chosen from the staged sizes and the
+ * tool's runner processes the staged copies. Images and scans:
  * each session source is prepared natively as a bounded JPEG page in the job workspace, then the
  * pages become one PDF; the image session itself is never deleted here. Every output is published
  * as soon as it is written. Originals are never written. The job workspace is always cleaned.
@@ -205,6 +314,7 @@ export async function runTool(
   const published: PdfFileInfo[] = [];
   let workspaceUsed = false;
   let pages = 0;
+  let extras: ToolExtras | undefined;
 
   let registered: Promise<FileRow[]> | null = null;
   // Once only: outputs already published are registered on failure too. Outputs the index could
@@ -235,16 +345,13 @@ export async function runTool(
   };
 
   const processing = (f: number) => onProgress('processing', f);
-  let k = 0;
-  const save = async (out: Output, from: number, to: number) => {
-    k += 1;
-    const uri = `${workspace}/out-${k}.pdf`;
-    await as('io', null, () => time('save', () => fs.writeBytes(uri, out.bytes)));
+
+  const publishFile = async (file: WorkspaceFile, name: string, from: number, to: number) => {
     // Checked before each publish; a publish once started is never interrupted.
     throwIfCancelled(signal);
     onProgress('saving', from);
     const info = await as(null, null, () =>
-      time('publish', () => native.publishToolOutput(uri, out.name)),
+      time('publish', () => native.publishToolOutput(file.uri, name)),
     );
     published.push(info);
     try {
@@ -253,6 +360,14 @@ export async function runTool(
       // finishJob records the outputs again; only a process death loses this one.
     }
     onProgress('saving', to);
+  };
+
+  let k = 0;
+  const save = async (out: Output, from: number, to: number) => {
+    k += 1;
+    const uri = `${workspace}/out-${k}.pdf`;
+    await as('io', null, () => time('save', () => fs.writeBytes(uri, out.bytes)));
+    await publishFile({ uri, sizeBytes: out.bytes.length }, out.name, from, to);
   };
 
   /** Prepares session source `source` as page `index`, mapping its failure for this job. */
@@ -340,15 +455,19 @@ export async function runTool(
     await save({ bytes, name: customOutputName(request.name, fallback) }, 0, 1);
   };
 
-  const runPdfs = async (request: Exclude<ToolRequest, ImagesRequest>) => {
+  const runPdfs = async (request: PdfToolRequest) => {
     const ids = request.inputIds;
     const found = new Map(deps.getRows(ids).map((r) => [r.id, r]));
     const missing = ids.findIndex((id) => !found.has(id));
     if (missing >= 0) throw new ToolRunFailure('notFound', missing);
     const rows = ids.map((id) => found.get(id) as FileRow);
+    const caps = capsFor(request.toolId);
 
     // Unknown sizes (NaN, negative) count as 0 here; the native stage cap refuses them if large.
-    const sizes = checkInputSizes(rows.map((r) => knownSize(r.sizeBytes)));
+    const sizes = checkInputSizes(
+      rows.map((r) => knownSize(r.sizeBytes)),
+      caps,
+    );
     if (!sizes.ok) {
       throw new ToolRunFailure(sizes.reason, sizes.reason === 'tooLarge' ? sizes.index : null);
     }
@@ -356,63 +475,55 @@ export async function runTool(
     await openWorkspace();
 
     onProgress('preparing', 0);
-    const staged: StagedInput[] = [];
+    const staged: WorkspaceFile[] = [];
     let total = 0;
     for (const [i, row] of rows.entries()) {
       throwIfCancelled(signal);
       const input = await as(null, i, () =>
-        time('stage', () => native.stageToolInput(row.uri, jobId, i, JS_MAX_FILE_BYTES)),
+        time('stage', () => native.stageToolInput(row.uri, jobId, i, caps.file)),
       );
       if (!Number.isFinite(input.sizeBytes) || input.sizeBytes < 0) {
         throw new ToolRunFailure('unknown', i);
       }
-      if (input.sizeBytes > JS_MAX_FILE_BYTES) throw new ToolRunFailure('tooLarge', i);
+      if (input.sizeBytes > caps.file) throw new ToolRunFailure('tooLarge', i);
       total += input.sizeBytes;
-      if (total > JS_MAX_TOTAL_BYTES) throw new ToolRunFailure('totalTooLarge', null);
+      if (total > caps.total) throw new ToolRunFailure('totalTooLarge', null);
       staged.push(input);
       onProgress('preparing', (i + 1) / rows.length);
     }
 
-    const read = (i: number) => as('io', i, () => time('read', () => fs.readBytes(staged[i]!.uri)));
+    const base: Omit<RunContext, 'route'> = {
+      jobId,
+      request,
+      rows,
+      inputs: staged,
+      deps,
+      signal,
+      t,
+      time,
+      processing,
+      save,
+      publishFile,
+      nativeOp: createNativeOp(jobId, native, signal, processing),
+      setPages: (n) => {
+        pages = n;
+      },
+      setExtras: (e) => {
+        extras = e;
+      },
+    };
+    const inputs = await unlockInputs(base);
+    const route = routeFor(
+      request.toolId,
+      inputs.map((input) => input.sizeBytes),
+      deps.caps,
+    );
 
+    const runner = RUNNERS[request.toolId] as ToolRunner | undefined;
+    if (!runner) throw new ToolRunFailure('unknown', null);
     throwIfCancelled(signal);
     onProgress('processing', 0);
-    const first = rows[0]!;
-    if (request.toolId === 'merge') {
-      const sources = staged.map((_, i) => () => read(i));
-      const bytes = await time('embed', () =>
-        mergePdfs(sources, {
-          signal,
-          onProgress: processing,
-          onPageCount: (n) => {
-            pages = n;
-          },
-        }),
-      );
-      await save({ bytes, name: mergedName(first.name, t) }, 0, 1);
-    } else if (request.toolId === 'organize') {
-      const source = await read(0);
-      const bytes = await time('embed', () =>
-        organizePdf(source, request.pages, { signal, onProgress: processing }),
-      );
-      pages = request.pages.length;
-      await save({ bytes, name: organisedName(first.name, t) }, 0, 1);
-    } else {
-      const bytes = await read(0);
-      const pageCount = await time('embed', async () => (await loadPdf(bytes, 0)).getPageCount());
-      const groups = splitGroups(request.split, pageCount);
-      const names = splitNames(first.name, request.split.mode, groups, t);
-      pages = groups.reduce((n, g) => n + g.length, 0);
-      // Each part's write and publish are timed as save / publish, not as pdf-lib work.
-      await time('embed', () =>
-        splitPdf(bytes, groups, {
-          signal,
-          onProgress: processing,
-          onPart: (i, part) =>
-            save({ bytes: part, name: names[i]! }, i / groups.length, (i + 1) / groups.length),
-        }),
-      );
-    }
+    await runner({ ...base, inputs, route });
   };
 
   try {
@@ -424,7 +535,7 @@ export async function runTool(
     const ms = deps.now() - started;
     console.log(`[tool] ${request.toolId} ${ms}ms ${pages} pages ${published.length} files`);
     console.log(formatPhases(request.toolId, timer.totals()));
-    return { ok: true, outputs };
+    return extras ? { ok: true, outputs, extras } : { ok: true, outputs };
   } catch (e) {
     if (e instanceof RegistrationFailure) {
       return { ok: false, failure: 'io', inputIndex: null, outputs: e.outputs };
@@ -443,15 +554,4 @@ export async function runTool(
       }
     }
   }
-}
-
-function splitGroups(split: SplitOptions, pageCount: number): number[][] {
-  if (split.mode === 'everyN') {
-    const groups = everyNGroups(pageCount, split.n);
-    if (groups.length === 0) throw new PdfToolError('badPages');
-    return groups;
-  }
-  const parsed = parsePageRanges(split.ranges, pageCount);
-  if (!parsed.ok) throw new PdfToolError('badPages');
-  return split.mode === 'extract' ? [uniqueSortedPages(parsed.groups)] : parsed.groups;
 }

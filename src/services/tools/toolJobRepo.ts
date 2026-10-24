@@ -23,6 +23,9 @@ export type ToolFailure =
   | 'interrupted'
   | 'imagesGone'
   | 'imageInvalid'
+  | 'wrongPassword'
+  | 'restricted'
+  | 'signatureGone'
   | 'unknown';
 
 /**

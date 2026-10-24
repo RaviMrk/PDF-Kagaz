@@ -10,8 +10,16 @@ import type { Translate } from '@/services/tools/outputNames';
 import {
   isImagesRequest,
   runTool,
+  sessionIdOf,
+  type CompressLevel,
+  type ExportDpi,
+  type ImageFormat,
   type ImagesRequest,
+  type PageNumberOptions,
+  type SignaturePlacement,
   type SplitOptions,
+  type StampPosition,
+  type WatermarkOptions,
   type ToolOutcome,
   type ToolPhase,
   type ToolRequest,
@@ -52,9 +60,12 @@ export type FinishedJob = {
   /** Interrupted by a process death and loaded from its row: outcomeOf re-reads the row. */
   recovered?: true;
 };
-/** `gone`: an image job from another process; its image session no longer exists. */
+/**
+ * `gone`: an image job from another process; its image session no longer exists. `needsInput`: a
+ * password tool's row (its password is never stored): the user starts the tool again.
+ */
 export type StartResult =
-  { ok: true; jobId: string } | { ok: false; reason: 'busy' | 'db' | 'gone' };
+  { ok: true; jobId: string } | { ok: false; reason: 'busy' | 'db' | 'gone' | 'needsInput' };
 export type JobView =
   | { kind: 'running'; job: ActiveJob }
   | { kind: 'done'; toolId: RunnableToolId; outcome: ToolOutcome }
@@ -113,18 +124,39 @@ const FAILURES: readonly ToolFailure[] = [
   'interrupted',
   'imagesGone',
   'imageInvalid',
+  'wrongPassword',
+  'restricted',
+  'signatureGone',
   'unknown',
 ];
 
-/** Options stored with a job: no ids or names (an image job's typed name is not stored). */
+/**
+ * Options stored with a job: no ids or names (an image job's typed name is not stored) and never a
+ * password (`passwords`, Protect's `newPassword`).
+ */
 export function optionsOf(request: ToolRequest): Record<string, unknown> {
   if (isImagesRequest(request)) {
     const { sessionId, images, filter, layout, quality } = request;
     return { sessionId, images, filter, layout, quality };
   }
-  if (request.toolId === 'split') return { split: request.split };
-  if (request.toolId === 'organize') return { pages: request.pages };
-  return {};
+  switch (request.toolId) {
+    case 'split':
+      return { split: request.split };
+    case 'organize':
+      return { pages: request.pages };
+    case 'compress':
+      return { level: request.level };
+    case 'pdf-to-images':
+      return { format: request.format, dpi: request.dpi, pages: request.pages };
+    case 'watermark':
+      return { watermark: request.watermark };
+    case 'page-numbers':
+      return { numbers: request.numbers };
+    case 'sign':
+      return { placements: request.placements };
+    default:
+      return {};
+  }
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -153,6 +185,102 @@ function pagesFrom(v: unknown): PageEdit[] | null {
 }
 
 const SESSION_ID = /^img-[a-z0-9-]{1,60}$/;
+
+const oneOf = <T>(values: readonly T[], v: unknown): T | undefined => values.find((x) => x === v);
+const isPage = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 1;
+const isFraction = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
+
+/** null (all pages) or a non-empty list of 1-based pages; undefined when malformed. */
+function pageListFrom(v: unknown): number[] | null | undefined {
+  if (v === null) return null;
+  if (!Array.isArray(v) || v.length === 0 || !v.every(isPage)) return undefined;
+  return [...(v as number[])];
+}
+
+const LEVELS: readonly CompressLevel[] = ['low', 'medium', 'high'];
+const FORMATS: readonly ImageFormat[] = ['jpg', 'png'];
+const DPIS: readonly ExportDpi[] = [72, 150, 300];
+const POSITIONS: readonly StampPosition[] = [
+  'top-left',
+  'top-center',
+  'top-right',
+  'middle-left',
+  'center',
+  'middle-right',
+  'bottom-left',
+  'bottom-center',
+  'bottom-right',
+];
+const NUMBER_POSITIONS: readonly PageNumberOptions['position'][] = [
+  'top-left',
+  'top-center',
+  'top-right',
+  'bottom-left',
+  'bottom-center',
+  'bottom-right',
+];
+const ANGLES: readonly WatermarkOptions['angle'][] = [0, 45, 90, -45];
+const STAMP_SIZES: readonly WatermarkOptions['size'][] = ['small', 'medium', 'large'];
+const COLORS = ['grey', 'red', 'blue'] as const;
+const FONT_SIZES: readonly PageNumberOptions['fontSize'][] = [10, 12, 14, 18];
+const MAX_PLACEMENTS = 50;
+
+function watermarkFrom(v: unknown): WatermarkOptions | null {
+  if (!isRecord(v) || !isRecord(v.source)) return null;
+  const src = v.source;
+  let source: WatermarkOptions['source'];
+  if (src.kind === 'text') {
+    const color = oneOf(COLORS, src.color);
+    if (typeof src.text !== 'string' || src.text.trim() === '' || !color) return null;
+    source = { kind: 'text', text: src.text, color };
+  } else if (src.kind === 'image') {
+    if (typeof src.sessionId !== 'string' || !SESSION_ID.test(src.sessionId)) return null;
+    if (!Number.isInteger(src.index) || (src.index as number) < 0) return null;
+    source = { kind: 'image', sessionId: src.sessionId, index: src.index as number };
+  } else {
+    return null;
+  }
+  const angle = oneOf(ANGLES, v.angle);
+  const size = oneOf(STAMP_SIZES, v.size);
+  const position = oneOf(POSITIONS, v.position);
+  const pages = pageListFrom(v.pages);
+  if (!isFraction(v.opacity) || v.opacity === 0) return null;
+  if (angle === undefined || !size || !position || pages === undefined) return null;
+  return { source, opacity: v.opacity, angle, size, position, pages };
+}
+
+function numbersFrom(v: unknown): PageNumberOptions | null {
+  if (!isRecord(v)) return null;
+  const position = oneOf(NUMBER_POSITIONS, v.position);
+  const format = oneOf(['n', 'pageOfTotal'] as const, v.format);
+  const fontSize = oneOf(FONT_SIZES, v.fontSize);
+  const pages = pageListFrom(v.pages);
+  if (!position || !format || !fontSize || pages === undefined) return null;
+  if (!Number.isInteger(v.start) || (v.start as number) < 1 || (v.start as number) > 9999) {
+    return null;
+  }
+  return { position, format, start: v.start as number, fontSize, pages };
+}
+
+function placementsFrom(v: unknown): SignaturePlacement[] | null {
+  if (!Array.isArray(v) || v.length === 0 || v.length > MAX_PLACEMENTS) return null;
+  const placements: SignaturePlacement[] = [];
+  for (const p of v) {
+    if (!isRecord(p) || !isPage(p.signatureId) || !isPage(p.page)) return null;
+    if (!isFraction(p.cx) || !isFraction(p.cy) || !isFraction(p.width) || p.width === 0) {
+      return null;
+    }
+    placements.push({
+      signatureId: p.signatureId,
+      page: p.page,
+      cx: p.cx,
+      cy: p.cy,
+      width: p.width,
+    });
+  }
+  return placements;
+}
 const FILTERS: readonly ImageFilter[] = ['colour', 'greyscale', 'bw'];
 
 function imagesFrom(row: ToolJobRow): ImagesRequest | null {
@@ -191,8 +319,39 @@ export function requestFromJob(row: ToolJobRow): ToolRequest | null {
     const pages = pagesFrom(row.options.pages);
     return pages ? { toolId: 'organize', inputIds: [only], pages } : null;
   }
-  return null;
+  const o = row.options;
+  switch (row.toolId) {
+    case 'compress': {
+      const level = oneOf(LEVELS, o.level);
+      return level ? { toolId: 'compress', inputIds: [only], level } : null;
+    }
+    case 'pdf-to-images': {
+      const format = oneOf(FORMATS, o.format);
+      const dpi = oneOf(DPIS, o.dpi);
+      const pages = pageListFrom(o.pages);
+      if (!format || !dpi || pages === undefined) return null;
+      return { toolId: 'pdf-to-images', inputIds: [only], format, dpi, pages };
+    }
+    case 'watermark': {
+      const watermark = watermarkFrom(o.watermark);
+      return watermark ? { toolId: 'watermark', inputIds: [only], watermark } : null;
+    }
+    case 'page-numbers': {
+      const numbers = numbersFrom(o.numbers);
+      return numbers ? { toolId: 'page-numbers', inputIds: [only], numbers } : null;
+    }
+    case 'sign': {
+      const placements = placementsFrom(o.placements);
+      return placements ? { toolId: 'sign', inputIds: [only], placements } : null;
+    }
+    default:
+      // Protect and unlock need a typed password: never rebuilt.
+      return null;
+  }
 }
+
+/** Tools whose stored rows cannot run again without a password the user types. */
+const NEEDS_PASSWORD: ReadonlySet<string> = new Set(['protect', 'unlock']);
 
 /** Job ids are also workspace directory names: `[a-z0-9-]` only. */
 export function newJobId(now: number, random: () => number): string {
@@ -200,26 +359,47 @@ export function newJobId(now: number, random: () => number): string {
   return `${Math.max(0, Math.floor(now)).toString(36)}-${n.toString(36).padStart(6, '0')}`;
 }
 
-const RUNNABLE: readonly RunnableToolId[] = ['merge', 'split', 'organize', 'images-to-pdf', 'scan'];
+const RUNNABLE: readonly RunnableToolId[] = [
+  'merge',
+  'split',
+  'organize',
+  'images-to-pdf',
+  'scan',
+  'compress',
+  'protect',
+  'unlock',
+  'pdf-to-images',
+  'watermark',
+  'page-numbers',
+  'sign',
+];
 
 function runnable(toolId: string): RunnableToolId | null {
   return RUNNABLE.find((id) => id === toolId) ?? null;
 }
 
-function resultOf(outcome: ToolOutcome, now: number): JobResult {
+function resultOf(request: ToolRequest, outcome: ToolOutcome, now: number): JobResult {
   const outputIds = outcome.outputs.map((r) => r.id);
   if (outcome.ok) {
-    return { status: 'succeeded', outputIds, outputUri: outcome.outputs[0]?.uri ?? null, now };
+    // PDF to images saves gallery images, not indexed PDFs: the first image stands for them.
+    const outputUri =
+      request.toolId === 'pdf-to-images'
+        ? (outcome.extras?.images?.uris[0] ?? null)
+        : (outcome.outputs[0]?.uri ?? null);
+    return { status: 'succeeded', outputIds, outputUri, now };
   }
   if (outcome.failure === 'cancelled') return { status: 'cancelled', outputIds, now };
   return { status: 'failed', error: outcome.failure, outputIds, now };
 }
 
-/** The image session `last` keeps for "Try again" (a failed or cancelled image job), else null. */
+/**
+ * The image session `last` keeps for "Try again" (a failed or cancelled job that reads one: images,
+ * scan, an image watermark), else null.
+ */
 function keptSession(last: FinishedJob | null): string | null {
   const request = last?.request;
-  if (!last || last.outcome.ok || !request || !isImagesRequest(request)) return null;
-  return request.sessionId;
+  if (!last || last.outcome.ok || !request) return null;
+  return sessionIdOf(request);
 }
 
 export function createToolJobStore(deps: ToolJobStoreDeps) {
@@ -238,7 +418,7 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
 
     function finish(jobId: string, request: ToolRequest, outcome: ToolOutcome, startedAt: number) {
       try {
-        finishJob(deps.getDb(), jobId, resultOf(outcome, deps.now()));
+        finishJob(deps.getDb(), jobId, resultOf(request, outcome, deps.now()));
       } catch {
         // The row stays running and is marked interrupted at the next start.
       }
@@ -248,12 +428,11 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
         if (id !== undefined) useFiles.getState().dropMissing(id);
       }
       // The session is kept after a failure or cancel, so "Try again" can use it in this process.
-      if (outcome.ok && isImagesRequest(request)) cleanSession(request.sessionId);
+      const session = sessionIdOf(request);
+      if (outcome.ok && session !== null) cleanSession(session);
       // The job this one replaces as `last` can no longer be retried: its kept session goes.
       const previous = keptSession(get().last);
-      if (previous !== null && !(isImagesRequest(request) && request.sessionId === previous)) {
-        cleanSession(previous);
-      }
+      if (previous !== null && previous !== session) cleanSession(previous);
       controller = null;
       running = null;
       set({
@@ -338,15 +517,17 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
         const { last } = get();
         if (last?.jobId === jobId && last.request) return start(last.request, t);
         let request: ToolRequest | null = null;
+        let row: ToolJobRow | undefined;
         try {
-          const row = getJob(deps.getDb(), jobId);
+          row = getJob(deps.getDb(), jobId);
           request = row ? requestFromJob(row) : null;
         } catch {
           request = null;
         }
+        if (row && NEEDS_PASSWORD.has(row.toolId)) return { ok: false, reason: 'needsInput' };
         if (!request) return { ok: false, reason: 'db' };
         // Not run by this process: its image session was deleted at this process's start.
-        if (isImagesRequest(request)) return { ok: false, reason: 'gone' };
+        if (sessionIdOf(request) !== null) return { ok: false, reason: 'gone' };
         return start(request, t);
       },
 
@@ -364,8 +545,14 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
         const toolId = row ? runnable(row.toolId) : null;
         if (!row || !toolId) return { kind: 'missing' };
         const outputs = useFiles.getState().getRows(row.outputIds);
-        if (row.status === 'succeeded')
+        if (row.status === 'succeeded') {
+          // The saved images are not kept with the row: the result shows no list for them.
+          if (toolId === 'pdf-to-images') {
+            const images = { count: 0, folder: '', uris: [], reducedPages: 0 };
+            return { kind: 'done', toolId, outcome: { ok: true, outputs: [], extras: { images } } };
+          }
           return { kind: 'done', toolId, outcome: { ok: true, outputs } };
+        }
         // Not running in this process: a queued/running row was interrupted by a process death.
         const failure: ToolFailure =
           row.status === 'cancelled'
@@ -382,7 +569,7 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
         const session = keptSession(last);
         if (session === null) return;
         // A retry of this job is running on the same session.
-        if (running && isImagesRequest(running) && running.sessionId === session) return;
+        if (running && sessionIdOf(running) === session) return;
         cleanSession(session);
         // Without its request, a retry reads the row and reports the images `gone`.
         const { request: _dropped, ...rest } = last;

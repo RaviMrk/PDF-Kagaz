@@ -1,8 +1,8 @@
 import type { FileRow } from '@/db/schema';
 
-import { checkInputSizes } from './limits';
+import { capsFor, checkInputSizes, JS_CAPS, TOOL_ENGINE, type Caps } from './limits';
 import { knownSize } from './toolFailure';
-import type { ToolDef } from './toolRegistry';
+import type { RunnableToolId, ToolDef } from './toolRegistry';
 
 export type FlowState = { step: 'pick' | 'options'; selectedIds: string[] };
 
@@ -28,7 +28,12 @@ export function toggleSelection(state: FlowState, id: string, tool: ToolDef): Fl
   return { ...state, selectedIds: [...selectedIds, id] };
 }
 
-/** The selection fits the tool's count and the JS size caps; every id needs a row. */
+/** The size caps the pick step applies for `tool` (a tool that cannot run yet: the JS caps). */
+export function pickCaps(tool: ToolDef): Caps {
+  return tool.id in TOOL_ENGINE ? capsFor(tool.id as RunnableToolId) : JS_CAPS;
+}
+
+/** The selection fits the tool's count and its size caps; every id needs a row. */
 export function canContinue(state: FlowState, tool: ToolDef, rows: FileRow[]): boolean {
   const n = state.selectedIds.length;
   if (n < tool.minInputs || n > tool.maxInputs) return false;
@@ -38,7 +43,7 @@ export function canContinue(state: FlowState, tool: ToolDef, rows: FileRow[]): b
     if (!row) return false;
     sizes.push(knownSize(row.sizeBytes));
   }
-  return checkInputSizes(sizes).ok;
+  return checkInputSizes(sizes, pickCaps(tool)).ok;
 }
 
 /**

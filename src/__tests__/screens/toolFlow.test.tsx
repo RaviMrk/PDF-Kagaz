@@ -9,6 +9,7 @@ import { useStorage } from '@/stores/storageStore';
 import { useToolJobs, type StartResult } from '@/stores/toolJobStore';
 import { openToolPreview } from '@/services/tools/toolPreview';
 import { makeRow } from '@/test-utils/fileRows';
+import { formatBytes } from '@/utils/fileSize';
 
 import PdfNativeModule from '../../../modules/pdf-native';
 
@@ -212,15 +213,15 @@ describe('tool flow', () => {
     expect(screen.getByText('0 selected')).toBeTruthy();
   });
 
-  it('blocks merging over 100 MB together', async () => {
-    const heavy = ['w', 'x', 'y', 'z'].map((n) =>
-      makeRow({ name: `${n}.pdf`, sizeBytes: 30_000_000 }),
-    );
+  it('blocks merging over the 1 GB total cap', async () => {
+    const heavy = ['x', 'y', 'z'].map((n) => makeRow({ name: `${n}.pdf`, sizeBytes: 400_000_000 }));
     useFiles.setState({ files: heavy });
     await open('/tool/merge');
-    for (const n of ['w', 'x', 'y', 'z']) await press(`Select ${n}.pdf`);
+    for (const n of ['x', 'y', 'z']) await press(`Select ${n}.pdf`);
     expect(
-      screen.getByText('These files are over 100 MB together. Merge fewer files at a time.'),
+      screen.getByText(
+        `These files are over ${formatBytes(1_073_741_824)} together. Use fewer files at a time.`,
+      ),
     ).toBeTruthy();
     expect(screen.getByLabelText('Next')).toBeDisabled();
   });
@@ -279,7 +280,9 @@ describe('tool flow', () => {
     preview.mockResolvedValue({ ok: false, failure: 'encrypted' });
     await open(`/tool/split?inputs=${ID_A}`);
     expect(
-      screen.getByText('"ha.pdf" is password-protected. Tools can\'t open protected PDFs yet.'),
+      screen.getByText(
+        '"ha.pdf" is password-protected. Start the tool again and enter its password.',
+      ),
     ).toBeTruthy();
     expect(screen.queryByLabelText('Split')).toBeNull();
   });

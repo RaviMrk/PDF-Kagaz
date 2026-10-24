@@ -1,7 +1,7 @@
 import type { FileRow } from '@/db/schema';
 import { pdfNative, type PdfNativeApi } from '@/services/native/pdfNative';
 
-import { JS_MAX_FILE_BYTES } from './limits';
+import { NATIVE_CAPS } from './limits';
 import { knownSize, toToolFailure } from './toolFailure';
 import type { ToolFailure } from './toolJobRepo';
 
@@ -25,17 +25,26 @@ function quietly(fn: () => Promise<unknown>): void {
   }
 }
 
+export type ToolPreviewOptions = {
+  /** The input's password (Task 3 opens locked inputs with it); never stored or logged. */
+  password?: string | null;
+  /** Staging cap; default NATIVE_CAPS.file. */
+  maxBytes?: number;
+};
+
 /** Stages a file into its own preview workspace (for page thumbnails) and counts its pages. */
 export async function openToolPreview(
   row: FileRow,
+  opts: ToolPreviewOptions = {},
   deps: { native: PreviewNative } = { native: pdfNative },
 ): Promise<{ ok: true; preview: ToolPreview } | { ok: false; failure: ToolFailure }> {
   const { native } = deps;
-  if (knownSize(row.sizeBytes) > JS_MAX_FILE_BYTES) return { ok: false, failure: 'tooLarge' };
+  const maxBytes = opts.maxBytes ?? NATIVE_CAPS.file;
+  if (knownSize(row.sizeBytes) > maxBytes) return { ok: false, failure: 'tooLarge' };
   const workspace = `preview-${row.id}`;
   try {
     await native.createToolWorkspace(workspace);
-    const staged = await native.stageToolInput(row.uri, workspace, 0, JS_MAX_FILE_BYTES);
+    const staged = await native.stageToolInput(row.uri, workspace, 0, maxBytes);
     const pageCount = await native.getToolPageCount(staged.uri);
     let closed = false;
     return {

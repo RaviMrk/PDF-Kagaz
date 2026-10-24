@@ -4,7 +4,8 @@ import { I18nextProvider } from 'react-i18next';
 
 import { PickFilesList } from '@/components/tools/PickFilesList';
 import { initI18n } from '@/i18n';
-import { JS_MAX_FILE_BYTES } from '@/services/tools/limits';
+import { JS_MAX_FILE_BYTES, NATIVE_CAPS } from '@/services/tools/limits';
+import { formatBytes } from '@/utils/fileSize';
 import { makeRow } from '@/test-utils/fileRows';
 
 const i18n = initI18n('en');
@@ -21,8 +22,21 @@ const other = makeRow({ name: 'other.pdf' });
 
 const onToggle = jest.fn();
 
-function list(files = [intent, big, small, other], selectedIds: string[] = [], max = 5) {
-  return <PickFilesList files={files} selectedIds={selectedIds} max={max} onToggle={onToggle} />;
+function list(
+  files = [intent, big, small, other],
+  selectedIds: string[] = [],
+  max = 5,
+  maxFileBytes = JS_MAX_FILE_BYTES,
+) {
+  return (
+    <PickFilesList
+      files={files}
+      selectedIds={selectedIds}
+      max={max}
+      maxFileBytes={maxFileBytes}
+      onToggle={onToggle}
+    />
+  );
 }
 
 describe('PickFilesList', () => {
@@ -34,14 +48,23 @@ describe('PickFilesList', () => {
     expect(screen.getAllByText('2.0 KB · Download')).toHaveLength(2);
   });
 
-  it('disables files over the JS size cap', async () => {
+  it('disables files over the given size cap, naming the limit', async () => {
     expect(big.sizeBytes).toBeGreaterThan(JS_MAX_FILE_BYTES);
     await render(list());
-    expect(screen.getByText('Too large for this tool (max 30 MB)')).toBeOnTheScreen();
+    expect(
+      screen.getByText(`Too large for this tool (max ${formatBytes(JS_MAX_FILE_BYTES)})`),
+    ).toBeOnTheScreen();
     const row = screen.getByRole('checkbox', { name: 'Select huge.pdf' });
     expect(row.props.accessibilityState).toMatchObject({ disabled: true, checked: false });
     await fireEvent.press(row);
     expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it('enables the same file under the native cap', async () => {
+    await render(list([big], [], 5, NATIVE_CAPS.file));
+    const row = screen.getByRole('checkbox', { name: 'Select huge.pdf' });
+    expect(row.props.accessibilityState).toMatchObject({ disabled: false });
+    expect(screen.queryByText(/Too large for this tool/)).toBeNull();
   });
 
   it('toggles an enabled row', async () => {

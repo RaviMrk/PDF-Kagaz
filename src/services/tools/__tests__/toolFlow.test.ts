@@ -12,6 +12,8 @@ import {
 
 const merge = toolById('merge') as ToolDef;
 const split = toolById('split') as ToolDef;
+const compress = toolById('compress') as ToolDef;
+const images = toolById('images-to-pdf') as ToolDef;
 const A = '0123456789abcdef';
 const B = 'fedcba9876543210';
 
@@ -65,13 +67,19 @@ describe('canContinue', () => {
     expect(canContinue({ step: 'pick', selectedIds: [] }, split, rows)).toBe(false);
     expect(canContinue({ step: 'pick', selectedIds: [ids[0]!] }, split, rows)).toBe(true);
   });
-  it('rejects a row over the per-file cap', () => {
-    const big = makeRow({ name: 'big.pdf', sizeBytes: 31 * 1024 * 1024 });
+  it('rejects a row over the per-file cap of the tool', () => {
+    const big = makeRow({ name: 'big.pdf', sizeBytes: 513 * 1024 * 1024 });
     expect(canContinue({ step: 'pick', selectedIds: [big.id] }, split, [big])).toBe(false);
   });
-  it('rejects a total over the combined cap', () => {
-    const heavy = rows.map((r) => ({ ...r, sizeBytes: 30_000_000 }));
+  it('rejects a total over the combined cap of the tool', () => {
+    const heavy = rows.map((r) => ({ ...r, sizeBytes: 300_000_000 }));
     expect(canContinue({ step: 'pick', selectedIds: ids }, merge, heavy)).toBe(false);
+  });
+  it('uses the native caps for PDF tools and the JS caps for images', () => {
+    const mid = makeRow({ name: 'mid.pdf', sizeBytes: 40 * 1024 * 1024 });
+    expect(canContinue({ step: 'pick', selectedIds: [mid.id] }, compress, [mid])).toBe(true);
+    expect(canContinue({ step: 'pick', selectedIds: [mid.id] }, split, [mid])).toBe(true);
+    expect(canContinue({ step: 'pick', selectedIds: [mid.id] }, images, [mid])).toBe(false);
   });
   it('rejects a selected id with no row', () => {
     expect(canContinue({ step: 'pick', selectedIds: [ids[0]!, A] }, merge, rows)).toBe(false);

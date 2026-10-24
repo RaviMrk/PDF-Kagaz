@@ -1,5 +1,12 @@
 import {
+  capsFor,
   checkInputSizes,
+  JS_CAPS,
+  JS_MAX_FILE_BYTES,
+  JS_MAX_TOTAL_BYTES,
+  NATIVE_CAPS,
+  routeFor,
+  TOOL_ENGINE,
   IMAGES_MAX,
   IMAGE_JPEG_QUALITY,
   IMAGE_MAX_BYTES,
@@ -54,5 +61,50 @@ describe('checkInputSizes', () => {
       ok: false,
       reason: 'totalTooLarge',
     });
+  });
+});
+
+describe('caps and routing', () => {
+  const MiB = 1_048_576;
+  it('has the exact caps, the JS byte constants staying as aliases', () => {
+    expect(JS_CAPS).toEqual({ file: 31_457_280, total: 104_857_600 });
+    expect(NATIVE_CAPS).toEqual({ file: 536_870_912, total: 1_073_741_824 });
+    expect(JS_MAX_FILE_BYTES).toBe(JS_CAPS.file);
+    expect(JS_MAX_TOTAL_BYTES).toBe(JS_CAPS.total);
+  });
+  it('gives images the JS caps and every PDF tool the native caps', () => {
+    expect(capsFor('images-to-pdf')).toBe(JS_CAPS);
+    expect(capsFor('scan')).toBe(JS_CAPS);
+    for (const id of ['merge', 'split', 'organize', 'compress', 'unlock', 'sign'] as const) {
+      expect(capsFor(id)).toBe(NATIVE_CAPS);
+    }
+    expect(TOOL_ENGINE).toMatchObject({
+      merge: 'routed',
+      watermark: 'routed',
+      compress: 'native',
+      'pdf-to-images': 'native',
+      scan: 'images',
+    });
+  });
+  it('routes a routed tool to JS while it fits the JS caps', () => {
+    expect(routeFor('merge', [30 * MiB, 30 * MiB])).toBe('js');
+    expect(routeFor('merge', [31 * MiB])).toBe('native');
+    expect(routeFor('merge', [40 * MiB, 40 * MiB, 30 * MiB])).toBe('native');
+  });
+  it('always routes a native tool natively', () => {
+    expect(routeFor('compress', [1])).toBe('native');
+  });
+  it('lets the caller pass other caps', () => {
+    expect(routeFor('split', [11], { js: { file: 10, total: 10 }, native: NATIVE_CAPS })).toBe(
+      'native',
+    );
+  });
+  it('checks sizes against the caps it is given', () => {
+    expect(checkInputSizes([600 * MiB], NATIVE_CAPS)).toEqual({
+      ok: false,
+      reason: 'tooLarge',
+      index: 0,
+    });
+    expect(checkInputSizes([40 * MiB], NATIVE_CAPS)).toEqual({ ok: true });
   });
 });

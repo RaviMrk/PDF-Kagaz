@@ -23,6 +23,12 @@ export function toToolFailure(e: unknown): ToolFailure {
         return 'invalid';
       case 'ERR_IMAGE_INVALID':
         return 'imageInvalid';
+      case 'ERR_PASSWORD_WRONG':
+        return 'wrongPassword';
+      case 'ERR_PASSWORD_RESTRICTED':
+        return 'restricted';
+      case 'ERR_CANCELLED':
+        return 'cancelled';
       default:
         return 'unknown';
     }

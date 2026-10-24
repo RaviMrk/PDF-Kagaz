@@ -19,6 +19,7 @@ import {
   canContinue,
   initialFlow,
   parseInputsParam,
+  pickCaps,
   pruneFlow,
   toggleSelection,
   type FlowState,
@@ -27,6 +28,7 @@ import { toolById, type ToolDef } from '@/services/tools/toolRegistry';
 import { useFiles } from '@/stores/filesStore';
 import { useToolJobs } from '@/stores/toolJobStore';
 import { useTheme } from '@/theme/useTheme';
+import { formatBytes } from '@/utils/fileSize';
 
 /** Leaves the tool; a deep-linked tool with nothing under it falls back to the Tools tab. */
 function leave() {
@@ -194,7 +196,11 @@ function PickStep({ tool, flow, rows, setFlow }: PickProps) {
   const browsing = useRef(false);
   const multi = tool.maxInputs > 1;
   const ok = canContinue(flow, tool, rows);
-  const sizes = checkInputSizes(rows.map((r) => knownSize(r.sizeBytes)));
+  const caps = pickCaps(tool);
+  const sizes = checkInputSizes(
+    rows.map((r) => knownSize(r.sizeBytes)),
+    caps,
+  );
   const overTotal = multi && !sizes.ok && sizes.reason === 'totalTooLarge';
 
   const browse = async () => {
@@ -238,12 +244,13 @@ function PickStep({ tool, flow, rows, setFlow }: PickProps) {
         files={files}
         selectedIds={flow.selectedIds}
         max={multi ? tool.maxInputs : Number.POSITIVE_INFINITY}
+        maxFileBytes={caps.file}
         onToggle={(id) => setFlow((f) => toggleSelection(f, id, tool))}
       />
       {browseFailed ? <Text style={{ color: colors.danger }}>{t('tool.browseFailed')}</Text> : null}
       {overTotal ? (
         <Text accessibilityLiveRegion="polite" style={{ color: colors.danger }}>
-          {t('toolError.totalTooLarge')}
+          {t('toolError.totalTooLarge', { limit: formatBytes(caps.total) })}
         </Text>
       ) : null}
       <View style={styles.footer}>

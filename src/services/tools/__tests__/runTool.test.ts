@@ -5,7 +5,12 @@ import path from 'node:path';
 
 import type { FileRow } from '@/db/schema';
 import { initI18n } from '@/i18n';
-import type { ImageFilter, PdfFileInfo, PreparedPage } from '@/services/native/pdfNative';
+import type {
+  ImageFilter,
+  PdfFileInfo,
+  PreparedPage,
+  ToolProgressEvent,
+} from '@/services/native/pdfNative';
 import type { ImageLayoutOptions } from '@/services/pdf/imageLayout';
 import * as imagesToPdfModule from '@/services/pdf/imagesToPdf';
 import * as loadPdfModule from '@/services/pdf/loadPdf';
@@ -16,6 +21,7 @@ import { makeTempDir, nodeToolFs, tempPathOf } from '@/test-utils/nodeToolFs';
 import { inspectPages, loadStrict, readFixture } from '@/test-utils/pdfFixtures';
 
 import {
+  RUNNERS,
   runTool,
   type ImagesRequest,
   type ToolPhase,
@@ -38,6 +44,7 @@ function setup(rows: FileRow[], sources: string[] = []) {
   const docs = path.join(tmp, 'Documents', 'PDFToolkit');
   fs.mkdirSync(docs, { recursive: true });
   const published: { name: string; path: string }[] = [];
+  const progressListeners = new Set<(e: ToolProgressEvent) => void>();
   const native = {
     createToolWorkspace: jest.fn(async (jobId: string) => {
       const dir = path.join(tmp, jobId);
@@ -92,7 +99,13 @@ function setup(rows: FileRow[], sources: string[] = []) {
     cleanToolWorkspace: jest.fn(async (jobId: string) => {
       fs.rmSync(path.join(tmp, jobId), { recursive: true, force: true });
     }),
+    cancelNativeTool: jest.fn(async (_jobId: string) => {}),
+    addToolProgressListener: jest.fn((cb: (e: ToolProgressEvent) => void) => {
+      progressListeners.add(cb);
+      return { remove: jest.fn(() => progressListeners.delete(cb)) };
+    }),
   };
+  const emitToolProgress = (e: ToolProgressEvent) => progressListeners.forEach((cb) => cb(e));
   const registerOutputs = jest.fn(async (infos: PdfFileInfo[]) =>
     infos.map((info) => makeRow({ name: info.name, uri: info.uri, source: 'output' })),
   );
@@ -134,6 +147,9 @@ function setup(rows: FileRow[], sources: string[] = []) {
     controller,
     clock,
     run,
+    deps,
+    progressListeners,
+    emitToolProgress,
   };
 }
 
@@ -194,7 +210,7 @@ describe('runTool merge', () => {
 
 describe('runTool size and staging failures', () => {
   it('refuses a row over the per-file cap before staging', async () => {
-    const rows = [row('one-page.pdf'), row('mixed-sizes.pdf', { sizeBytes: 31_457_281 })];
+    const rows = [row('one-page.pdf'), row('mixed-sizes.pdf', { sizeBytes: 536_870_913 })];
     const s = setup(rows);
     const outcome = await s.run({ toolId: 'merge', inputIds: rows.map((r) => r.id) });
     expect(outcome).toEqual({ ok: false, failure: 'tooLarge', inputIndex: 1, outputs: [] });
@@ -202,7 +218,7 @@ describe('runTool size and staging failures', () => {
   });
 
   it('refuses a combined size over the total cap', async () => {
-    const rows = ['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf'].map((n) => row(n, { sizeBytes: 30_000_000 }));
+    const rows = ['a.pdf', 'b.pdf', 'c.pdf'].map((n) => row(n, { sizeBytes: 400_000_000 }));
     const s = setup(rows);
     const outcome = await s.run({ toolId: 'merge', inputIds: rows.map((r) => r.id) });
     expect(outcome).toMatchObject({ ok: false, failure: 'totalTooLarge', inputIndex: null });
@@ -227,7 +243,7 @@ describe('runTool size and staging failures', () => {
     const outcome = await s.run({ toolId: 'merge', inputIds: rows.map((r) => r.id) });
     // Unknown sizes defer to the native stage cap, which is always passed.
     expect(outcome.ok).toBe(true);
-    for (const call of s.native.stageToolInput.mock.calls) expect(call[3]).toBe(31_457_280);
+    for (const call of s.native.stageToolInput.mock.calls) expect(call[3]).toBe(536_870_912);
   });
 
   it('maps a missing input at staging to notFound with its index', async () => {
@@ -963,5 +979,118 @@ describe('runTool images and scans', () => {
     });
     const outcome = await s.run(images());
     expect(outcome).toEqual({ ok: false, failure: 'cancelled', inputIndex: null, outputs: [] });
+  });
+});
+
+describe('runTool engine', () => {
+  const compress = (id: string): ToolRequest => ({
+    toolId: 'compress',
+    inputIds: [id],
+    level: 'medium',
+  });
+  afterEach(() => {
+    delete RUNNERS.compress;
+  });
+
+  it('routes merge natively over the JS caps; without a native merge yet that is unknown', async () => {
+    const rows = [row('one-page.pdf'), row('mixed-sizes.pdf')];
+    const s = setup(rows);
+    s.deps.caps = { js: { file: 10, total: 10 }, native: { file: 1e9, total: 1e9 } };
+    const outcome = await s.run({ toolId: 'merge', inputIds: rows.map((r) => r.id) });
+    expect(outcome).toEqual({ ok: false, failure: 'unknown', inputIndex: null, outputs: [] });
+    expect(s.native.stageToolInput).toHaveBeenCalledTimes(2);
+    expect(s.native.publishToolOutput).not.toHaveBeenCalled();
+  });
+
+  it('stages PDF inputs under the native caps', async () => {
+    const rows = [row('one-page.pdf', { sizeBytes: 40 * 1_048_576 }), row('mixed-sizes.pdf')];
+    const s = setup(rows);
+    const outcome = await s.run({ toolId: 'merge', inputIds: rows.map((r) => r.id) });
+    // The staged copies are small, so merge still runs in pdf-lib.
+    expect(outcome.ok).toBe(true);
+    expect(s.native.stageToolInput.mock.calls.map((c) => c[3])).toEqual([536_870_912, 536_870_912]);
+  });
+
+  it('fails a runnable tool that has no runner as unknown', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    const outcome = await s.run(compress(r.id));
+    expect(outcome).toMatchObject({ ok: false, failure: 'unknown', outputs: [] });
+    expect(s.native.cleanToolWorkspace).toHaveBeenCalledWith('j1');
+  });
+
+  it('gives the runner its staged inputs, rows and route', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    let seen: unknown = null;
+    RUNNERS.compress = async (ctx) => {
+      seen = { route: ctx.route, inputs: ctx.inputs.length, row: ctx.rows[0]?.id };
+    };
+    const outcome = await s.run(compress(r.id));
+    expect(outcome).toEqual({ ok: true, outputs: [] });
+    expect(seen).toEqual({ route: 'native', inputs: 1, row: r.id });
+  });
+
+  it('nativeOp cancels the native job on abort and ends cancelled', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    let started!: () => void;
+    const opStarted = new Promise<void>((res) => (started = res));
+    RUNNERS.compress = async (ctx) => {
+      await ctx.nativeOp(() => {
+        started();
+        return new Promise<never>(() => {});
+      });
+    };
+    const done = s.run(compress(r.id), 'job-7');
+    await opStarted;
+    s.controller.abort();
+    const outcome = await done;
+    expect(s.native.cancelNativeTool).toHaveBeenCalledWith('job-7');
+    expect(outcome).toEqual({ ok: false, failure: 'cancelled', inputIndex: null, outputs: [] });
+    expect(s.progressListeners.size).toBe(0);
+  });
+
+  it('nativeOp turns ERR_CANCELLED into cancelled', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    RUNNERS.compress = async (ctx) => {
+      await ctx.nativeOp(() => Promise.reject(nativeError('ERR_CANCELLED')));
+    };
+    const outcome = await s.run(compress(r.id));
+    expect(outcome).toMatchObject({ ok: false, failure: 'cancelled' });
+  });
+
+  it('nativeOp reports progress of its own job only, then unsubscribes', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    RUNNERS.compress = async (ctx) => {
+      await ctx.nativeOp(async () => {
+        s.emitToolProgress({ jobId: 'other', fraction: 0.5 });
+        s.emitToolProgress({ jobId: 'j1', fraction: 0.5 });
+        return 1;
+      });
+    };
+    const outcome = await s.run(compress(r.id));
+    expect(outcome.ok).toBe(true);
+    expect(s.events.filter(([p]) => p === 'processing')).toEqual([
+      ['processing', 0],
+      ['processing', 0.5],
+    ]);
+    expect(s.progressListeners.size).toBe(0);
+  });
+
+  it('publishFile publishes a workspace file and setExtras reaches the outcome', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    RUNNERS.compress = async (ctx) => {
+      const input = ctx.inputs[0]!;
+      await ctx.publishFile(input, 'one-page compressed.pdf', 0, 1);
+      ctx.setExtras({ sizes: { before: 10, after: 5 } });
+    };
+    const outcome = await s.run(compress(r.id));
+    expect(outcome).toMatchObject({ ok: true, extras: { sizes: { before: 10, after: 5 } } });
+    expect(s.published.map((p) => p.name)).toEqual(['one-page compressed.pdf']);
+    expect(s.recordOutput).toHaveBeenCalledTimes(1);
   });
 });

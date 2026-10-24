@@ -1,7 +1,15 @@
 import { initI18n } from '@/i18n';
 
 import {
+  compressedName,
   customOutputName,
+  imageFileName,
+  imageFolderName,
+  numberedName,
+  protectedName,
+  signedName,
+  unlockedName,
+  watermarkedName,
   imagesName,
   mergedName,
   nameStamp,
@@ -53,5 +61,25 @@ describe('image and scan names', () => {
     expect(customOutputName('../x', 'd.pdf')).toBe('_x.pdf');
     expect(customOutputName('a/b:c?.pdf', 'd.pdf')).toBe('a_b_c_.pdf');
     expect(customOutputName('अ'.repeat(120), 'd.pdf')).toBe(`${'अ'.repeat(66)}.pdf`);
+  });
+});
+
+describe('v1.1 tool names', () => {
+  it('names each PDF output', () => {
+    expect(compressedName('Report.pdf', tr)).toBe('Report compressed.pdf');
+    expect(protectedName('Report.pdf', tr)).toBe('Report protected.pdf');
+    expect(unlockedName('Report.pdf', tr)).toBe('Report unlocked.pdf');
+    expect(watermarkedName('Report.pdf', tr)).toBe('Report watermarked.pdf');
+    expect(numberedName('Report.pdf', tr)).toBe('Report numbered.pdf');
+    expect(signedName('अहवाल.pdf', tr)).toBe('अहवाल signed.pdf');
+  });
+  it('names the image folder and pages, padded to the page count width', () => {
+    expect(imageFolderName('Report.pdf', tr)).toBe('Report pages');
+    expect(imageFileName('Report.pdf', 7, 120, 'jpg', tr)).toBe('Report p007.jpg');
+    expect(imageFileName('Report.pdf', 7, 9, 'png', tr)).toBe('Report p7.png');
+    expect(imageFileName('Report.pdf', 12, 1000, 'png', tr)).toBe('Report p0012.png');
+  });
+  it('strips bidi controls from image names', () => {
+    expect(imageFolderName('\u202ex.pdf', tr)).toBe('x pages');
   });
 });

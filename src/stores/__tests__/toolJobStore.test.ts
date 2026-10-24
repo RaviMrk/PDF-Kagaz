@@ -5,12 +5,13 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 
 import type { FileRow } from '@/db/schema';
 import type { IndexDb } from '@/services/index/fileIndexRepo';
-import type {
-  ImagesRequest,
-  ToolOutcome,
-  ToolRequest,
-  ToolRunDeps,
-  runTool,
+import {
+  sessionIdOf,
+  type ImagesRequest,
+  type ToolOutcome,
+  type ToolRequest,
+  type ToolRunDeps,
+  type runTool,
 } from '@/services/tools/runTool';
 import {
   addJobOutput,
@@ -20,6 +21,7 @@ import {
   getJob,
 } from '@/services/tools/toolJobRepo';
 import { getFile } from '@/services/index/fileIndexRepo';
+import type { ToolId } from '@/services/tools/toolRegistry';
 import type { PdfFileInfo } from '@/services/native/pdfNative';
 import { fileIdForUri } from '@/utils/fileId';
 import { makeRow } from '@/test-utils/fileRows';
@@ -369,7 +371,7 @@ describe('toolJobStore recovery', () => {
     const [id] = deadSplit(s.db);
     s.store.getState().recoverInterrupted('nope');
     expect(s.store.getState().last).toBeNull();
-    createJob(s.db, { id: 'cmp', toolId: 'compress', inputIds: ['a'], options: {}, now: 1 });
+    createJob(s.db, { id: 'cmp', toolId: 'ocr', inputIds: ['a'], options: {}, now: 1 });
     s.store.getState().recoverInterrupted('cmp');
     expect(s.store.getState().last).toBeNull();
 
@@ -690,5 +692,234 @@ describe('toolJobStore images and scans', () => {
     s.store.getState().retry(failed.jobId, t);
     s.store.getState().dismiss(failed.jobId);
     expect(s.cleanSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('toolJobStore v1.1 tools', () => {
+  const watermarkText: ToolRequest = {
+    toolId: 'watermark',
+    inputIds: ['a'],
+    watermark: {
+      source: { kind: 'text', text: 'DRAFT', color: 'red' },
+      opacity: 0.35,
+      angle: 45,
+      size: 'medium',
+      position: 'center',
+      pages: [1, 3],
+    },
+    passwords: { 0: 'pw-in' },
+  };
+  const watermarkImage: ToolRequest = {
+    toolId: 'watermark',
+    inputIds: ['a'],
+    watermark: {
+      source: { kind: 'image', sessionId: 'img-wm1', index: 0 },
+      opacity: 1,
+      angle: 0,
+      size: 'large',
+      position: 'bottom-right',
+      pages: null,
+    },
+  };
+  const protect: ToolRequest = {
+    toolId: 'protect',
+    inputIds: ['a'],
+    newPassword: 'hunter22',
+    passwords: { 0: 'old' },
+  };
+
+  const wmOf = (r: ToolRequest) => (r as Extract<ToolRequest, { toolId: 'watermark' }>).watermark;
+
+  function store(db: IndexDb, id: string, req: ToolRequest) {
+    createJob(db, {
+      id,
+      toolId: req.toolId,
+      inputIds: req.inputIds,
+      options: optionsOf(req),
+      now: 1,
+    });
+    return getJob(db, id)!;
+  }
+
+  it('optionsOf never stores a password or its keys', () => {
+    const json = JSON.stringify([
+      optionsOf(protect),
+      optionsOf({ toolId: 'unlock', inputIds: ['a'], passwords: { 0: 'old' } }),
+      optionsOf(watermarkText),
+      optionsOf({ ...merge, passwords: { 1: 'old' } }),
+    ]);
+    for (const s of ['hunter22', 'old', 'pw-in', 'passwords', 'newPassword']) {
+      expect(json).not.toContain(s);
+    }
+    expect(optionsOf(protect)).toEqual({});
+  });
+
+  it('stores only the options each tool needs to run again', () => {
+    expect(
+      optionsOf({ toolId: 'compress', inputIds: ['a'], level: 'low', passwords: { 0: 'x' } }),
+    ).toEqual({ level: 'low' });
+    expect(
+      optionsOf({ toolId: 'pdf-to-images', inputIds: ['a'], format: 'png', dpi: 300, pages: [2] }),
+    ).toEqual({ format: 'png', dpi: 300, pages: [2] });
+    expect(optionsOf(watermarkText)).toEqual({ watermark: wmOf(watermarkText) });
+  });
+
+  it('requestFromJob rebuilds the v1.1 tools, without passwords', () => {
+    const db = makeDb();
+    const requests: ToolRequest[] = [
+      { toolId: 'compress', inputIds: ['a'], level: 'high' },
+      { toolId: 'pdf-to-images', inputIds: ['a'], format: 'jpg', dpi: 72, pages: null },
+      { toolId: 'pdf-to-images', inputIds: ['a'], format: 'png', dpi: 150, pages: [2, 3] },
+      watermarkImage,
+      {
+        toolId: 'page-numbers',
+        inputIds: ['a'],
+        numbers: {
+          position: 'bottom-center',
+          format: 'pageOfTotal',
+          start: 5,
+          fontSize: 12,
+          pages: null,
+        },
+      },
+      {
+        toolId: 'sign',
+        inputIds: ['a'],
+        placements: [{ signatureId: 3, page: 2, cx: 0.5, cy: 0.8, width: 0.3 }],
+      },
+    ];
+    requests.forEach((req, i) => expect(requestFromJob(store(db, `v${i}`, req))).toEqual(req));
+    const { passwords: _p, ...text } = watermarkText as Extract<
+      ToolRequest,
+      { toolId: 'watermark' }
+    >;
+    expect(requestFromJob(store(db, 'w', watermarkText))).toEqual(text);
+  });
+
+  it('requestFromJob refuses protect, unlock and malformed v1.1 rows', () => {
+    const db = makeDb();
+    expect(requestFromJob(store(db, 'p', protect))).toBeNull();
+    expect(requestFromJob(store(db, 'u', { toolId: 'unlock', inputIds: ['a'] }))).toBeNull();
+    const bad: [string, Record<string, unknown>][] = [
+      ['compress', { level: 'extreme' }],
+      ['pdf-to-images', { format: 'gif', dpi: 72, pages: null }],
+      ['pdf-to-images', { format: 'png', dpi: 96, pages: null }],
+      ['pdf-to-images', { format: 'png', dpi: 72, pages: [0] }],
+      ['watermark', { watermark: { ...wmOf(watermarkText), angle: 30 } }],
+      [
+        'watermark',
+        {
+          watermark: {
+            ...wmOf(watermarkImage),
+            source: { kind: 'image', sessionId: '../x', index: 0 },
+          },
+        },
+      ],
+      [
+        'page-numbers',
+        {
+          numbers: { position: 'center', format: 'n', start: 1, fontSize: 12, pages: null },
+        },
+      ],
+      ['sign', { placements: [{ signatureId: 1, page: 1, cx: 2, cy: 0.5, width: 0.3 }] }],
+      ['sign', { placements: [] }],
+    ];
+    bad.forEach(([toolId, options], i) => {
+      createJob(db, { id: `b${i}`, toolId: toolId as ToolId, inputIds: ['a'], options, now: 1 });
+      expect(requestFromJob(getJob(db, `b${i}`)!)).toBeNull();
+    });
+  });
+
+  it('retry of a password tool row asks the user to start again', async () => {
+    const s = setup();
+    const first = s.store.getState().start(protect, t);
+    if (!first.ok) throw new Error('expected ok');
+    s.calls[0]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    const options = JSON.stringify(getJob(s.db, first.jobId)?.options);
+    expect(options).not.toContain('hunter22');
+    const next = setup(s.db);
+    expect(next.store.getState().retry(first.jobId, t)).toEqual({
+      ok: false,
+      reason: 'needsInput',
+    });
+    expect(next.run).not.toHaveBeenCalled();
+  });
+
+  it('cleans a watermark image session after success and keeps it after a failure', async () => {
+    expect(sessionIdOf(watermarkImage)).toBe('img-wm1');
+    expect(sessionIdOf(watermarkText)).toBeNull();
+    expect(sessionIdOf(imagesReq)).toBe('img-s1');
+    expect(sessionIdOf(merge)).toBeNull();
+    const s = setup();
+    s.store.getState().start(watermarkImage, t);
+    s.calls[0]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    expect(s.cleanSession).not.toHaveBeenCalled();
+    s.store.getState().start(watermarkImage, t);
+    s.calls[1]!.resolve({ ok: true, outputs: [] });
+    await flush();
+    expect(s.cleanSession.mock.calls).toEqual([['img-wm1']]);
+  });
+
+  it('a watermark image job from another process is gone on retry', async () => {
+    const s = setup();
+    const first = s.store.getState().start(watermarkImage, t);
+    if (!first.ok) throw new Error('expected ok');
+    s.calls[0]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    expect(setup(s.db).store.getState().retry(first.jobId, t)).toEqual({
+      ok: false,
+      reason: 'gone',
+    });
+  });
+
+  it('stores the first image of a pdf-to-images job and reads the row back', async () => {
+    const s = setup();
+    const req: ToolRequest = {
+      toolId: 'pdf-to-images',
+      inputIds: ['a'],
+      format: 'jpg',
+      dpi: 150,
+      pages: null,
+    };
+    const started = s.store.getState().start(req, t);
+    if (!started.ok) throw new Error('expected ok');
+    const images = {
+      count: 2,
+      folder: 'a pages',
+      uris: ['content://m/1', 'content://m/2'],
+      reducedPages: 0,
+    };
+    s.calls[0]!.resolve({ ok: true, outputs: [], extras: { images } });
+    await flush();
+    expect(getJob(s.db, started.jobId)).toMatchObject({
+      status: 'succeeded',
+      outputUri: 'content://m/1',
+    });
+    expect(setup(s.db).store.getState().outcomeOf(started.jobId)).toEqual({
+      kind: 'done',
+      toolId: 'pdf-to-images',
+      outcome: {
+        ok: true,
+        outputs: [],
+        extras: { images: { count: 0, folder: '', uris: [], reducedPages: 0 } },
+      },
+    });
+  });
+
+  it('reads the new failures back from a stored row', () => {
+    const db = makeDb();
+    for (const [i, error] of (
+      ['wrongPassword', 'restricted', 'signatureGone'] as const
+    ).entries()) {
+      createJob(db, { id: `f${i}`, toolId: 'compress', inputIds: ['a'], options: {}, now: 1 });
+      finishJob(db, `f${i}`, { status: 'failed', error, outputIds: [], now: 2 });
+      expect(setup(db).store.getState().outcomeOf(`f${i}`)).toMatchObject({
+        kind: 'done',
+        toolId: 'compress',
+        outcome: { ok: false, failure: error },
+      });
+    }
   });
 });

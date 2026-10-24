@@ -1,5 +1,6 @@
 import en from '@/i18n/en.json';
 
+import { TOOL_ENGINE } from '../limits';
 import { QUICK_TOOL_IDS, TOOLS, toolById, toolsByGroup } from '../toolRegistry';
 
 function lookup(key: string): unknown {
@@ -62,6 +63,25 @@ describe('toolRegistry', () => {
     }
     expect(toolById('images-to-pdf')?.labelKey).toBe('tools.imagesToPdf');
     expect(toolById('page-numbers')?.descriptionKey).toBe('tools.desc.pageNumbers');
+  });
+  it('gives every runnable tool an engine; the v1.1 tools stay unavailable', () => {
+    expect(Object.keys(TOOL_ENGINE).sort()).toEqual(
+      [
+        'merge',
+        'split',
+        'organize',
+        'images-to-pdf',
+        'scan',
+        'compress',
+        'protect',
+        'unlock',
+        'pdf-to-images',
+        'watermark',
+        'page-numbers',
+        'sign',
+      ].sort(),
+    );
+    for (const id of Object.keys(TOOL_ENGINE)) expect(toolById(id)).not.toBeNull();
   });
   it('has quick tools', () => {
     expect(QUICK_TOOL_IDS).toEqual(['scan', 'merge', 'compress', 'images-to-pdf']);

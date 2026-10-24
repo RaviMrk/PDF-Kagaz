@@ -7,7 +7,6 @@ import { useTranslation } from 'react-i18next';
 import { PdfThumbnail } from '@/components/PdfThumbnail';
 import type { FileRow } from '@/db/schema';
 import { normalizeForSearch } from '@/services/files/fileQuery';
-import { JS_MAX_FILE_BYTES } from '@/services/tools/limits';
 import { useTheme } from '@/theme/useTheme';
 import { displayName } from '@/utils/displayName';
 import { formatBytes } from '@/utils/fileSize';
@@ -16,10 +15,12 @@ type Props = {
   files: FileRow[];
   selectedIds: readonly string[];
   max: number;
+  /** The tool's per-file cap: larger rows are shown disabled with the limit. */
+  maxFileBytes: number;
   onToggle(id: string): void;
 };
 
-export function PickFilesList({ files, selectedIds, max, onToggle }: Props) {
+export function PickFilesList({ files, selectedIds, max, maxFileBytes, onToggle }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const [query, setQuery] = useState('');
@@ -52,7 +53,7 @@ export function PickFilesList({ files, selectedIds, max, onToggle }: Props) {
           keyExtractor={(f) => f.id}
           renderItem={({ item }) => {
             const checked = selected.has(item.id);
-            const tooLarge = item.sizeBytes > JS_MAX_FILE_BYTES;
+            const tooLarge = item.sizeBytes > maxFileBytes;
             const disabled = !checked && (tooLarge || full);
             const name = displayName(item.name);
             const folder = item.folder === '' ? t('tool.fromOtherApp') : item.folder;
@@ -80,7 +81,9 @@ export function PickFilesList({ files, selectedIds, max, onToggle }: Props) {
                     {item.folder === '' ? folder : `${formatBytes(item.sizeBytes)} · ${folder}`}
                   </Text>
                   {tooLarge ? (
-                    <Text style={{ color: colors.danger }}>{t('tool.tooLargeFile')}</Text>
+                    <Text style={{ color: colors.danger }}>
+                      {t('tool.tooLargeFile', { limit: formatBytes(maxFileBytes) })}
+                    </Text>
                   ) : null}
                 </View>
               </Pressable>

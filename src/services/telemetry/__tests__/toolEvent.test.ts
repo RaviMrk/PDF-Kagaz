@@ -85,6 +85,34 @@ describe('toolFinishedEvent', () => {
   });
 });
 
+describe('toolFinishedEvent passwords', () => {
+  it('never carries an input password or a new password', () => {
+    const compress: ToolRequest = {
+      toolId: 'compress',
+      inputIds: ['a'],
+      level: 'high',
+      passwords: { 0: 'S3cret!' },
+    };
+    const protect: ToolRequest = {
+      toolId: 'protect',
+      inputIds: ['a'],
+      newPassword: 'hunter22',
+      passwords: { 0: 'S3cret!' },
+    };
+    const ok: ToolOutcome = { ok: true, outputs: [] };
+    const json = JSON.stringify([
+      toolFinishedEvent(compress, ok, 100, 1),
+      toolFinishedEvent(protect, ok, 100, 1),
+    ]);
+    expect(json).not.toContain('S3cret');
+    expect(json).not.toContain('hunter22');
+    expect(toolFinishedEvent(compress, ok, 100, 1).params).toMatchObject({
+      tool: 'compress',
+      inputs: 1,
+    });
+  });
+});
+
 describe('pagesOf', () => {
   it('sums the output page counts, an unknown count as 0', () => {
     const outputs = [

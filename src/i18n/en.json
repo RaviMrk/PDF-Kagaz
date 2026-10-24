@@ -271,7 +271,15 @@
     "extracted": "{{name}} extracted",
     "organised": "{{name}} organised",
     "images": "Images {{date}}",
-    "scan": "Scan {{date}}"
+    "scan": "Scan {{date}}",
+    "compressed": "{{name}} compressed",
+    "protected": "{{name}} protected",
+    "unlocked": "{{name}} unlocked",
+    "watermarked": "{{name}} watermarked",
+    "numbered": "{{name}} numbered",
+    "signed": "{{name}} signed",
+    "imageFolder": "{{name}} pages",
+    "imageFile": "{{name}} p{{page}}"
   },
   "progress": {
     "preparing": "Reading files…",
@@ -285,7 +293,14 @@
       "split": "Splitting PDF",
       "organize": "Saving pages",
       "images-to-pdf": "Making PDF from images",
-      "scan": "Saving scan"
+      "scan": "Saving scan",
+      "compress": "Compressing PDF",
+      "protect": "Protecting PDF",
+      "unlock": "Removing password",
+      "pdf-to-images": "Saving pages as images",
+      "watermark": "Adding watermark",
+      "page-numbers": "Adding page numbers",
+      "sign": "Signing PDF"
     }
   },
   "pages": {
@@ -303,7 +318,7 @@
   },
   "tool": {
     "fromOtherApp": "Opened from another app",
-    "tooLargeFile": "Too large for this tool (max 30 MB)",
+    "tooLargeFile": "Too large for this tool (max {{limit}})",
     "noFiles": "No PDFs to choose from. Use Browse files to pick one.",
     "search": "Search PDFs",
     "selectFile": "Select {{name}}",
@@ -365,13 +380,13 @@
     "unavailableNamed": "\"{{name}}\" is on storage that isn't available right now",
     "permission": "PDF Toolkit can't save to Documents/PDFToolkit. Check storage access in Settings.",
     "permissionNamed": "PDF Toolkit can't read \"{{name}}\" anymore. Open it again from the app you got it from.",
-    "encrypted": "This PDF is password-protected. Tools can't open protected PDFs yet.",
-    "encryptedNamed": "\"{{name}}\" is password-protected. Tools can't open protected PDFs yet.",
+    "encrypted": "This PDF is password-protected. Start the tool again and enter its password.",
+    "encryptedNamed": "\"{{name}}\" is password-protected. Start the tool again and enter its password.",
     "invalid": "This PDF is damaged or isn't a PDF",
     "invalidNamed": "\"{{name}}\" is damaged or isn't a PDF",
-    "tooLarge": "This file is larger than 30 MB, the most tools can handle for now",
-    "tooLargeNamed": "\"{{name}}\" is larger than 30 MB, the most tools can handle for now",
-    "totalTooLarge": "These files are over 100 MB together. Merge fewer files at a time.",
+    "tooLarge": "This file is larger than {{limit}}, the most this tool can handle",
+    "tooLargeNamed": "\"{{name}}\" is larger than {{limit}}, the most this tool can handle",
+    "totalTooLarge": "These files are over {{limit}} together. Use fewer files at a time.",
     "imagesTooLarge": "These images are too large together for one PDF. Use fewer images.",
     "tooManyPages": "Organise works with up to 300 pages. Split the PDF first.",
     "badPages": "Those pages aren't in this PDF",
@@ -381,7 +396,11 @@
     "interruptedPartial": "The app was closed before this finished. Some files were already saved.",
     "imagesGone": "The images for this PDF are no longer available. Add them again.",
     "imageInvalid": "An image is damaged or in a format that isn't supported",
-    "unknown": "Something went wrong"
+    "unknown": "Something went wrong",
+    "wrongPassword": "That password didn't open the PDF",
+    "restricted": "This PDF doesn't allow changes. Enter its owner password to use it in a tool.",
+    "signatureGone": "A signature you placed was deleted. Place it again.",
+    "needsInput": "Start the tool again to enter the password."
   },
   "ads": {
     "label": "Advertisement"

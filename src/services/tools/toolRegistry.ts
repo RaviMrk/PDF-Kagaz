@@ -18,7 +18,19 @@ export type ToolId =
   | 'page-numbers'
   | 'sign'
   | 'metadata';
-export type RunnableToolId = 'merge' | 'split' | 'organize' | 'images-to-pdf' | 'scan';
+export type RunnableToolId =
+  | 'merge'
+  | 'split'
+  | 'organize'
+  | 'images-to-pdf'
+  | 'scan'
+  | 'compress'
+  | 'protect'
+  | 'unlock'
+  | 'pdf-to-images'
+  | 'watermark'
+  | 'page-numbers'
+  | 'sign';
 export type ToolGroup = 'organise' | 'convert' | 'optimise' | 'security' | 'edit';
 
 export type ToolDef = {

@@ -20,6 +20,8 @@ const RETRY_FAILED = {
   // An image job from before a restart: its images were cleaned up at start.
   gone: 'toolError.imagesGone',
   db: 'toolError.unknown',
+  // A password tool's row from before: the password is never stored.
+  needsInput: 'toolError.needsInput',
 } as const;
 
 function leave() {

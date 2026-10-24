@@ -1,6 +1,41 @@
-export const JS_MAX_FILE_BYTES = 31_457_280;
-export const JS_MAX_TOTAL_BYTES = 104_857_600;
+import type { RunnableToolId } from './toolRegistry';
+
+/** Byte caps: each input (`file`) and all inputs of one job together (`total`). */
+export type Caps = { file: number; total: number };
+
+/** What pdf-lib (the whole file in JS memory) can take. */
+export const JS_CAPS: Caps = { file: 31_457_280, total: 104_857_600 };
+/** What PdfBox (mixed memory, scratch files in the job workspace) can take. */
+export const NATIVE_CAPS: Caps = { file: 536_870_912, total: 1_073_741_824 };
+export const JS_MAX_FILE_BYTES = JS_CAPS.file;
+export const JS_MAX_TOTAL_BYTES = JS_CAPS.total;
 export const ORGANIZE_MAX_PAGES = 300;
+
+export type ToolRoute = 'js' | 'native';
+
+/**
+ * `images`: images and scans (JS caps, unchanged). `routed`: pdf-lib while the staged inputs fit
+ * the JS caps, else PdfBox. `native`: always PdfBox / PdfRenderer.
+ */
+export const TOOL_ENGINE: Record<RunnableToolId, 'images' | 'routed' | 'native'> = {
+  merge: 'routed',
+  split: 'routed',
+  organize: 'routed',
+  'images-to-pdf': 'images',
+  scan: 'images',
+  compress: 'native',
+  protect: 'native',
+  unlock: 'native',
+  'pdf-to-images': 'native',
+  watermark: 'routed',
+  'page-numbers': 'routed',
+  sign: 'routed',
+};
+
+/** The caps a tool's inputs must fit before it starts. */
+export function capsFor(toolId: RunnableToolId): Caps {
+  return TOOL_ENGINE[toolId] === 'images' ? JS_CAPS : NATIVE_CAPS;
+}
 
 export type SizeCheck =
   | { ok: true }
@@ -8,12 +43,23 @@ export type SizeCheck =
   | { ok: false; reason: 'totalTooLarge' };
 
 /** First file over the per-file cap wins; otherwise the combined size is checked. */
-export function checkInputSizes(sizes: readonly number[]): SizeCheck {
-  const index = sizes.findIndex((s) => s > JS_MAX_FILE_BYTES);
+export function checkInputSizes(sizes: readonly number[], caps: Caps = JS_CAPS): SizeCheck {
+  const index = sizes.findIndex((s) => s > caps.file);
   if (index >= 0) return { ok: false, reason: 'tooLarge', index };
-  if (sizes.reduce((a, b) => a + b, 0) > JS_MAX_TOTAL_BYTES)
-    return { ok: false, reason: 'totalTooLarge' };
+  if (sizes.reduce((a, b) => a + b, 0) > caps.total) return { ok: false, reason: 'totalTooLarge' };
   return { ok: true };
+}
+
+/** Where a job runs, from its staged (decrypted) input sizes. */
+export function routeFor(
+  toolId: RunnableToolId,
+  sizes: readonly number[],
+  caps: { js: Caps; native: Caps } = { js: JS_CAPS, native: NATIVE_CAPS },
+): ToolRoute {
+  const engine = TOOL_ENGINE[toolId];
+  if (engine === 'native') return 'native';
+  if (engine === 'images') return 'js';
+  return checkInputSizes(sizes, caps.js).ok ? 'js' : 'native';
 }
 
 export const IMAGES_MAX = 100;
