@@ -12,9 +12,20 @@ const TEST_IDS = {
 const PRODUCTION_ERROR =
   'Production build needs real AdMob IDs: set ADMOB_ANDROID_APP_ID, ADMOB_BANNER_ID, ADMOB_INTERSTITIAL_ID';
 
-/** @param {string | undefined} id */
-const isRealId = (id) =>
-  typeof id === 'string' && id !== '' && !id.startsWith(GOOGLE_TEST_PUBLISHER);
+const APP_ID_PATTERN = /^ca-app-pub-\d+~\d+$/;
+const UNIT_ID_PATTERN = /^ca-app-pub-\d+\/\d+$/;
+
+/**
+ * The trimmed ID when it has the AdMob shape for its kind and is not under Google's test
+ * publisher; otherwise null.
+ * @param {string | undefined} raw
+ * @param {RegExp} pattern
+ * @returns {string | null}
+ */
+const realId = (raw, pattern) => {
+  const id = typeof raw === 'string' ? raw.trim() : '';
+  return pattern.test(id) && id.split(/[~/]/)[0] !== GOOGLE_TEST_PUBLISHER ? id : null;
+};
 
 /**
  * @param {Record<string, string | undefined>} env
@@ -31,19 +42,13 @@ function resolveAdsConfig(env) {
         .filter((id) => id !== ''),
     };
   }
-  const appId = env.ADMOB_ANDROID_APP_ID;
-  const banner = env.ADMOB_BANNER_ID;
-  const interstitial = env.ADMOB_INTERSTITIAL_ID;
-  if (!isRealId(appId) || !isRealId(banner) || !isRealId(interstitial)) {
+  const appId = realId(env.ADMOB_ANDROID_APP_ID, APP_ID_PATTERN);
+  const banner = realId(env.ADMOB_BANNER_ID, UNIT_ID_PATTERN);
+  const interstitial = realId(env.ADMOB_INTERSTITIAL_ID, UNIT_ID_PATTERN);
+  if (appId === null || banner === null || interstitial === null) {
     throw new Error(PRODUCTION_ERROR);
   }
-  return {
-    appId: /** @type {string} */ (appId),
-    banner: /** @type {string} */ (banner),
-    interstitial: /** @type {string} */ (interstitial),
-    debugGeography: 'disabled',
-    testDeviceIds: [],
-  };
+  return { appId, banner, interstitial, debugGeography: 'disabled', testDeviceIds: [] };
 }
 
 module.exports = { TEST_IDS, resolveAdsConfig };

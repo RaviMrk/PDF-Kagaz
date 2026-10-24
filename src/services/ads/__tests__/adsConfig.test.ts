@@ -75,6 +75,43 @@ describe('resolveAdsConfig', () => {
   });
 });
 
+describe('resolveAdsConfig ID validation (production)', () => {
+  const prod = (overrides: Record<string, string>) =>
+    resolveAdsConfig({ APP_ENV: 'production', ...REAL, ...overrides });
+
+  it('trims surrounding whitespace from real IDs', () => {
+    expect(
+      prod({
+        ADMOB_ANDROID_APP_ID: ` ${REAL.ADMOB_ANDROID_APP_ID}\n`,
+        ADMOB_BANNER_ID: `${REAL.ADMOB_BANNER_ID} `,
+        ADMOB_INTERSTITIAL_ID: `\t${REAL.ADMOB_INTERSTITIAL_ID}`,
+      }),
+    ).toMatchObject({
+      appId: REAL.ADMOB_ANDROID_APP_ID,
+      banner: REAL.ADMOB_BANNER_ID,
+      interstitial: REAL.ADMOB_INTERSTITIAL_ID,
+    });
+  });
+
+  it.each([
+    ['a blank app ID', { ADMOB_ANDROID_APP_ID: '   ' }],
+    ['a unit ID as the app ID', { ADMOB_ANDROID_APP_ID: REAL.ADMOB_BANNER_ID }],
+    ['an app ID as the banner ID', { ADMOB_BANNER_ID: REAL.ADMOB_ANDROID_APP_ID }],
+    ['a malformed interstitial ID', { ADMOB_INTERSTITIAL_ID: 'ca-app-pub-1111/abc' }],
+    ['an ID with trailing junk', { ADMOB_BANNER_ID: `${REAL.ADMOB_BANNER_ID}x` }],
+    ['an ID without the prefix', { ADMOB_BANNER_ID: '1111111111111111/3333333333' }],
+    ['the placeholder from the docs', { ADMOB_ANDROID_APP_ID: 'ca-app-pub-xxxxxxxx~yyyyyyyy' }],
+    ["Google's test banner ID", { ADMOB_BANNER_ID: TEST_IDS.banner }],
+    [
+      "any ID under Google's test publisher",
+      { ADMOB_INTERSTITIAL_ID: 'ca-app-pub-3940256099942544/9999999999' },
+    ],
+    ["a padded Google's test app ID", { ADMOB_ANDROID_APP_ID: ` ${TEST_IDS.appId} ` }],
+  ])('fails on %s', (_name, overrides) => {
+    expect(() => prod(overrides)).toThrow(new Error(MESSAGE));
+  });
+});
+
 describe('getAdsConfig', () => {
   afterEach(() => {
     mocked.expoConfig = undefined;

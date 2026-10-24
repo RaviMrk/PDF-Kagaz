@@ -1,4 +1,4 @@
-import { StyleSheet } from 'react-native';
+import { Dimensions, StyleSheet } from 'react-native';
 import { act, cleanup, render } from '@testing-library/react-native';
 import { I18nextProvider } from 'react-i18next';
 import * as ads from 'react-native-google-mobile-ads';
@@ -99,5 +99,43 @@ describe('AdBanner', () => {
     expect(view.toJSON()).toBeNull();
     await act(async () => mockFocus.again());
     expect(view.getByTestId('banner-ad')).toBeTruthy();
+  });
+
+  describe('when the window width changes (fold or unfold)', () => {
+    const initial = Dimensions.get('window');
+    const resize = (width: number, height: number) =>
+      act(async () => {
+        Dimensions.set({
+          window: { ...initial, width, height },
+          screen: { ...initial, width, height },
+        });
+      });
+    afterEach(() => resize(initial.width, initial.height));
+
+    it('requests a new ad sized for the new width', async () => {
+      useAds.setState({ status: 'ready', canRequestAds: true });
+      await resize(841, 701);
+      const view = await renderBanner('home');
+      await act(async () => fake()?.onAdLoaded());
+      const before = view.getByTestId('banner-ad');
+
+      await resize(411, 797);
+      const after = view.getByTestId('banner-ad');
+      expect(after).not.toBe(before);
+      // The new ad is not announced until it has loaded.
+      expect(view.queryByLabelText('Advertisement')).toBeNull();
+    });
+
+    it('keeps the loaded ad when only the height changes', async () => {
+      useAds.setState({ status: 'ready', canRequestAds: true });
+      await resize(411, 797);
+      const view = await renderBanner('home');
+      await act(async () => fake()?.onAdLoaded());
+      const before = view.getByTestId('banner-ad');
+
+      await resize(411, 600);
+      expect(view.getByTestId('banner-ad')).toBe(before);
+      expect(view.getByLabelText('Advertisement')).toBeTruthy();
+    });
   });
 });

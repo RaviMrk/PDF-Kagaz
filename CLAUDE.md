@@ -31,6 +31,7 @@ npm run typecheck
 npm run lint
 npm run format:check
 npx expo prebuild --clean # after changing native config
+npx expo start            # once after route changes: regenerates .expo/types/router.d.ts for typecheck
 ```
 
 ## Local environment (macOS)

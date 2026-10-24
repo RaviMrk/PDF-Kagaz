@@ -10,6 +10,7 @@
     "platforms": ["android"],
     "android": {
       "package": "com.pdfkagaz.pdftoolkit",
+      "allowBackup": false,
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -49,7 +50,10 @@
           "android": {
             "minSdkVersion": 24,
             "targetSdkVersion": 36,
-            "compileSdkVersion": 36
+            "compileSdkVersion": 36,
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "extraProguardRules": "-assumenosideeffects class android.util.Log { public static int d(...); public static int v(...); }\n-keep class org.wonday.pdf.** { *; }\n-keep class io.legere.pdfiumandroid.** { *; }"
           }
         }
       ],

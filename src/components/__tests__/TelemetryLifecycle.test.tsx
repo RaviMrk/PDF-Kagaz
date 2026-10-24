@@ -26,4 +26,13 @@ describe('TelemetryLifecycle', () => {
     expect(mockSetCollection).toHaveBeenLastCalledWith({ analytics: false, crashes: false });
     expect(mockSetCollection).toHaveBeenCalledTimes(3);
   });
+
+  it('turns crash reports off in its first commit for a user who opted out', async () => {
+    mockSetCollection.mockClear();
+    useSettings.getState().setAnalyticsEnabled(true);
+    useSettings.getState().setCrashReportsEnabled(false);
+    await render(<TelemetryLifecycle />);
+    expect(mockSetCollection).toHaveBeenCalledTimes(1);
+    expect(mockSetCollection).toHaveBeenCalledWith({ analytics: true, crashes: false });
+  });
 });

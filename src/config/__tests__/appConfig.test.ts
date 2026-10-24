@@ -31,6 +31,31 @@ describe('app.config', () => {
     );
   });
 
+  describe('release hardening', () => {
+    const buildProperties = (plugins: unknown[]) =>
+      (
+        plugins.find((p) => Array.isArray(p) && p[0] === 'expo-build-properties') as [
+          string,
+          { android: Record<string, unknown> },
+        ]
+      )[1].android;
+
+    it('turns app backups off and adds the backup rules plugin', () => {
+      const config = appConfig({ config: appJson.expo });
+      expect(config.android.allowBackup).toBe(false);
+      expect(config.plugins).toContain('./plugins/withBackupRules');
+    });
+
+    it('minifies and shrinks release builds and strips debug and verbose logs', () => {
+      const android = buildProperties(appConfig({ config: appJson.expo }).plugins);
+      expect(android.enableMinifyInReleaseBuilds).toBe(true);
+      expect(android.enableShrinkResourcesInReleaseBuilds).toBe(true);
+      expect(android.extraProguardRules).toContain(
+        '-assumenosideeffects class android.util.Log { public static int d(...); public static int v(...); }',
+      );
+    });
+  });
+
   describe('AdMob', () => {
     const saved = process.env.APP_ENV;
     afterEach(() => {

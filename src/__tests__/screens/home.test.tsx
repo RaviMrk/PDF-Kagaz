@@ -1,5 +1,5 @@
-import { act, fireEvent } from '@testing-library/react-native';
-import { TextInput } from 'react-native';
+import { act, fireEvent, within } from '@testing-library/react-native';
+import { StyleSheet, TextInput } from 'react-native';
 import { renderRouter, screen } from 'expo-router/testing-library';
 import path from 'path';
 
@@ -194,6 +194,24 @@ describe('Home banner', () => {
     await renderRouter(APP_DIR, { initialUrl: '/home' });
     expect(screen.queryByLabelText('Advertisement')).toBeNull();
     expect(screen.getByLabelText('Search your PDFs')).toBeTruthy();
+  });
+
+  it('places the banner below the scrolling content, never over it', async () => {
+    useAds.setState({ status: 'ready', canRequestAds: true });
+    await renderRouter(APP_DIR, { initialUrl: '/home' });
+    const banner = screen.getByTestId('ad-banner-home');
+    const column = banner.parent!;
+    const siblings = column.children.filter((c) => typeof c !== 'string');
+    // The banner is the last item of a flex column whose first item takes the remaining height
+    // and holds the scrolling content, so the scroll viewport ends where the banner starts.
+    expect(siblings[siblings.length - 1]).toBe(banner);
+    const content = siblings[0] as typeof banner;
+    expect(StyleSheet.flatten(content.props.style)).toMatchObject({ flex: 1 });
+    expect(within(content).getByLabelText('Search your PDFs')).toBeTruthy();
+    expect(StyleSheet.flatten(column.props.style)).toMatchObject({ flex: 1 });
+    for (const node of [banner, column]) {
+      expect(StyleSheet.flatten(node.props.style).position).not.toBe('absolute');
+    }
   });
 
   it('leaves no container behind when the banner fails to load', async () => {
