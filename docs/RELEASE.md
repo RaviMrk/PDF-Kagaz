@@ -37,9 +37,11 @@ Release hardening in the build itself:
 - **Storage permission caps kept.** `WRITE_EXTERNAL_STORAGE` is capped at max SDK 29 and
   `READ_EXTERNAL_STORAGE` at 32. Expo's `expo-max-sdk-override-plugin` misreads the manifest-merge
   report and used to strip WRITE's cap from the final manifest (it was uncapped in the M4/M5 APKs).
-  `plugins/withStoragePermissions.js` now adds a last action to that Gradle task that restores both
-  caps and fails the build if either is still missing. The Expo task still logs "Removed
-  'android:maxSdkVersion'"; the restore runs after it.
+  `plugins/withStoragePermissions.js` applies `plugins/storage-caps.gradle`, which restores both
+  caps in its own merged-manifest transform (it runs after Expo's, whatever Expo's task is called)
+  and adds `pdfToolkit<Variant>VerifyStorageCaps`, a separate task that re-reads the final merged
+  manifest and fails `assemble`/`bundle` if either cap is missing or different. The Expo task still
+  logs "Removed 'android:maxSdkVersion'"; the restore runs after it.
 - **Extra keep rules** (`app.json` → `extraProguardRules`), each one needed or justified:
   - `-keep class org.wonday.pdf.** { *; }` — react-native-pdf ships no consumer ProGuard rules, and
     its view manager, Fabric delegate and event classes are reached through React Native's
@@ -87,6 +89,13 @@ Everything here needs your accounts or keys, so the code cannot do it.
    (`eas credentials -p android`) or upload your own, and enrol in Play App Signing when you create
    the app in Play Console. Back up the upload key; Google can reset it, but only after a support
    request.
+7. **Ads after a consent refusal (real IDs).** With the real IDs, a published GDPR message and an
+   EEA test device (its hashed ID in `ADS_TEST_DEVICE_IDS` on a preview build), choose "Do not
+   consent", then watch whether Home and Files fill an ad. If ads fill and you would prefer none
+   after a refusal, ask for the IABTCF purpose-1 gate (no ad request unless
+   `IABTCF_PurposeConsents` grants purpose 1).
+8. **Crash-report opt-out (Firebase).** With the real Firebase project, turn "Send crash reports"
+   off, force a test crash, and confirm nothing arrives in the Crashlytics console.
 
 ### Play Console
 
@@ -285,20 +294,22 @@ Local release builds: `npx expo prebuild --platform android --clean`, then
 `./gradlew :pdf-native:testDebugUnitTest bundleRelease` and `./gradlew assembleRelease` as two
 runs (on an 8 GB machine, one Gradle run with both tasks runs out of heap; pass
 `-Dorg.gradle.jvmargs=-Xmx3072m`). All BUILD SUCCESSFUL; pdf-native unit tests 191/0.
-`APP_VARIANT=play-saf` `assembleRelease` also succeeded.
+`APP_VARIANT=play-saf` `assembleRelease` also succeeded. Both `assemble` and `bundle` run
+`pdfToolkitReleaseVerifyStorageCaps`. Check the shipped AAB's permissions with
+`java -jar bundletool.jar dump manifest --bundle app-release.aab | grep uses-permission`.
 
 | Check | Result |
 | --- | --- |
 | 16 KB: `zipalign -c -P 16 -v 4`, `llvm-objdump -p` | Pass. 29/29 arm64 `.so` OK, every `LOAD` `align 2**14`. Firebase build: 34/34 incl. `libcrashlytics*` |
-| Manifest, default | `INTERNET`, `MANAGE_EXTERNAL_STORAGE`, `READ_EXTERNAL_STORAGE` (max 32), `WRITE_EXTERNAL_STORAGE` (max 29), `WAKE_LOCK`, `ACCESS_NETWORK_STATE`, `AD_ID`, `ACCESS_ADSERVICES_AD_ID/ATTRIBUTION/TOPICS`, `FOREGROUND_SERVICE`, `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, `BIND_GET_INSTALL_REFERRER_SERVICE`. No `CAMERA`, `READ_MEDIA_*`, `SYSTEM_ALERT_WINDOW`, `ACCESS_WIFI_STATE`, `DOWNLOAD_WITHOUT_NOTIFICATION`, `VIBRATE`. `allowBackup=false`, `fullBackupContent=false`, `dataExtractionRules` set. AdMob app ID = Google test ID. The PDF VIEW/SEND filters have no scheme (the `exp+pdf-toolkit` scheme is only on the `pdftoolkit://` deep-link filter) |
+| Manifest, default (APK; the AAB's `bundletool dump manifest` has the same `uses-permission` list, READ max 32 and WRITE max 29) | `INTERNET`, `MANAGE_EXTERNAL_STORAGE`, `READ_EXTERNAL_STORAGE` (max 32), `WRITE_EXTERNAL_STORAGE` (max 29), `WAKE_LOCK`, `ACCESS_NETWORK_STATE`, `AD_ID`, `ACCESS_ADSERVICES_AD_ID/ATTRIBUTION/TOPICS`, `FOREGROUND_SERVICE`, `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, `BIND_GET_INSTALL_REFERRER_SERVICE`. No `CAMERA`, `READ_MEDIA_*`, `SYSTEM_ALERT_WINDOW`, `ACCESS_WIFI_STATE`, `DOWNLOAD_WITHOUT_NOTIFICATION`, `VIBRATE`. `allowBackup=false`, `fullBackupContent=false`, `dataExtractionRules` set. AdMob app ID = Google test ID. The PDF VIEW/SEND filters have no scheme (the `exp+pdf-toolkit` scheme is only on the `pdftoolkit://` deep-link filter) |
 | Manifest, `play-saf` | Same list without `MANAGE_EXTERNAL_STORAGE`; READ max 32, WRITE max 29; same backup, AdMob and filter results; 29/29 arm64 `.so` pass the 16 KB checks. `extra.appVariant` = `play-saf`, `allFilesAccessEnabled` = false |
 | Crashlytics keep rule (Firebase build with a placeholder `google-services.json`, arm64, R8) | Pass. `com.google.firebase.crashlytics.FirebaseCrashlytics` keeps its name, `getInstance()` and `setCrashlyticsCollectionEnabled(java.lang.Boolean)` (apkanalyzer). On Pixel_Fold_API_34 the app started with Crashlytics initialised; turning "Send crash reports" off caused no exception and the process kept running. Whether the reflective call returned true cannot be seen in a minified build (Firebase's own confirmation is a stripped `Log.d`); `CrashReportsSwitchTest` covers the return value. Upload behaviour needs the real Firebase project (user check: opt out, force a test crash, confirm nothing arrives) |
 | Ads: UMP (EEA test mode) | The consent form shows after onboarding on both emulators. "Consent" → test banner on Home and Files. No ad in the reader, Tools, the Merge flow, `/scan` or Settings. Settings shows "Ad privacy choices" and reopens the form |
-| Ads: "Do not consent" / "Manage options → Confirm choices" | A **test** banner still shows. After any choice UMP reports `canRequestAds() = true` (Google's documented behaviour), and Google's test ad unit fills even without Purpose 1 consent. With real IDs, a user who refuses Purpose 1 gets no fill and `AdBanner` hides; limited ads can still serve otherwise. If no ad request at all is wanted after a refusal, that is a product change (read `IABTCF_PurposeConsents`) |
+| Ads: "Do not consent" / "Manage options → Confirm choices" | A **test** banner still shows: after any choice UMP reports `canRequestAds() = true`, and Google's test ad unit fills regardless of the TCF choices. **Decision: after a refusal we still request ads (Google's canRequestAds contract); Google serves limited ads or no fill depending on the TCF choices. Not yet verified with real IDs.** See user action 7 |
 | Interstitial cap | Merge → Done → test interstitial (11:49:10). Another merge → Done at 11:49:59 → none. Force-stop, relaunch, merge → Done at 11:50:46 → none. Merge → Done at 11:52:49 (≥ 3 min) → shown. Result → Open → reader, no ad |
 | Offline (airplane mode, cold start) | No banner and no blank gap, merge works, Done returns to Home at once, no crash |
 | Settings | Dark theme applies at once. Images to PDF with the same 3 photos: "Smaller files" 851 654 B vs "Standard" 4 350 231 B. Clear cache → "Freed 226.1 KB", Files thumbnails regenerate. Analytics/crash switches stay off after a force-stop. Open-source licences list. "Version 1.0.0 (1)" |
-| Pickers in the minified build | Document picker (Merge → Browse files…) returns the file, folder picker (SAF onboarding and Settings → Add folder) works, Save as… writes the copy, Share opens the chooser. No crash |
+| Pickers in the minified build | Document picker (Merge → Browse files…) returns the file. Folder picker: SAF onboarding → Documents → Use this folder → Allow returns to the app, and Settings → Add folder → Pictures adds a second scanned folder (Fold). Save as… on the Fold wrote a byte-identical 6 514 B copy to the chosen folder (`ls -l` and the MediaStore row checked). Share opens the chooser. No crash |
 | Scanner after recreation (Task 8) | Font scale 1.0 → 1.15 in the foreground → Scan opens the ML Kit scanner. Recreated again while the scanner was open → after leaving it, Scan opens again |
 | Fold layout | Unfolded (letterboxed app): banner `[446,1276][1763,1627]` fits the app width and ends above the tab bar (`[.., 1628]`). Folded: banner refits `[0,1564][1080,1900]`, tab bar from 1901 |
 | Crash check | No `FATAL EXCEPTION`, `ClassNotFoundException` or `NoSuchMethodError` from the app in the Pixel_10a and Fold logcats |
@@ -310,6 +321,9 @@ hint from a debug build and pass it as `ADS_TEST_DEVICE_IDS`.
 ## Known limitations
 
 These need a physical phone and are not covered by the emulator runs:
+
+- **Ads after a consent refusal with real IDs** (user action 7): the app still requests ads after
+  "Do not consent"; whether Google fills them was only seen with test IDs, which always fill.
 
 - All P0 acceptance criteria on a real Android 11+ phone and a real Android 9 phone (§10.2).
 - Share and print on **Android 7–10** (API 24–29): the shareable-path check is alias-tolerant but
