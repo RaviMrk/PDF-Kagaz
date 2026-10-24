@@ -54,13 +54,19 @@ export type RunContext<R extends PdfToolRequest = PdfToolRequest> = {
   save(out: { bytes: Uint8Array; name: string }, from: number, to: number): Promise<void>;
   /** Publishes a file already in the workspace (written by a native op). */
   publishFile(file: WorkspaceFile, name: string, from: number, to: number): Promise<void>;
-  /** Runs one native job op with progress, cancel and ERR_CANCELLED → cancelled. */
-  nativeOp<T>(fn: () => Promise<T>): Promise<T>;
+  /**
+   * Runs one native job op with progress, cancel and ERR_CANCELLED → cancelled. `range`: the op's
+   * share of the processing progress (default all of it).
+   */
+  nativeOp<T>(fn: () => Promise<T>, range?: ProgressRange): Promise<T>;
   /** Pages written, for the release log. */
   setPages(n: number): void;
   /** Adds to the job's extras (earlier ones, like `passwordRemoved`, are kept). */
   setExtras(e: ToolExtras): void;
 };
+
+/** A share `from` → `to` (0..1) of a phase's progress. */
+export type ProgressRange = { from: number; to: number };
 
 export type ToolRunner<R extends PdfToolRequest = PdfToolRequest> = (
   ctx: RunContext<R>,
@@ -87,11 +93,12 @@ export function createNativeOp(
   processing: (f: number) => void,
   graceMs: number = NATIVE_CANCEL_GRACE_MS,
 ): RunContext['nativeOp'] {
-  return async <T>(fn: () => Promise<T>): Promise<T> => {
+  return async <T>(fn: () => Promise<T>, range: ProgressRange = { from: 0, to: 1 }): Promise<T> => {
     throwIfCancelled(signal);
     const sub = native.addToolProgressListener((e) => {
       if (e.jobId === jobId && Number.isFinite(e.fraction)) {
-        processing(Math.min(1, Math.max(0, e.fraction)));
+        const f = Math.min(1, Math.max(0, e.fraction));
+        processing(range.from + (range.to - range.from) * f);
       }
     });
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -209,17 +216,24 @@ export async function nativePageCounts(ctx: RunContext, indices: number[]): Prom
   }
 }
 
-/** Assembles `outputs` from every staged input with PdfBox; the files come back in order. */
+/**
+ * Assembles `outputs` from every staged input with PdfBox; the files come back in order, named
+ * from output number `firstOutput` (1-based) on, with native progress mapped onto `range`.
+ */
 export async function assembleNative(
   ctx: RunContext,
   outputs: PageRef[][],
+  firstOutput = 1,
+  range?: ProgressRange,
 ): Promise<WorkspaceFile[]> {
   const uris = ctx.inputs.map((input) => input.uri);
   const files = await as(null, null, () =>
-    ctx.nativeOp(() =>
-      ctx.time('embed', () =>
-        ctx.deps.native.assemblePdf(ctx.jobId, uris, JSON.stringify(outputs)),
-      ),
+    ctx.nativeOp(
+      () =>
+        ctx.time('embed', () =>
+          ctx.deps.native.assemblePdf(ctx.jobId, uris, JSON.stringify(outputs), firstOutput),
+        ),
+      range,
     ),
   );
   if (

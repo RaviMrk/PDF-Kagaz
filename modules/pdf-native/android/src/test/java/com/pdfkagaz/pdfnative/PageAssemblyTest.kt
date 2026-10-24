@@ -1,6 +1,7 @@
 package com.pdfkagaz.pdfnative
 
 import com.tom_roush.pdfbox.cos.COSName
+import com.tom_roush.pdfbox.cos.COSStream
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink
@@ -143,6 +144,79 @@ class PageAssemblyTest {
       assertEquals(listOf("Text"), annotations.map { it.subtype })
       assertTrue(annotations[0].cosObject.getDictionaryObject(COSName.P) == null)
     }
+  }
+
+  @Test
+  fun namesOutputsFromTheFirstOutputIndex() {
+    val (id, control) = control()
+    val outputs = try {
+      PageAssembly.assemble(
+        listOf(Fixtures.file("mixed-sizes.pdf")),
+        listOf(refs(0, 0..0), refs(0, 1..2)),
+        outDir,
+        control,
+        tempDir,
+        firstOutput = 4,
+      )
+    } finally {
+      NativeJobs.end(id)
+    }
+    assertEquals(listOf("out-native-4.pdf", "out-native-5.pdf"), outputs.map { it.name })
+    assertEquals(listOf(1, 2), outputs.map { f -> pdf(f) { it.numberOfPages } })
+  }
+
+  @Test
+  fun extraRotationWrapsPast360() {
+    val input = File(tmp.root, "rotated.pdf")
+    PDDocument().use { doc ->
+      doc.addPage(PDPage().apply { rotation = 270 })
+      doc.save(input)
+    }
+    val (id, control) = control()
+    val outputs = try {
+      PageAssembly.assemble(
+        listOf(input, Fixtures.file("mixed-sizes.pdf")),
+        listOf(listOf(PageRef(0, 0, 180), PageRef(1, 2, 270), PageRef(1, 2, 180))),
+        outDir,
+        control,
+        tempDir,
+      )
+    } finally {
+      NativeJobs.end(id)
+    }
+    pdf(outputs[0]) { doc -> assertEquals(listOf(90, 0, 270), doc.pages.map { it.rotation }) }
+  }
+
+  @Test
+  fun aDamagedContentStreamIsPdfInvalidAndLeavesNoOutput() {
+    val input = File(tmp.root, "damaged-content.pdf")
+    PDDocument().use { doc ->
+      val page = PDPage()
+      doc.addPage(page)
+      val stream: COSStream = doc.document.createCOSStream()
+      stream.createRawOutputStream().use { it.write(byteArrayOf(1, 2, 3, 4)) }
+      stream.setItem(COSName.FILTER, COSName.getPDFName("NoSuchDecode"))
+      page.cosObject.setItem(COSName.CONTENTS, stream)
+      doc.save(input)
+    }
+    val (id, control) = control()
+    val e = try {
+      PageAssembly.assemble(
+        listOf(Fixtures.file("one-page.pdf"), input),
+        listOf(refs(0, 0..0), refs(1, 0..0)),
+        outDir,
+        control,
+        tempDir,
+      )
+      fail("Expected ERR_PDF_INVALID")
+      throw AssertionError()
+    } catch (e: CodedException) {
+      e
+    } finally {
+      NativeJobs.end(id)
+    }
+    assertEquals("ERR_PDF_INVALID", e.code)
+    assertEquals(emptyList<String>(), outDir.list()!!.filter { it.startsWith("out-native") })
   }
 
   @Test

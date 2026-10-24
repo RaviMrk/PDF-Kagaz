@@ -82,8 +82,13 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
     index: number,
     password: string | null,
   ): Promise<WorkspaceFile>;
-  /** Workspace files of `jobId` only; `outputsJson` = `[[{"i","p","r"},…],…]`; writes `out-native-<k>.pdf`. */
-  assemblePdf(jobId: string, inputUris: string[], outputsJson: string): Promise<WorkspaceFile[]>;
+  /** Workspace files of `jobId` only; `outputsJson` = `[[{"i","p","r"},…],…]`; writes `out-native-<firstOutput + k>.pdf`. */
+  assemblePdf(
+    jobId: string,
+    inputUris: string[],
+    outputsJson: string,
+    firstOutput: number,
+  ): Promise<WorkspaceFile[]>;
   /** Workspace files only; 1-based page, width clamped to 1..512; own lane (not reader / Files list). */
   renderToolThumbnail(fileUri: string, page: number, width: number): Promise<string>;
   getToolPageCount(fileUri: string): Promise<number>;

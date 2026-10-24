@@ -185,11 +185,11 @@ describe('pdfNative', () => {
   it('forwards assemblePdf with the refs as a JSON string', async () => {
     const inputs = ['file:///data/cache/tools/j1/in-0.pdf'];
     const json = '[[{"i":0,"p":0,"r":90}],[{"i":0,"p":1,"r":0}]]';
-    await expect(pdfNative.assemblePdf('j1', inputs, json)).resolves.toEqual([
-      { uri: 'file:///data/cache/tools/j1/out-native-1.pdf', sizeBytes: 1000 },
-      { uri: 'file:///data/cache/tools/j1/out-native-2.pdf', sizeBytes: 1000 },
+    await expect(pdfNative.assemblePdf('j1', inputs, json, 4)).resolves.toEqual([
+      { uri: 'file:///data/cache/tools/j1/out-native-4.pdf', sizeBytes: 1000 },
+      { uri: 'file:///data/cache/tools/j1/out-native-5.pdf', sizeBytes: 1000 },
     ]);
-    expect(mockedModule.assemblePdf).toHaveBeenCalledWith('j1', inputs, json);
+    expect(mockedModule.assemblePdf).toHaveBeenCalledWith('j1', inputs, json, 4);
   });
 
   it('forwards the image pipeline with every argument in order', async () => {

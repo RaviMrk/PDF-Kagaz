@@ -149,10 +149,16 @@ export interface PdfNativeApi {
    * Merge / split / organise with PdfBox (a native job: cancelNativeTool stops it). `inputUris` are
    * files of job `jobId`'s workspace (anything else: ERR_PERMISSION_DENIED); `outputsJson` is one
    * array per output of `{ i: input, p: 0-based page, r: extra rotation 0/90/180/270 }` (a JSON
-   * string, so expo needs no reflection on records). Output k (1-based) is written as
-   * `out-native-<k>.pdf` in the workspace. Bad refs: ERR_INVALID_NAME.
+   * string, so expo needs no reflection on records). Output k (0-based) is written as
+   * `out-native-<firstOutput + k>.pdf` in the workspace (batches of one job pass their own
+   * `firstOutput`, from 1). Bad refs: ERR_INVALID_NAME; a damaged page: ERR_PDF_INVALID.
    */
-  assemblePdf(jobId: string, inputUris: string[], outputsJson: string): Promise<WorkspaceFile[]>;
+  assemblePdf(
+    jobId: string,
+    inputUris: string[],
+    outputsJson: string,
+    firstOutput: number,
+  ): Promise<WorkspaceFile[]>;
   /**
    * Page thumbnail of a tool workspace file (anything else: ERR_PERMISSION_DENIED), on its own
    * lane apart from the reader and Files list; 1-based page, width clamped to 1..512.
@@ -295,8 +301,8 @@ export const pdfNative: PdfNativeApi = {
   checkPdfPassword: (uri, password) => PdfNative.checkPdfPassword(uri, password),
   unlockToolInput: (fileUri, jobId, index, password) =>
     PdfNative.unlockToolInput(fileUri, jobId, index, password),
-  assemblePdf: (jobId, inputUris, outputsJson) =>
-    PdfNative.assemblePdf(jobId, inputUris, outputsJson),
+  assemblePdf: (jobId, inputUris, outputsJson, firstOutput) =>
+    PdfNative.assemblePdf(jobId, inputUris, outputsJson, firstOutput),
   renderToolThumbnail: (fileUri, page, width) =>
     PdfNative.renderToolThumbnail(fileUri, page, width),
   getToolPageCount: (fileUri) => PdfNative.getToolPageCount(fileUri),

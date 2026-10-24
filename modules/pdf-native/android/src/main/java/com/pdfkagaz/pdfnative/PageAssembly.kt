@@ -8,7 +8,9 @@ import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
+import expo.modules.kotlin.exception.CodedException
 import java.io.File
+import java.io.IOException
 import java.util.Collections
 import java.util.IdentityHashMap
 import org.json.JSONArray
@@ -68,7 +70,8 @@ object PageAssembly {
   }
 
   /**
-   * Writes output k as `<outDir>/out-native-<k + 1>.pdf` (through a part file) and returns the
+   * Writes output k (0-based) as `<outDir>/out-native-<firstOutput + k>.pdf` (through a part
+   * file; batches of one job pass their own [firstOutput], so names never collide) and returns the
    * files in order. [control] is checked and progress reported per page; a cancel or any failure
    * removes every output this call wrote. A ref to an input or page that does not exist →
    * ERR_INVALID_NAME.
@@ -79,8 +82,9 @@ object PageAssembly {
     outDir: File,
     control: JobControl,
     tempDir: File,
+    firstOutput: Int = 1,
   ): List<File> {
-    if (inputs.isEmpty() || outputs.isEmpty() || outputs.any { it.isEmpty() }) throw InvalidNameException()
+    if (firstOutput < 1 || inputs.isEmpty() || outputs.isEmpty() || outputs.any { it.isEmpty() }) throw InvalidNameException()
     val refCount = outputs.sumOf { it.size }
     if (refCount > MAX_REFS) throw InvalidNameException()
     if (outputs.any { refs -> refs.any { it.input !in inputs.indices || it.page < 0 || it.rotate !in ROTATIONS } }) {
@@ -100,12 +104,12 @@ object PageAssembly {
       var finished = 0
       val outTemp = File(tempDir, "out").apply { mkdirs() }
       for ((k, refs) in outputs.withIndex()) {
-        val target = File(outDir, "out-native-${k + 1}.pdf")
+        val target = File(outDir, "out-native-${firstOutput + k}.pdf")
         PDDocument(MemoryUsageSetting.setupMixed(PdfBoxSupport.MAIN_MEMORY_BYTES).setTempDir(outTemp)).use { out ->
           val seen: MutableSet<COSDictionary> = Collections.newSetFromMap(IdentityHashMap())
           for (ref in refs) {
             control.check()
-            PdfBoxSupport.mapSaveErrors { importPage(out, docs[ref.input].getPage(ref.page), ref.rotate, seen) }
+            mapImportErrors { importPage(out, docs[ref.input].getPage(ref.page), ref.rotate, seen) }
             finished += 1
             control.progress(finished / units)
           }
@@ -129,6 +133,23 @@ object PageAssembly {
       if (!done) for (file in written) file.delete()
     }
   }
+
+  /**
+   * Importing reads (and decodes) the source page: a failure there is a damaged input
+   * (ERR_PDF_INVALID), out of memory ERR_TOO_LARGE. Saving keeps [PdfBoxSupport.saveTo]'s ERR_IO.
+   */
+  private fun <T> mapImportErrors(block: () -> T): T =
+    try {
+      block()
+    } catch (e: CodedException) {
+      throw e
+    } catch (e: IOException) {
+      throw PdfInvalidException()
+    } catch (e: RuntimeException) {
+      throw PdfInvalidException()
+    } catch (e: OutOfMemoryError) {
+      throw TooLargeException()
+    }
 
   /**
    * Imports [page] into [out]; a page already imported into this output comes from a fresh copy of
@@ -177,6 +198,7 @@ object PageAssembly {
     jobId: String,
     inputUris: List<String>,
     outputsJson: String,
+    firstOutput: Int,
     control: JobControl,
   ): List<Map<String, Any?>> {
     if (!ToolPaths.isValidJobId(jobId) || inputUris.isEmpty()) throw InvalidNameException()
@@ -190,7 +212,7 @@ object PageAssembly {
     val dir = inputs[0].parentFile ?: throw PermissionDeniedException()
     val tempDir = File(dir, "pdfbox-assemble")
     try {
-      return assemble(inputs, outputs, dir, control, tempDir).map {
+      return assemble(inputs, outputs, dir, control, tempDir, firstOutput).map {
         mapOf("uri" to Uri.fromFile(it).toString(), "sizeBytes" to it.length())
       }
     } finally {

@@ -132,15 +132,17 @@ function setup(rows: FileRow[], sources: string[] = []) {
     }),
     releaseToolDocument: jest.fn(async () => {}),
     // Each output stands in as a plain one-page PDF, written where PdfBox would write it.
-    assemblePdf: jest.fn(async (jobId: string, _inputUris: string[], outputsJson: string) => {
-      const outputs = JSON.parse(outputsJson) as unknown[];
-      const bytes = fs.readFileSync(path.join(FIXTURES, 'one-page.pdf'));
-      return outputs.map((_, k) => {
-        const dest = path.join(tmp, jobId, `out-native-${k + 1}.pdf`);
-        fs.writeFileSync(dest, bytes);
-        return { uri: `file://${dest}`, sizeBytes: bytes.length };
-      });
-    }),
+    assemblePdf: jest.fn(
+      async (jobId: string, _inputUris: string[], outputsJson: string, firstOutput: number) => {
+        const outputs = JSON.parse(outputsJson) as unknown[];
+        const bytes = fs.readFileSync(path.join(FIXTURES, 'one-page.pdf'));
+        return outputs.map((_, k) => {
+          const dest = path.join(tmp, jobId, `out-native-${firstOutput + k}.pdf`);
+          fs.writeFileSync(dest, bytes);
+          return { uri: `file://${dest}`, sizeBytes: bytes.length };
+        });
+      },
+    ),
     cancelNativeTool: jest.fn(async (_jobId: string) => {}),
     addToolProgressListener: jest.fn((cb: (e: ToolProgressEvent) => void) => {
       progressListeners.add(cb);
@@ -1048,6 +1050,7 @@ describe('runTool engine', () => {
       'j1',
       [`file://${s.tmp}/j1/in-0.pdf`, `file://${s.tmp}/j1/in-1.pdf`],
       '[[{"i":0,"p":0,"r":0},{"i":1,"p":0,"r":0},{"i":1,"p":1,"r":0},{"i":1,"p":2,"r":0}]]',
+      1,
     );
     expect(s.native.publishToolOutput.mock.calls).toEqual([
       [`file://${s.tmp}/j1/out-native-1.pdf`, 'one-page merged.pdf'],
@@ -1074,6 +1077,7 @@ describe('runTool engine', () => {
       'j1',
       [`file://${s.tmp}/j1/in-0.pdf`],
       '[[{"i":0,"p":0,"r":0},{"i":0,"p":1,"r":0}],[{"i":0,"p":2,"r":0}]]',
+      1,
     );
     expect(s.native.publishToolOutput.mock.calls).toEqual([
       [`file://${s.tmp}/j1/out-native-1.pdf`, 'mixed-sizes pages 1-2.pdf'],
@@ -1100,6 +1104,7 @@ describe('runTool engine', () => {
       'j1',
       [`file://${s.tmp}/j1/in-0.open.pdf`],
       '[[{"i":0,"p":0,"r":0}]]',
+      1,
     );
   });
 
@@ -1130,6 +1135,7 @@ describe('runTool engine', () => {
       'j1',
       [`file://${s.tmp}/j1/in-0.pdf`],
       '[[{"i":0,"p":1,"r":90}]]',
+      1,
     );
     expect(s.native.publishToolOutput.mock.calls).toEqual([
       [`file://${s.tmp}/j1/out-native-1.pdf`, 'mixed-sizes organised.pdf'],
@@ -1169,6 +1175,106 @@ describe('runTool engine', () => {
     const outcome = await s.run({ toolId: 'merge', inputIds: rows.map((r) => r.id) });
     expect(outcome).toEqual({ ok: false, failure: 'cancelled', inputIndex: null, outputs: [] });
     expect(s.native.publishToolOutput).not.toHaveBeenCalled();
+  });
+
+  it('a 3-part native split is one assembly call', async () => {
+    const r = row('mixed-sizes.pdf');
+    const s = setup([r]);
+    forceNative(s);
+    const outcome = await s.run({
+      toolId: 'split',
+      inputIds: [r.id],
+      split: { mode: 'everyN', n: 1 },
+    });
+    expect(outcome.ok && outcome.outputs.length).toBe(3);
+    expect(s.native.assemblePdf).toHaveBeenCalledTimes(1);
+    expect(s.native.assemblePdf.mock.calls[0]![3]).toBe(1);
+  });
+
+  it('a 20-part native split runs in at most 8 batches, publishing each in order', async () => {
+    const r = row('two-hundred-pages.pdf');
+    const s = setup([r]);
+    forceNative(s);
+    const real = s.native.assemblePdf.getMockImplementation()!;
+    s.native.assemblePdf.mockImplementation(async (jobId, uris, json, first) => {
+      // Batch 1's end: progress within a batch is scaled to its share of the processing.
+      s.emitToolProgress({ jobId, fraction: 1 });
+      return real(jobId, uris, json, first);
+    });
+    const outcome = await s.run({
+      toolId: 'split',
+      inputIds: [r.id],
+      split: { mode: 'everyN', n: 10 },
+    });
+    expect(outcome.ok && outcome.outputs.length).toBe(20);
+    const calls = s.native.assemblePdf.mock.calls;
+    expect(calls.length).toBeLessThanOrEqual(8);
+    expect(calls.map((c) => c[3])).toEqual([1, 4, 7, 10, 13, 16, 19]);
+    const refs = calls.flatMap((c) => JSON.parse(c[2]) as { p: number }[][]);
+    expect(refs.map((g) => g[0]!.p)).toEqual(Array.from({ length: 20 }, (_, k) => k * 10));
+    expect(s.native.publishToolOutput.mock.calls).toEqual(
+      Array.from({ length: 20 }, (_, k) => [
+        `file://${s.tmp}/j1/out-native-${k + 1}.pdf`,
+        `two-hundred-pages part ${k + 1}.pdf`,
+      ]),
+    );
+    // Batch 2 starts only after batch 1's parts are published.
+    const order = [
+      ...s.native.assemblePdf.mock.invocationCallOrder.map((n) => ['assemble', n] as const),
+      ...s.native.publishToolOutput.mock.invocationCallOrder.map((n) => ['publish', n] as const),
+    ]
+      .sort((a, b) => a[1] - b[1])
+      .map(([kind]) => kind);
+    expect(order.slice(0, 5)).toEqual(['assemble', 'publish', 'publish', 'publish', 'assemble']);
+    expect(s.events).toContainEqual(['processing', 1 / 7]);
+    const phaseAt = (p: ToolPhase) => ['preparing', 'processing', 'saving'].indexOf(p);
+    for (let k = 1; k < s.events.length; k++) {
+      const [p0, f0] = s.events[k - 1]!;
+      const [p1, f1] = s.events[k]!;
+      expect(phaseAt(p1) > phaseAt(p0) || (p1 === p0 && f1 >= f0)).toBe(true);
+    }
+    expect(s.events[s.events.length - 1]).toEqual(['saving', 1]);
+  });
+
+  it('a cancel during native batch 2 keeps batch 1 published', async () => {
+    const r = row('two-hundred-pages.pdf');
+    const s = setup([r]);
+    forceNative(s);
+    const real = s.native.assemblePdf.getMockImplementation()!;
+    s.native.assemblePdf.mockImplementationOnce(real).mockImplementationOnce(async () => {
+      s.controller.abort();
+      throw nativeError('ERR_CANCELLED');
+    });
+    const outcome = await s.run({
+      toolId: 'split',
+      inputIds: [r.id],
+      split: { mode: 'everyN', n: 10 },
+    });
+    expect(outcome).toMatchObject({ ok: false, failure: 'cancelled', inputIndex: null });
+    expect(outcome.outputs.map((o) => o.name)).toEqual([
+      'two-hundred-pages part 1.pdf',
+      'two-hundred-pages part 2.pdf',
+      'two-hundred-pages part 3.pdf',
+    ]);
+    expect(s.published).toHaveLength(3);
+    expect(s.published.every((p) => fs.existsSync(p.path))).toBe(true);
+    expect(s.registerOutputs).toHaveBeenCalledTimes(1);
+    expect(fs.existsSync(path.join(s.tmp, 'j1'))).toBe(false);
+  });
+
+  it('a native organise with no pages or a bad page is badPages, never assembled', async () => {
+    const r = row('mixed-sizes.pdf');
+    const s = setup([r]);
+    forceNative(s);
+    const empty = await s.run({ toolId: 'organize', inputIds: [r.id], pages: [] });
+    const bad = await s.run({
+      toolId: 'organize',
+      inputIds: [r.id],
+      pages: [{ source: 0, rotate: 0 }],
+    });
+    expect(empty).toMatchObject({ ok: false, failure: 'badPages' });
+    expect(bad).toMatchObject({ ok: false, failure: 'badPages' });
+    expect(s.native.assemblePdf).not.toHaveBeenCalled();
   });
 
   it('never assembles natively under the default caps', async () => {
