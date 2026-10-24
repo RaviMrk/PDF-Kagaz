@@ -6,6 +6,8 @@ import {
   setCrashlyticsCollectionEnabled,
 } from '@react-native-firebase/crashlytics';
 
+import { pdfNative } from '@/services/native/pdfNative';
+
 import type { TelemetryAdapter } from './telemetry';
 
 /**
@@ -19,6 +21,15 @@ getCrashlytics();
 
 export const firebaseTelemetry: TelemetryAdapter = {
   async setCollection({ analytics, crashes }) {
+    // The Firebase JS call below only stores the opt-out for the next start; this switches
+    // collection off in the running process, so a later native crash is not uploaded.
+    if (!crashes) {
+      try {
+        pdfNative.disableCrashlyticsNow();
+      } catch {
+        // The stored opt-out and the deletion below still apply.
+      }
+    }
     await Promise.all([
       setAnalyticsCollectionEnabled(getAnalytics(), analytics),
       setCrashlyticsCollectionEnabled(getCrashlytics(), crashes),

@@ -41,6 +41,7 @@ function createNativeFns(): jest.Mocked<NativeFns> {
     renderReaderThumbnail: jest.fn().mockResolvedValue('file:///reader-thumb.jpg'),
     releaseReaderDocument: jest.fn().mockResolvedValue(undefined),
     clearCaches: jest.fn().mockResolvedValue(0),
+    disableCrashlyticsNow: jest.fn(() => false),
     renameFile: jest.fn((uri: string, newName: string) =>
       Promise.resolve(infoFromUri(uri, newName)),
     ),

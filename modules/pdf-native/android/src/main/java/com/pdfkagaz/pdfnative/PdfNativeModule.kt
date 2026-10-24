@@ -63,6 +63,9 @@ class PdfNativeModule : Module() {
       withContext(Dispatchers.IO) { scanChangedFolders(ChangedFolders.knownStamps(uris, modifiedAts)) }
     }
 
+    // Synchronous so the opt-out applies before anything else runs; false without Firebase.
+    Function("disableCrashlyticsNow") { CrashReportsSwitch.disableNow() }
+
     AsyncFunction("hasAllFilesAccess") {
       hasAllFilesAccess()
     }

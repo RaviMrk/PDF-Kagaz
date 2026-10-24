@@ -56,6 +56,67 @@ describe('app.config', () => {
     });
   });
 
+  it('keeps the Crashlytics switch that pdf-native calls by reflection', () => {
+    const android = (
+      appConfig({ config: appJson.expo }).plugins.find(
+        (p: unknown) => Array.isArray(p) && p[0] === 'expo-build-properties',
+      ) as [string, { android: { extraProguardRules: string } }]
+    )[1].android;
+    expect(android.extraProguardRules).toContain(
+      '-keep class com.google.firebase.crashlytics.FirebaseCrashlytics { public static ** getInstance(); public void setCrashlyticsCollectionEnabled(java.lang.Boolean); }',
+    );
+  });
+
+  describe('privacy policy URL', () => {
+    const KEYS = [
+      'APP_ENV',
+      'PRIVACY_POLICY_URL',
+      'ADMOB_ANDROID_APP_ID',
+      'ADMOB_BANNER_ID',
+      'ADMOB_INTERSTITIAL_ID',
+    ] as const;
+    const saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
+    afterEach(() => {
+      for (const k of KEYS) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+    });
+    const production = (url: string | undefined) => {
+      process.env.APP_ENV = 'production';
+      process.env.ADMOB_ANDROID_APP_ID = 'ca-app-pub-1111111111111111~2222222222';
+      process.env.ADMOB_BANNER_ID = 'ca-app-pub-1111111111111111/3333333333';
+      process.env.ADMOB_INTERSTITIAL_ID = 'ca-app-pub-1111111111111111/4444444444';
+      if (url === undefined) delete process.env.PRIVACY_POLICY_URL;
+      else process.env.PRIVACY_POLICY_URL = url;
+      return () => appConfig({ config: appJson.expo });
+    };
+
+    it.each([
+      ['missing', undefined],
+      ['blank', '  '],
+      ['http', 'http://example.com/privacy'],
+      ['not a URL', 'example.com/privacy'],
+      ['https without a host', 'https://'],
+    ])('refuses a production config with a %s URL', (_name, url) => {
+      expect(production(url)).toThrow(
+        new Error('Production build needs PRIVACY_POLICY_URL set to an https:// URL'),
+      );
+    });
+
+    it('uses the trimmed https URL in production', () => {
+      expect(production(' https://example.com/privacy ')().extra.privacyPolicyUrl).toBe(
+        'https://example.com/privacy',
+      );
+    });
+
+    it('allows no URL outside production', () => {
+      delete process.env.APP_ENV;
+      delete process.env.PRIVACY_POLICY_URL;
+      expect(appConfig({ config: appJson.expo }).extra.privacyPolicyUrl).toBeNull();
+    });
+  });
+
   describe('AdMob', () => {
     const saved = process.env.APP_ENV;
     afterEach(() => {

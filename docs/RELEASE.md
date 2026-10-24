@@ -15,7 +15,7 @@ rest is a user action below.
 | Denying All Files Access still gives a working app (SAF mode) | Code ready (SafProvider, `play-saf` variant). Smoke: filled by Task 11 |
 | Low-RAM phone (≤ 3 GB) with the 50 MB fixture | User action (physical device) |
 | Test ad IDs replaced with production IDs; UMP consent in EU test mode | Code ready: the `production` profile sets `APP_ENV=production`, and `app.config.ts` refuses to build without three well-formed, non-test AdMob IDs. EEA test mode: `ADS_DEBUG_GEOGRAPHY=EEA` on a non-production build. Real IDs: user action |
-| Privacy policy URL live | Code ready (`PRIVACY_POLICY_URL` → Settings → About). Hosting the page: user action |
+| Privacy policy URL live | Code ready (`PRIVACY_POLICY_URL` → Settings → About; a production build fails without an https URL). Hosting the page: user action |
 | Data safety form, All Files Access declaration + video, content rating, target audience | User action; the answers and texts are below |
 | Store listing | User action |
 | Signed AAB from the EAS production profile; internal track first | Code ready (`eas.json`: `production` builds an auto-incremented `app-bundle`; `submit.production.android.track` is `internal`). Upload key + Play App Signing: user action |
@@ -41,6 +41,9 @@ Release hardening in the build itself:
   - `-keep class io.legere.pdfiumandroid.** { *; }` — PdfiumAndroid's classes are called from its
     JNI library by name. The AAR's own `proguard.txt` already has this rule; it is repeated so the
     viewer keeps working if the consumer rules are ever dropped.
+  - `-keep class com.google.firebase.crashlytics.FirebaseCrashlytics { public static ** getInstance(); public void setCrashlyticsCollectionEnabled(java.lang.Boolean); }`
+    — pdf-native reaches these two members by reflection (Firebase is optional) to apply a crash
+    report opt-out immediately. Without Firebase the rule matches nothing.
   - All other libraries (Expo modules, React Native, Reanimated/Worklets, Nitro + MMKV, Google
     Mobile Ads, UMP, ML Kit, Firebase) ship consumer rules or `@Keep`/`@DoNotStrip` annotations,
     and the minified build passed a crash check on Pixel_Fold_API_34 and Pixel_10a (reader, merge,
@@ -133,7 +136,8 @@ eas submit -p android --profile production
 - `production` sets `APP_ENV=production`; `production-saf` extends it and adds
   `APP_VARIANT=play-saf`. `preview` sets `APP_ENV=preview` and always uses Google's test ad IDs.
 - With `APP_ENV=production`, `app.config.ts` throws "Production build needs real AdMob IDs" when
-  any of the three IDs is missing, malformed or a Google test ID. It also ignores
+  any of the three IDs is missing, malformed or a Google test ID. It also throws "Production build needs
+  PRIVACY_POLICY_URL set to an https:// URL" when the URL is missing or not https. It also ignores
   `ADS_DEBUG_GEOGRAPHY` and `ADS_TEST_DEVICE_IDS`.
 - Local release build (debug-keystore signed, for testing only):
 
@@ -194,10 +198,13 @@ disabled.
   turning them off calls `deleteUnsentReports()`. The off setting is stored natively and applied
   by Firebase's init provider before the app's code runs, so nothing is sent at the next start
   before the app re-applies the user's choice.
-- Known gap: `@react-native-firebase/crashlytics` stores the off setting for the next start but does
-  not switch Crashlytics' native collection off in the running process. A fatal native crash later
-  in the **same session** in which the user turned crash reports off can still be uploaded at once
-  (Crashlytics' on-demand fatal upload). Reports from earlier sessions are not affected.
+- Turning crash reports off also takes effect at once in the running process.
+  `@react-native-firebase/crashlytics` only stores the setting for the next start, so the app
+  additionally calls `FirebaseCrashlytics.setCrashlyticsCollectionEnabled(false)` through
+  pdf-native (`disableCrashlyticsNow`, by reflection, a no-op without Firebase) before deleting the
+  unsent reports. A native crash later in that session is only stored on disk and is deleted at the
+  next start. Residual: a crash in the few milliseconds between the tap and that native call. After
+  turning crash reports back on, collection resumes at the next start.
 
 ## All Files Access declaration
 

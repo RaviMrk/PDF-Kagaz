@@ -6,6 +6,8 @@ import {
   setCrashlyticsCollectionEnabled,
 } from '@react-native-firebase/crashlytics';
 
+import { pdfNative } from '@/services/native/pdfNative';
+
 import { firebaseTelemetry } from '../firebaseTelemetry';
 import type { ToolEvent } from '../toolEvent';
 
@@ -50,6 +52,40 @@ describe('firebaseTelemetry', () => {
     expect(setAnalyticsCollectionEnabled).toHaveBeenCalledWith(expect.anything(), false);
     expect(setCrashlyticsCollectionEnabled).toHaveBeenCalledWith(expect.anything(), false);
     expect(deleteUnsentReports).toHaveBeenCalledTimes(1);
+  });
+
+  it('switches native crash collection off in this process before dropping cached reports', async () => {
+    const order: string[] = [];
+    const disable = jest.spyOn(pdfNative, 'disableCrashlyticsNow').mockImplementation(() => {
+      order.push('disableNow');
+      return true;
+    });
+    (deleteUnsentReports as jest.Mock).mockImplementationOnce(() => {
+      order.push('deleteUnsent');
+      return Promise.resolve();
+    });
+    await firebaseTelemetry.setCollection({ analytics: true, crashes: false });
+    expect(disable).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['disableNow', 'deleteUnsent']);
+    disable.mockRestore();
+  });
+
+  it('leaves native crash collection alone when crash reports stay on', async () => {
+    const disable = jest.spyOn(pdfNative, 'disableCrashlyticsNow');
+    await firebaseTelemetry.setCollection({ analytics: false, crashes: true });
+    expect(disable).not.toHaveBeenCalled();
+    disable.mockRestore();
+  });
+
+  it('still drops cached reports when the native switch throws', async () => {
+    const disable = jest.spyOn(pdfNative, 'disableCrashlyticsNow').mockImplementation(() => {
+      throw new Error('no module');
+    });
+    await expect(
+      firebaseTelemetry.setCollection({ analytics: false, crashes: false }),
+    ).resolves.toBeUndefined();
+    expect(deleteUnsentReports).toHaveBeenCalledTimes(1);
+    disable.mockRestore();
   });
 
   it('records a non-fatal error with Crashlytics', () => {

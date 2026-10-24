@@ -17,6 +17,8 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
   scanPdfs(roots?: string[] | null): Promise<ScanResult>;
   /** Known folder stamps as parallel arrays (uris[i] was stamped with modifiedAts[i]). */
   scanChangedFolders(uris: string[], modifiedAts: number[]): Promise<FolderChange[]>;
+  /** Crashlytics collection off in this process now; false when Firebase is not linked. */
+  disableCrashlyticsNow(): boolean;
   hasAllFilesAccess(): Promise<boolean>;
   openAllFilesAccessSettings(): Promise<void>;
   generateThumbnail(uri: string, page: number, width: number): Promise<string>;

@@ -34,6 +34,11 @@ export type {
 export interface PdfNativeApi {
   scanPdfs(roots?: string[] | null): Promise<ScanResult>;
   scanChangedFolders(known: FolderStamp[]): Promise<FolderChange[]>;
+  /**
+   * Turns Crashlytics collection off in the running process at once (the Firebase JS API only
+   * stores the opt-out for the next start). False when Firebase is not linked.
+   */
+  disableCrashlyticsNow(): boolean;
   hasAllFilesAccess(): Promise<boolean>;
   openAllFilesAccessSettings(): Promise<void>;
   generateThumbnail(uri: string, page: number, width: number): Promise<string>;
@@ -189,6 +194,7 @@ export const pdfNative: PdfNativeApi = {
       known.map((k) => k.uri),
       known.map((k) => k.modifiedAt),
     ),
+  disableCrashlyticsNow: () => PdfNative.disableCrashlyticsNow(),
   hasAllFilesAccess: () => PdfNative.hasAllFilesAccess(),
   openAllFilesAccessSettings: () => PdfNative.openAllFilesAccessSettings(),
   generateThumbnail: (uri, page, width) => PdfNative.generateThumbnail(uri, page, width),

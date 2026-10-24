@@ -11,6 +11,18 @@ export const PDF_INTENT_FILTERS: IntentFilter[] = [
   { action: 'SEND', category: ['DEFAULT'], data: [{ mimeType: 'application/pdf' }] },
 ];
 
+const PRIVACY_POLICY_ERROR = 'Production build needs PRIVACY_POLICY_URL set to an https:// URL';
+
+/** Optional outside production; a production build must link a live https policy page. */
+export function resolvePrivacyPolicyUrl(env: Record<string, string | undefined>): string | null {
+  const url = env.PRIVACY_POLICY_URL?.trim() || null;
+  if (env.APP_ENV !== 'production') return url;
+  if (url === null || !/^https:\/\/[^\s/?#]+\.[^\s/?#]+(?:[/?#]\S*)?$/.test(url)) {
+    throw new Error(PRIVACY_POLICY_ERROR);
+  }
+  return url;
+}
+
 export default ({ config }: ConfigContext): ExpoConfig => {
   const variant = process.env.APP_VARIANT === 'play-saf' ? 'play-saf' : 'default';
   const allFilesAccess = variant === 'default';
@@ -19,6 +31,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const firebaseEnabled = isFirebaseEnabled();
   // Google's test IDs unless APP_ENV=production; throws when production lacks real IDs.
   const ads = resolveAdsConfig(process.env);
+  // Throws in production when the privacy policy URL is missing or not https.
+  const privacyPolicyUrl = resolvePrivacyPolicyUrl(process.env);
 
   return {
     ...config,
@@ -55,7 +69,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       appVariant: variant,
       allFilesAccessEnabled: allFilesAccess,
       firebaseEnabled,
-      privacyPolicyUrl: process.env.PRIVACY_POLICY_URL ?? null,
+      privacyPolicyUrl,
       ads: {
         banner: ads.banner,
         interstitial: ads.interstitial,
