@@ -1,5 +1,6 @@
 package com.pdfkagaz.pdfnative
 
+import com.tom_roush.pdfbox.io.RandomAccessRead
 import java.io.File
 import java.io.RandomAccessFile
 
@@ -16,6 +17,16 @@ internal object PdfTruncation {
   private val OBJ = Regex("\\d+\\s+\\d+\\s+obj\\b")
 
   fun isTruncated(file: File): Boolean = isTruncatedTail(readTail(file))
+
+  /** The same check on a reader (a descriptor read in place). */
+  fun isTruncated(source: RandomAccessRead): Boolean {
+    val length = source.length()
+    val size = minOf(length, TAIL_BYTES.toLong()).toInt()
+    source.seek(length - size)
+    val tail = source.readFully(size)
+    source.seek(0)
+    return isTruncatedTail(String(tail, Charsets.ISO_8859_1))
+  }
 
   /** [tail] is the end of the file, decoded byte for byte (ISO-8859-1). */
   fun isTruncatedTail(tail: String): Boolean {

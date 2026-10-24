@@ -3,11 +3,14 @@ package com.pdfkagaz.pdfnative
 import android.content.Context
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
+import com.tom_roush.pdfbox.io.ScratchFile
+import com.tom_roush.pdfbox.pdfparser.PDFParser
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
 import expo.modules.kotlin.exception.CodedException
 import java.io.File
 import java.io.IOException
+import java.nio.channels.FileChannel
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -37,6 +40,30 @@ object PdfBoxSupport {
     tempDir.mkdirs()
     val memory = MemoryUsageSetting.setupMixed(MAIN_MEMORY_BYTES).setTempDir(tempDir)
     PDDocument.load(file, password ?: "", memory)
+  }
+
+  /**
+   * [open] on a seekable [channel] the caller owns (a provider descriptor), read in place with no
+   * copy; the same error mapping. Closing the document does not close [channel].
+   */
+  fun openChannel(channel: FileChannel, password: String?, tempDir: File): PDDocument = mapOpenErrors(password) {
+    val source = FdRandomAccessRead(channel)
+    tempDir.mkdirs()
+    var scratch: ScratchFile? = null
+    var ok = false
+    try {
+      if (PdfTruncation.isTruncated(source)) throw PdfInvalidException()
+      val memory = MemoryUsageSetting.setupMixed(MAIN_MEMORY_BYTES).setTempDir(tempDir)
+      scratch = ScratchFile(memory)
+      val parser = PDFParser(source, password ?: "", scratch)
+      parser.parse()
+      parser.pdDocument.also { ok = true }
+    } finally {
+      if (!ok) {
+        runCatching { scratch?.close() }
+        source.close()
+      }
+    }
   }
 
   /**

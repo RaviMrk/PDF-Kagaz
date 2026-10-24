@@ -21,9 +21,11 @@ import {
   getJob,
 } from '@/services/tools/toolJobRepo';
 import { getFile } from '@/services/index/fileIndexRepo';
+import { findLockedInputs } from '@/services/tools/passwords';
 import type { ToolId } from '@/services/tools/toolRegistry';
 import type { PdfFileInfo } from '@/services/native/pdfNative';
 import { fileIdForUri } from '@/utils/fileId';
+import { createFakePdfNative } from '@/test-utils/fakePdfNative';
 import { makeRow } from '@/test-utils/fileRows';
 
 import {
@@ -153,6 +155,23 @@ describe('toolJobStore', () => {
     expect(mockFiles.dropMissing).not.toHaveBeenCalled();
     if (!second.ok) throw new Error('expected ok');
     expect(getJob(s.db, second.jobId)).toMatchObject({ status: 'failed', error: 'permission' });
+  });
+
+  it('makes the next Run ask for an input that failed encrypted, until a job succeeds', async () => {
+    const s = setup();
+    const native = createFakePdfNative();
+    native.inspectPdf.mockResolvedValue('none');
+    const asked = async () =>
+      (await findLockedInputs([makeRow({ id: 'a', name: 'a.pdf' })], native)).length;
+    expect(await asked()).toBe(0);
+    s.store.getState().start(merge, t);
+    s.calls[0]!.resolve({ ok: false, failure: 'encrypted', inputIndex: 0, outputs: [] });
+    await flush();
+    expect(await asked()).toBe(1);
+    s.store.getState().start(merge, t);
+    s.calls[1]!.resolve({ ok: true, outputs: [] });
+    await flush();
+    expect(await asked()).toBe(0);
   });
 
   it('cancel aborts the running job, which ends cancelled', async () => {

@@ -26,6 +26,7 @@ import {
   type ToolRunDeps,
 } from '@/services/tools/runTool';
 import { IMAGE_QUALITIES } from '@/services/tools/limits';
+import { clearEncryptedFailures, noteEncryptedFailure } from '@/services/tools/passwords';
 import { expoToolFs } from '@/services/tools/toolFs';
 import { telemetry } from '@/services/telemetry/telemetry';
 import { pagesOf, toolFinishedEvent } from '@/services/telemetry/toolEvent';
@@ -427,6 +428,12 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
       if (!outcome.ok && outcome.failure === 'notFound' && outcome.inputIndex !== null) {
         const id = request.inputIds[outcome.inputIndex];
         if (id !== undefined) useFiles.getState().dropMissing(id);
+      }
+      // An input that was locked although the pre-check said otherwise is asked for next time.
+      if (outcome.ok) clearEncryptedFailures(request.inputIds);
+      else if (outcome.failure === 'encrypted' && outcome.inputIndex !== null) {
+        const id = request.inputIds[outcome.inputIndex];
+        if (id !== undefined) noteEncryptedFailure(id);
       }
       // The session is kept after a failure or cancel, so "Try again" can use it in this process.
       const session = sessionIdOf(request);

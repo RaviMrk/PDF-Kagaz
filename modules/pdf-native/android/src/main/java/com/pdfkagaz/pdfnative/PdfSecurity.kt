@@ -7,6 +7,7 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
 import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
 import java.io.File
+import java.io.FileInputStream
 import java.util.UUID
 
 /**
@@ -18,11 +19,13 @@ import java.util.UUID
  * error message. Disk work: call on Dispatchers.IO.
  */
 class PdfSecurity(private val context: Context) {
+  private val copies = SourceCopyCache(File(File(context.cacheDir, ToolPaths.DIR), "lock-copy"))
+
   /** The lock of [uri] (a job workspace file, or a source [UriGuard] allows), read in place. */
-  fun inspect(uri: Uri): String = withSource(uri) { file, tempDir -> inspectFile(file, tempDir) }
+  fun inspect(uri: Uri): String = withSource(uri) { opener -> inspectWith(opener) }
 
   /** Whether [password] opens [uri] with permission to change it: "ok" | "wrong" | "restricted". */
-  fun check(uri: Uri, password: String): String = withSource(uri) { file, tempDir -> checkFile(file, password, tempDir) }
+  fun check(uri: Uri, password: String): String = withSource(uri) { opener -> checkWith(opener, password) }
 
   /**
    * Writes the decrypted copy of workspace file [fileUri] of job [jobId] as `in-<index>.open.pdf`
@@ -35,6 +38,7 @@ class PdfSecurity(private val context: Context) {
     val dir = source.parentFile ?: throw PermissionDeniedException()
     if (dir.name != jobId) throw PermissionDeniedException()
     if (!source.isFile) throw FileNotFoundCodedException()
+    copies.clear()
     val target = File(dir, "in-$index.open.pdf")
     val tempDir = File(dir, "pdfbox-$index")
     try {
@@ -58,6 +62,7 @@ class PdfSecurity(private val context: Context) {
     val dir = source.parentFile ?: throw PermissionDeniedException()
     if (dir.name != jobId) throw PermissionDeniedException()
     if (!source.isFile) throw FileNotFoundCodedException()
+    copies.clear()
     val target = File(dir, "out-protected.pdf")
     val tempDir = File(dir, "pdfbox-protect")
     try {
@@ -70,23 +75,33 @@ class PdfSecurity(private val context: Context) {
     return mapOf("uri" to Uri.fromFile(target).toString(), "sizeBytes" to target.length())
   }
 
+  /** Opens the source with a password (null: the empty one); the caller closes the document. */
+  internal fun interface Opener {
+    fun open(password: String?): PDDocument
+  }
+
   /**
-   * Runs [block] on [uri] opened read-only through a descriptor (`/proc/self/fd/<n>`), so a source
-   * is never copied in full; PdfBox spills to a temp dir in the tools cache, deleted afterwards.
+   * Runs [block] on an [Opener] for [uri]. A workspace or `file://` source is read in place
+   * through its descriptor (`/proc/self/fd/<n>`). A content provider's descriptor cannot be
+   * reopened through /proc, so it is read in place through its channel ([FdRandomAccessRead]);
+   * only a descriptor that cannot seek (a pipe) is copied, once per prompt ([copies]). PdfBox
+   * spills to a temp dir in the tools cache, deleted afterwards.
    */
-  private fun <T> withSource(uri: Uri, block: (File, File) -> T): T {
+  private fun <T> withSource(uri: Uri, block: (Opener) -> T): T {
     val tempDir = File(File(context.cacheDir, ToolPaths.DIR), "lock-${UUID.randomUUID()}")
     try {
       return openSource(uri).use { fd ->
-        // A descriptor from a content provider cannot be reopened through /proc (the app may not
-        // be allowed to open that path itself): its bytes go to a scratch copy, deleted afterwards.
-        if (uri.scheme == "content") {
-          tempDir.mkdirs()
-          val copy = File(tempDir, "source.pdf")
-          java.io.FileInputStream(fd.fileDescriptor).use { input -> copy.outputStream().use { input.copyTo(it) } }
-          block(copy, tempDir)
+        if (uri.scheme != "content") {
+          block { password -> PdfBoxSupport.open(File("/proc/self/fd/${fd.fd}"), password, tempDir) }
         } else {
-          block(File("/proc/self/fd/${fd.fd}"), tempDir)
+          // Not closed here: the descriptor belongs to [fd].
+          val channel = FileInputStream(fd.fileDescriptor).channel
+          if (FdRandomAccessRead.isSeekable(channel)) {
+            block { password -> PdfBoxSupport.openChannel(channel, password, tempDir) }
+          } else {
+            val copy = copies.get(uri.toString()) { FileInputStream(fd.fileDescriptor) }
+            block { password -> PdfBoxSupport.open(copy, password, tempDir) }
+          }
         }
       }
     } finally {
@@ -116,9 +131,11 @@ class PdfSecurity(private val context: Context) {
 
   companion object {
     /** The lock of [file]; damaged → ERR_PDF_INVALID. */
-    fun inspectFile(file: File, tempDir: File): String {
+    fun inspectFile(file: File, tempDir: File): String = inspectWith { PdfBoxSupport.open(file, it, tempDir) }
+
+    internal fun inspectWith(opener: Opener): String {
       val doc = try {
-        PdfBoxSupport.open(file, null, tempDir)
+        opener.open(null)
       } catch (e: PdfEncryptedException) {
         return "password"
       }
@@ -132,9 +149,12 @@ class PdfSecurity(private val context: Context) {
     }
 
     /** "ok" when [password] opens [file] with permission to change it, "wrong", or "restricted". */
-    fun checkFile(file: File, password: String, tempDir: File): String {
+    fun checkFile(file: File, password: String, tempDir: File): String =
+      checkWith({ PdfBoxSupport.open(file, it, tempDir) }, password)
+
+    internal fun checkWith(opener: Opener, password: String): String {
       val doc = try {
-        PdfBoxSupport.open(file, password, tempDir)
+        opener.open(password)
       } catch (e: PasswordWrongException) {
         return "wrong"
       }

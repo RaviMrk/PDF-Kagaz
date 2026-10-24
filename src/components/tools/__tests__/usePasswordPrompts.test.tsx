@@ -7,6 +7,7 @@ import type { FileRow } from '@/db/schema';
 import { initI18n } from '@/i18n';
 import { pdfNative, type PdfLock } from '@/services/native/pdfNative';
 import type { Passwords } from '@/services/tools/runTool';
+import { nativeError } from '@/test-utils/fakePdfNative';
 import { makeRow } from '@/test-utils/fileRows';
 
 const i18n = initI18n('en');
@@ -134,5 +135,28 @@ describe('usePasswordPrompts', () => {
     expect(screen.getByPlaceholderText('Password')).toHaveProp('value', '');
     await submit('two');
     expect(answer).toEqual({ 0: 'one', 1: 'two' });
+  });
+
+  it('shows the dialog when the file cannot be inspected', async () => {
+    jest.spyOn(pdfNative, 'inspectPdf').mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+    jest.spyOn(pdfNative, 'checkPdfPassword').mockResolvedValue('ok');
+    await run([a]);
+    expect(screen.getByText('Password required')).toBeTruthy();
+    await submit('pw');
+    expect(answer).toEqual({ 0: 'pw' });
+  });
+
+  it('keeps the dialog with the reason when the password cannot be checked, and never resolves it', async () => {
+    locks({ [a.uri]: 'password' });
+    jest.spyOn(pdfNative, 'checkPdfPassword').mockRejectedValue(nativeError('ERR_IO'));
+    await run([a]);
+    await submit('pw');
+    expect(
+      screen.getByText("Couldn't save the file. Check free space and try again."),
+    ).toBeTruthy();
+    expect(answer).toBeUndefined();
+    await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+    await act(async () => {});
+    expect(answer).toBeNull();
   });
 });

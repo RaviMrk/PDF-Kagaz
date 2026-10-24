@@ -28,7 +28,10 @@ export function UnlockOptions({ row, onRun }: Props) {
       (lock) => {
         if (live && lock === 'none') setPlainUri(row.uri);
       },
-      () => {},
+      () => {
+        // Unknown lock: Run still asks (an inspect failure counts as locked) and the check or the
+        // job reports what is wrong.
+      },
     );
     return () => {
       live = false;

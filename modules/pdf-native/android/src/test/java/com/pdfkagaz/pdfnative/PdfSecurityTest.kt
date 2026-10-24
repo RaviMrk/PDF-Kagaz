@@ -51,6 +51,31 @@ class PdfSecurityTest {
     assertEquals("wrong", PdfSecurity.checkFile(Fixtures.file("protected.pdf"), "x", tempDir))
   }
 
+  /** A channel of the fixture, as a provider descriptor stands in: read in place, no copy. */
+  private fun <T> viaChannel(name: String, block: (PdfSecurity.Opener) -> T): T =
+    java.io.RandomAccessFile(Fixtures.file(name), "r").use { raf ->
+      block { password -> PdfBoxSupport.openChannel(raf.channel, password, tempDir) }
+    }
+
+  @Test
+  fun inspectAndCheckReadAChannelInPlace() {
+    assertEquals("none", viaChannel("one-page.pdf") { PdfSecurity.inspectWith(it) })
+    assertEquals("password", viaChannel("protected.pdf") { PdfSecurity.inspectWith(it) })
+    assertEquals("restricted", viaChannel("owner-only.pdf") { PdfSecurity.inspectWith(it) })
+    assertEquals("ok", viaChannel("protected.pdf") { PdfSecurity.checkWith(it, "secret") })
+    assertEquals("wrong", viaChannel("protected.pdf") { PdfSecurity.checkWith(it, "x") })
+    assertEquals("restricted", viaChannel("owner-only.pdf") { PdfSecurity.checkWith(it, "") })
+    assertEquals("ok", viaChannel("owner-only.pdf") { PdfSecurity.checkWith(it, "owner") })
+  }
+
+  @Test
+  fun aChannelOfADamagedFileIsPdfInvalid() {
+    assertEquals(
+      "ERR_PDF_INVALID",
+      codedFailure { viaChannel("corrupted.pdf") { PdfSecurity.inspectWith(it) } }.code,
+    )
+  }
+
   @Test
   fun restrictedNeedsOwner() {
     assertEquals("restricted", PdfSecurity.checkFile(Fixtures.file("owner-only.pdf"), "", tempDir))
