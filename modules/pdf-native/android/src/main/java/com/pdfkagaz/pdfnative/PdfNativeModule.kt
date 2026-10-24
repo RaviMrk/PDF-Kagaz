@@ -221,6 +221,20 @@ class PdfNativeModule : Module() {
       }
     }
 
+    // Merge / split / organise over the JS caps; the refs come as a JSON string (no Record reflection).
+    AsyncFunction("assemblePdf") Coroutine { jobId: String, inputUris: List<String>, outputsJson: String ->
+      RenderSupport.mapErrors {
+        withContext(Dispatchers.IO) {
+          val control = beginToolJob(jobId)
+          try {
+            PageAssembly.assembleInWorkspace(context, jobId, inputUris, outputsJson, control)
+          } finally {
+            NativeJobs.end(jobId)
+          }
+        }
+      }
+    }
+
     AsyncFunction("renderToolThumbnail") Coroutine { fileUri: String, page: Int, width: Int ->
       toolThumbnails.render(fileUri, page, width)
     }

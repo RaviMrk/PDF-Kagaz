@@ -196,6 +196,9 @@ export type ToolRunDeps = {
     | 'addToolProgressListener'
     | 'inspectPdf'
     | 'unlockToolInput'
+    | 'getToolPageCount'
+    | 'releaseToolDocument'
+    | 'assemblePdf'
   >;
   fs: ToolFs;
   getRows(ids: string[]): FileRow[];

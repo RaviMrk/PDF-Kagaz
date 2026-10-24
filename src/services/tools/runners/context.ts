@@ -180,7 +180,53 @@ export function readInput(ctx: RunContext, i: number): Promise<Uint8Array> {
   return as('io', i, () => ctx.time('read', () => ctx.deps.fs.readBytes(ctx.inputs[i]!.uri)));
 }
 
-/** A route this runner cannot take yet (the native paths arrive with their own tasks). */
-export function requireJsRoute(ctx: RunContext): void {
-  if (ctx.route !== 'js') throw new ToolRunFailure('unknown', null);
+/** One page of a native output: input `i`, 0-based page `p`, extra rotation `r`. */
+export type PageRef = { i: number; p: number; r: number };
+
+/**
+ * Page counts of the staged inputs `indices` (the native route; a failure belongs to its input).
+ * The tool thumbnail lane keeps the last document open, so it is released afterwards: the workspace
+ * copy must not stay open (and hold its disk space) after the job.
+ */
+export async function nativePageCounts(ctx: RunContext, indices: number[]): Promise<number[]> {
+  const { native } = ctx.deps;
+  try {
+    const counts: number[] = [];
+    for (const i of indices) {
+      const n = await as(null, i, () =>
+        ctx.time('embed', () => native.getToolPageCount(ctx.inputs[i]!.uri)),
+      );
+      if (!Number.isInteger(n) || n < 1) throw new ToolRunFailure('invalid', i);
+      counts.push(n);
+    }
+    return counts;
+  } finally {
+    try {
+      await native.releaseToolDocument();
+    } catch {
+      // Released again by the next preview or job; the workspace is deleted all the same.
+    }
+  }
+}
+
+/** Assembles `outputs` from every staged input with PdfBox; the files come back in order. */
+export async function assembleNative(
+  ctx: RunContext,
+  outputs: PageRef[][],
+): Promise<WorkspaceFile[]> {
+  const uris = ctx.inputs.map((input) => input.uri);
+  const files = await as(null, null, () =>
+    ctx.nativeOp(() =>
+      ctx.time('embed', () =>
+        ctx.deps.native.assemblePdf(ctx.jobId, uris, JSON.stringify(outputs)),
+      ),
+    ),
+  );
+  if (
+    files.length !== outputs.length ||
+    files.some((f) => !Number.isFinite(f.sizeBytes) || f.sizeBytes < 0)
+  ) {
+    throw new ToolRunFailure('unknown', null);
+  }
+  return files;
 }

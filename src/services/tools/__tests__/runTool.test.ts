@@ -126,6 +126,21 @@ function setup(rows: FileRow[], sources: string[] = []) {
     cleanToolWorkspace: jest.fn(async (jobId: string) => {
       fs.rmSync(path.join(tmp, jobId), { recursive: true, force: true });
     }),
+    getToolPageCount: jest.fn(async (fileUri: string) => {
+      const bytes = new Uint8Array(fs.readFileSync(tempPathOf(fileUri)));
+      return (await loadStrict(bytes)).getPageCount();
+    }),
+    releaseToolDocument: jest.fn(async () => {}),
+    // Each output stands in as a plain one-page PDF, written where PdfBox would write it.
+    assemblePdf: jest.fn(async (jobId: string, _inputUris: string[], outputsJson: string) => {
+      const outputs = JSON.parse(outputsJson) as unknown[];
+      const bytes = fs.readFileSync(path.join(FIXTURES, 'one-page.pdf'));
+      return outputs.map((_, k) => {
+        const dest = path.join(tmp, jobId, `out-native-${k + 1}.pdf`);
+        fs.writeFileSync(dest, bytes);
+        return { uri: `file://${dest}`, sizeBytes: bytes.length };
+      });
+    }),
     cancelNativeTool: jest.fn(async (_jobId: string) => {}),
     addToolProgressListener: jest.fn((cb: (e: ToolProgressEvent) => void) => {
       progressListeners.add(cb);
@@ -1019,14 +1034,159 @@ describe('runTool engine', () => {
     delete RUNNERS.compress;
   });
 
-  it('routes merge natively over the JS caps; without a native merge yet that is unknown', async () => {
+  const forceNative = (s: ReturnType<typeof setup>) => {
+    s.deps.caps = { js: { file: 10, total: 10 }, native: { file: 1e9, total: 1e9 } };
+  };
+
+  it('merges natively over the JS caps: every page of every input, in order', async () => {
     const rows = [row('one-page.pdf'), row('mixed-sizes.pdf')];
     const s = setup(rows);
-    s.deps.caps = { js: { file: 10, total: 10 }, native: { file: 1e9, total: 1e9 } };
+    forceNative(s);
     const outcome = await s.run({ toolId: 'merge', inputIds: rows.map((r) => r.id) });
-    expect(outcome).toEqual({ ok: false, failure: 'unknown', inputIndex: null, outputs: [] });
-    expect(s.native.stageToolInput).toHaveBeenCalledTimes(2);
+    expect(outcome.ok).toBe(true);
+    expect(s.native.assemblePdf).toHaveBeenCalledWith(
+      'j1',
+      [`file://${s.tmp}/j1/in-0.pdf`, `file://${s.tmp}/j1/in-1.pdf`],
+      '[[{"i":0,"p":0,"r":0},{"i":1,"p":0,"r":0},{"i":1,"p":1,"r":0},{"i":1,"p":2,"r":0}]]',
+    );
+    expect(s.native.publishToolOutput.mock.calls).toEqual([
+      [`file://${s.tmp}/j1/out-native-1.pdf`, 'one-page merged.pdf'],
+    ]);
+    expect(s.native.releaseToolDocument).toHaveBeenCalled();
+    expect(s.toolFs.readBytes).not.toHaveBeenCalled();
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/^\[tool\] merge \d+ms 4 pages 1 files$/),
+    );
+  });
+
+  it('splits natively: the JS groups, one output each, published in order', async () => {
+    const r = row('mixed-sizes.pdf');
+    const s = setup([r]);
+    forceNative(s);
+    const outcome = await s.run({
+      toolId: 'split',
+      inputIds: [r.id],
+      split: { mode: 'ranges', ranges: '1-2, 3' },
+    });
+    expect(outcome.ok && outcome.outputs.length).toBe(2);
+    expect(s.native.getToolPageCount).toHaveBeenCalledWith(`file://${s.tmp}/j1/in-0.pdf`);
+    expect(s.native.assemblePdf).toHaveBeenCalledWith(
+      'j1',
+      [`file://${s.tmp}/j1/in-0.pdf`],
+      '[[{"i":0,"p":0,"r":0},{"i":0,"p":1,"r":0}],[{"i":0,"p":2,"r":0}]]',
+    );
+    expect(s.native.publishToolOutput.mock.calls).toEqual([
+      [`file://${s.tmp}/j1/out-native-1.pdf`, 'mixed-sizes pages 1-2.pdf'],
+      [`file://${s.tmp}/j1/out-native-2.pdf`, 'mixed-sizes page 3.pdf'],
+    ]);
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/^\[tool\] split \d+ms 3 pages 2 files$/),
+    );
+  });
+
+  it('splits a decrypted input natively, counting the pages of the decrypted copy', async () => {
+    const r = row('protected.pdf');
+    const s = setup([r]);
+    forceNative(s);
+    const outcome = await s.run({
+      toolId: 'split',
+      inputIds: [r.id],
+      split: { mode: 'everyN', n: 1 },
+      passwords: { 0: 'secret' },
+    });
+    expect(outcome.ok).toBe(true);
+    expect(s.native.getToolPageCount).toHaveBeenCalledWith(`file://${s.tmp}/j1/in-0.open.pdf`);
+    expect(s.native.assemblePdf).toHaveBeenCalledWith(
+      'j1',
+      [`file://${s.tmp}/j1/in-0.open.pdf`],
+      '[[{"i":0,"p":0,"r":0}]]',
+    );
+  });
+
+  it('a bad range fails natively as badPages before assembling', async () => {
+    const r = row('mixed-sizes.pdf');
+    const s = setup([r]);
+    forceNative(s);
+    const outcome = await s.run({
+      toolId: 'split',
+      inputIds: [r.id],
+      split: { mode: 'ranges', ranges: '2-9' },
+    });
+    expect(outcome).toMatchObject({ ok: false, failure: 'badPages' });
+    expect(s.native.assemblePdf).not.toHaveBeenCalled();
+  });
+
+  it('organizes natively: page edits become refs', async () => {
+    const r = row('mixed-sizes.pdf');
+    const s = setup([r]);
+    forceNative(s);
+    const outcome = await s.run({
+      toolId: 'organize',
+      inputIds: [r.id],
+      pages: [{ source: 2, rotate: 90 }],
+    });
+    expect(outcome.ok).toBe(true);
+    expect(s.native.assemblePdf).toHaveBeenCalledWith(
+      'j1',
+      [`file://${s.tmp}/j1/in-0.pdf`],
+      '[[{"i":0,"p":1,"r":90}]]',
+    );
+    expect(s.native.publishToolOutput.mock.calls).toEqual([
+      [`file://${s.tmp}/j1/out-native-1.pdf`, 'mixed-sizes organised.pdf'],
+    ]);
+  });
+
+  it('maps a native assembly failure and publishes nothing', async () => {
+    const rows = [row('one-page.pdf'), row('mixed-sizes.pdf')];
+    const s = setup(rows);
+    forceNative(s);
+    s.native.assemblePdf.mockRejectedValueOnce(nativeError('ERR_IO'));
+    const outcome = await s.run({ toolId: 'merge', inputIds: rows.map((r) => r.id) });
+    expect(outcome).toEqual({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
     expect(s.native.publishToolOutput).not.toHaveBeenCalled();
+  });
+
+  it('a page count failure belongs to its input', async () => {
+    const rows = [row('one-page.pdf'), row('mixed-sizes.pdf')];
+    const s = setup(rows);
+    forceNative(s);
+    s.native.getToolPageCount
+      .mockResolvedValueOnce(1)
+      .mockRejectedValueOnce(nativeError('ERR_PDF_INVALID'));
+    const outcome = await s.run({ toolId: 'merge', inputIds: rows.map((r) => r.id) });
+    expect(outcome).toEqual({ ok: false, failure: 'invalid', inputIndex: 1, outputs: [] });
+    expect(s.native.assemblePdf).not.toHaveBeenCalled();
+  });
+
+  it('a cancel during native assembly ends cancelled, publishing nothing', async () => {
+    const rows = [row('one-page.pdf'), row('mixed-sizes.pdf')];
+    const s = setup(rows);
+    forceNative(s);
+    s.native.assemblePdf.mockImplementationOnce(async () => {
+      s.controller.abort();
+      throw nativeError('ERR_CANCELLED');
+    });
+    const outcome = await s.run({ toolId: 'merge', inputIds: rows.map((r) => r.id) });
+    expect(outcome).toEqual({ ok: false, failure: 'cancelled', inputIndex: null, outputs: [] });
+    expect(s.native.publishToolOutput).not.toHaveBeenCalled();
+  });
+
+  it('never assembles natively under the default caps', async () => {
+    const rows = [row('one-page.pdf'), row('mixed-sizes.pdf')];
+    const s = setup(rows);
+    await s.run({ toolId: 'merge', inputIds: rows.map((r) => r.id) });
+    await s.run({
+      toolId: 'split',
+      inputIds: [rows[1]!.id],
+      split: { mode: 'ranges', ranges: '1-2, 3' },
+    });
+    await s.run({
+      toolId: 'organize',
+      inputIds: [rows[1]!.id],
+      pages: [{ source: 2, rotate: 90 }],
+    });
+    expect(s.published).toHaveLength(4);
+    expect(s.native.assemblePdf).not.toHaveBeenCalled();
   });
 
   it('stages PDF inputs under the native caps', async () => {

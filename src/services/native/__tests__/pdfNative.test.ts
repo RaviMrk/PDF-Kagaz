@@ -182,6 +182,16 @@ describe('pdfNative', () => {
     expect(mockedModule.unlockToolInput).toHaveBeenCalledWith(staged, 'j1', 1, null);
   });
 
+  it('forwards assemblePdf with the refs as a JSON string', async () => {
+    const inputs = ['file:///data/cache/tools/j1/in-0.pdf'];
+    const json = '[[{"i":0,"p":0,"r":90}],[{"i":0,"p":1,"r":0}]]';
+    await expect(pdfNative.assemblePdf('j1', inputs, json)).resolves.toEqual([
+      { uri: 'file:///data/cache/tools/j1/out-native-1.pdf', sizeBytes: 1000 },
+      { uri: 'file:///data/cache/tools/j1/out-native-2.pdf', sizeBytes: 1000 },
+    ]);
+    expect(mockedModule.assemblePdf).toHaveBeenCalledWith('j1', inputs, json);
+  });
+
   it('forwards the image pipeline with every argument in order', async () => {
     await expect(pdfNative.importImage('content://x/1', 'img-a', 2, 52428800)).resolves.toEqual({
       index: 2,

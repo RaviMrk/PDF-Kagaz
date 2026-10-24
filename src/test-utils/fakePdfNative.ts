@@ -108,6 +108,14 @@ function createNativeFns(): jest.Mocked<NativeFns> {
     unlockToolInput: jest.fn((_uri: string, id: string, i: number, _password: string | null) =>
       Promise.resolve({ uri: `file:///data/cache/tools/${id}/in-${i}.open.pdf`, sizeBytes: 1000 }),
     ),
+    assemblePdf: jest.fn((jobId: string, _inputUris: string[], outputsJson: string) =>
+      Promise.resolve(
+        (JSON.parse(outputsJson) as unknown[]).map((_, k) => ({
+          uri: `file:///data/cache/tools/${jobId}/out-native-${k + 1}.pdf`,
+          sizeBytes: 1000,
+        })),
+      ),
+    ),
     renderToolThumbnail: jest.fn().mockResolvedValue('file:///tool-thumb.jpg'),
     getToolPageCount: jest.fn().mockResolvedValue(3),
     releaseToolDocument: jest.fn().mockResolvedValue(undefined),
