@@ -1,6 +1,8 @@
 import { NativeModule, requireNativeModule } from 'expo';
 
 import type {
+  CompressLevel,
+  CompressResult,
   FolderChange,
   ImportedImage,
   PasswordCheck,
@@ -89,6 +91,8 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
     outputsJson: string,
     firstOutput: number,
   ): Promise<WorkspaceFile[]>;
+  /** Workspace files of `jobId` only; writes `out-compressed.pdf`. */
+  compressPdf(fileUri: string, jobId: string, level: CompressLevel): Promise<CompressResult>;
   /** Workspace files only; 1-based page, width clamped to 1..512; own lane (not reader / Files list). */
   renderToolThumbnail(fileUri: string, page: number, width: number): Promise<string>;
   getToolPageCount(fileUri: string): Promise<number>;

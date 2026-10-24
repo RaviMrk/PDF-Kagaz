@@ -81,7 +81,7 @@ export const TOOLS: readonly ToolDef[] = [
   def('organize', 'T-03', 'organise', 'file-arrow-up-down-outline', true),
   def('images-to-pdf', 'T-04', 'convert', 'image-multiple-outline', true, IMAGES_MAX),
   def('scan', 'T-05', 'convert', 'camera-outline', true),
-  def('compress', 'T-06', 'optimise', 'arrow-collapse-vertical'),
+  def('compress', 'T-06', 'optimise', 'arrow-collapse-vertical', true),
   def('protect', 'T-07', 'security', 'lock-outline'),
   def('unlock', 'T-08', 'security', 'lock-open-outline'),
   def('pdf-to-images', 'T-09', 'convert', 'file-image-outline'),

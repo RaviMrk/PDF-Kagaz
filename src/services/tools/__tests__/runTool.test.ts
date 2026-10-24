@@ -24,6 +24,7 @@ import { inspectPages, loadStrict, readFixture } from '@/test-utils/pdfFixtures'
 import {
   RUNNERS,
   runTool,
+  type CompressLevel,
   type ImagesRequest,
   type ToolPhase,
   type ToolRequest,
@@ -143,6 +144,12 @@ function setup(rows: FileRow[], sources: string[] = []) {
         });
       },
     ),
+    // The compressed copy: a 400-byte stand-in, written where PdfBox would write it.
+    compressPdf: jest.fn(async (_fileUri: string, jobId: string, _level: CompressLevel) => {
+      const dest = path.join(tmp, jobId, 'out-compressed.pdf');
+      fs.writeFileSync(dest, new Uint8Array(400));
+      return { uri: `file://${dest}`, sizeBytes: 400, imagesRecompressed: 2 };
+    }),
     cancelNativeTool: jest.fn(async (_jobId: string) => {}),
     addToolProgressListener: jest.fn((cb: (e: ToolProgressEvent) => void) => {
       progressListeners.add(cb);
@@ -1032,8 +1039,13 @@ describe('runTool engine', () => {
     inputIds: [id],
     level: 'medium',
   });
-  afterEach(() => {
+  // These tests stand their own runner in for compress (none: the "no runner" case).
+  const realCompress = RUNNERS.compress;
+  beforeEach(() => {
     delete RUNNERS.compress;
+  });
+  afterEach(() => {
+    RUNNERS.compress = realCompress;
   });
 
   const forceNative = (s: ReturnType<typeof setup>) => {
@@ -1457,8 +1469,9 @@ describe('runTool engine', () => {
 });
 
 describe('runTool locked inputs', () => {
+  const realCompress = RUNNERS.compress;
   afterEach(() => {
-    delete RUNNERS.compress;
+    RUNNERS.compress = realCompress;
     delete RUNNERS.unlock;
   });
 
@@ -1610,6 +1623,46 @@ describe('runTool locked inputs', () => {
       inputIds: [r.id],
       split: { mode: 'ranges', ranges: '1' },
     });
+    expect(outcome).toEqual({ ok: false, failure: 'invalid', inputIndex: 0, outputs: [] });
+  });
+});
+
+describe('runTool compress', () => {
+  it('compresses natively at the chosen level and reports the sizes', async () => {
+    const r = row('one-page.pdf', { sizeBytes: 1000 });
+    const s = setup([r]);
+    const outcome = await s.run({ toolId: 'compress', inputIds: [r.id], level: 'high' });
+    expect(s.native.compressPdf).toHaveBeenCalledWith(`file://${s.tmp}/j1/in-0.pdf`, 'j1', 'high');
+    expect(s.native.publishToolOutput).toHaveBeenCalledWith(
+      `file://${s.tmp}/j1/out-compressed.pdf`,
+      'one-page compressed.pdf',
+    );
+    expect(outcome).toMatchObject({ ok: true, extras: { sizes: { before: 1000, after: 400 } } });
+    expect(outcome.outputs).toHaveLength(1);
+  });
+
+  it('uses the staged size when the row size is unknown', async () => {
+    const r = row('one-page.pdf', { sizeBytes: Number.NaN });
+    const s = setup([r]);
+    const outcome = await s.run({ toolId: 'compress', inputIds: [r.id], level: 'medium' });
+    const staged = fs.statSync(path.join(FIXTURES, 'one-page.pdf')).size;
+    expect(outcome).toMatchObject({ ok: true, extras: { sizes: { before: staged, after: 400 } } });
+  });
+
+  it('a cancelled compress ends cancelled and publishes nothing', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    s.native.compressPdf.mockRejectedValue(nativeError('ERR_CANCELLED'));
+    const outcome = await s.run({ toolId: 'compress', inputIds: [r.id], level: 'low' });
+    expect(outcome).toEqual({ ok: false, failure: 'cancelled', inputIndex: null, outputs: [] });
+    expect(s.native.publishToolOutput).not.toHaveBeenCalled();
+  });
+
+  it('a damaged input fails as invalid at its index', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    s.native.compressPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+    const outcome = await s.run({ toolId: 'compress', inputIds: [r.id], level: 'low' });
     expect(outcome).toEqual({ ok: false, failure: 'invalid', inputIndex: 0, outputs: [] });
   });
 });

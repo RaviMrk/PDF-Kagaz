@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { EmptyState } from '@/components/EmptyState';
+import { CompressOptions } from '@/components/tools/CompressOptions';
 import { ImagesToPdfFlow } from '@/components/tools/ImagesToPdfFlow';
 import { MergeOptions } from '@/components/tools/MergeOptions';
 import { PickFilesList } from '@/components/tools/PickFilesList';
@@ -178,6 +179,14 @@ function ToolFlow({ tool, inputIds }: { tool: ToolDef; inputIds: string[] }) {
               rows={rows}
               onChange={(ids) => setFlow((f) => ({ ...f, selectedIds: ids }))}
               onRun={() => void runAsked({ toolId: 'merge', inputIds: rows.map((r) => r.id) })}
+            />
+          ) : null}
+          {tool.id === 'compress' && rows[0] ? (
+            <CompressOptions
+              row={rows[0]}
+              onRun={(level) =>
+                void runAsked({ toolId: 'compress', inputIds: [rows[0]!.id], level })
+              }
             />
           ) : null}
           {tool.id === 'split' && rows[0] ? (

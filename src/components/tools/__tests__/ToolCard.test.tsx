@@ -22,9 +22,9 @@ describe('ToolCard', () => {
 
   it('shows a Coming soon badge, is disabled and ignores presses when unavailable', async () => {
     const onPress = jest.fn();
-    await render(<ToolCard tool={toolById('compress')!} onPress={onPress} />);
+    await render(<ToolCard tool={toolById('protect')!} onPress={onPress} />);
     expect(screen.getByText('Coming soon')).toBeOnTheScreen();
-    const card = screen.getByLabelText('Compress, coming soon');
+    const card = screen.getByLabelText('Protect with password, coming soon');
     expect(card.props.accessibilityState).toEqual({ disabled: true });
     await fireEvent.press(card);
     expect(onPress).not.toHaveBeenCalled();

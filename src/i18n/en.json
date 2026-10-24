@@ -363,6 +363,22 @@
     "orderHint": "Drag to reorder, or use the arrows",
     "run": "Merge {{count}} PDFs"
   },
+  "compress": {
+    "level": "Compression",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "lowHint": "Smallest change. Images stay sharp.",
+    "mediumHint": "Good balance for sharing.",
+    "highHint": "Smallest file. Images get softer.",
+    "inputSize": "Now {{size}}",
+    "run": "Compress",
+    "sizeChange": "{{before}} → {{after}} ({{percent}}% smaller)",
+    "larger": "This PDF couldn't be made smaller ({{before}} → {{after}}). Keep the original instead?",
+    "deleteNew": "Delete new file",
+    "keepBoth": "Keep both",
+    "deleted": "New file deleted. Your original is unchanged."
+  },
   "split": {
     "modeRanges": "Page ranges",
     "modeEvery": "Every N pages",

@@ -235,6 +235,20 @@ class PdfNativeModule : Module() {
       }
     }
 
+    // Compress (always native); level is "low" | "medium" | "high".
+    AsyncFunction("compressPdf") Coroutine { fileUri: String, jobId: String, level: String ->
+      RenderSupport.mapErrors {
+        withContext(Dispatchers.IO) {
+          val control = beginToolJob(jobId)
+          try {
+            PdfCompressor.compressInWorkspace(context, jobId, fileUri, level, control)
+          } finally {
+            NativeJobs.end(jobId)
+          }
+        }
+      }
+    }
+
     AsyncFunction("renderToolThumbnail") Coroutine { fileUri: String, page: Int, width: Int ->
       toolThumbnails.render(fileUri, page, width)
     }

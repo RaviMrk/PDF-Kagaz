@@ -77,9 +77,10 @@ describe('Home tab', () => {
     await renderRouter(APP_DIR, { initialUrl: '/home' });
     expect(screen.getByLabelText('Scan')).toBeTruthy();
     expect(screen.getByLabelText('Merge')).toBeTruthy();
-    expect(screen.getByLabelText('Compress, coming soon')).toBeTruthy();
+    expect(screen.getByLabelText('Compress')).toBeTruthy();
+    expect(screen.queryByLabelText('Compress, coming soon')).toBeNull();
     expect(screen.getByLabelText('Images to PDF')).toBeTruthy();
-    expect(screen.getAllByText('Coming soon')).toHaveLength(1);
+    expect(screen.queryByText('Coming soon')).toBeNull();
   });
 
   it('opens the scanner from the quick tools', async () => {
@@ -96,6 +97,14 @@ describe('Home tab', () => {
     await pending;
     await fireEvent.press(screen.getByLabelText('Images to PDF'));
     expect(pending.getPathname()).toBe('/tool/images-to-pdf');
+  });
+
+  it('opens Compress from the quick tools', async () => {
+    const pending = renderRouter(APP_DIR, { initialUrl: '/home' });
+    await pending;
+    await fireEvent.press(screen.getByLabelText('Compress'));
+    expect(pending.getPathname()).toBe('/tool/compress');
+    expect(screen.getByText('Choose a PDF')).toBeTruthy();
   });
 
   it('opens Merge from the quick tools', async () => {

@@ -8,9 +8,7 @@ import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
-import expo.modules.kotlin.exception.CodedException
 import java.io.File
-import java.io.IOException
 import java.util.Collections
 import java.util.IdentityHashMap
 import org.json.JSONArray
@@ -109,7 +107,7 @@ object PageAssembly {
           val seen: MutableSet<COSDictionary> = Collections.newSetFromMap(IdentityHashMap())
           for (ref in refs) {
             control.check()
-            mapImportErrors { importPage(out, docs[ref.input].getPage(ref.page), ref.rotate, seen) }
+            PdfBoxSupport.mapReadErrors { importPage(out, docs[ref.input].getPage(ref.page), ref.rotate, seen) }
             finished += 1
             control.progress(finished / units)
           }
@@ -133,23 +131,6 @@ object PageAssembly {
       if (!done) for (file in written) file.delete()
     }
   }
-
-  /**
-   * Importing reads (and decodes) the source page: a failure there is a damaged input
-   * (ERR_PDF_INVALID), out of memory ERR_TOO_LARGE. Saving keeps [PdfBoxSupport.saveTo]'s ERR_IO.
-   */
-  private fun <T> mapImportErrors(block: () -> T): T =
-    try {
-      block()
-    } catch (e: CodedException) {
-      throw e
-    } catch (e: IOException) {
-      throw PdfInvalidException()
-    } catch (e: RuntimeException) {
-      throw PdfInvalidException()
-    } catch (e: OutOfMemoryError) {
-      throw TooLargeException()
-    }
 
   /**
    * Imports [page] into [out]; a page already imported into this output comes from a fresh copy of

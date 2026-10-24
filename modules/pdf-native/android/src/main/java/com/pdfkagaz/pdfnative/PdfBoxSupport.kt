@@ -74,6 +74,23 @@ object PdfBoxSupport {
       throw TooLargeException()
     }
 
+  /**
+   * The error mapping of work that reads (and decodes) an open document: a failure there is a
+   * damaged input (ERR_PDF_INVALID), out of memory ERR_TOO_LARGE; coded errors pass through.
+   */
+  internal fun <T> mapReadErrors(block: () -> T): T =
+    try {
+      block()
+    } catch (e: CodedException) {
+      throw e
+    } catch (e: IOException) {
+      throw PdfInvalidException()
+    } catch (e: RuntimeException) {
+      throw PdfInvalidException()
+    } catch (e: OutOfMemoryError) {
+      throw TooLargeException()
+    }
+
   /** The error mapping of [saveTo]; coded errors pass through, causes are dropped. */
   internal fun <T> mapSaveErrors(block: () -> T): T =
     try {

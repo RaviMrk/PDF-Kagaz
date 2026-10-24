@@ -328,8 +328,28 @@ describe('tool flow', () => {
     expect(r.pathname()).toBe('/tool/organize/id-a.pdf');
   });
 
+  it('compresses one picked file at the chosen level', async () => {
+    const big = makeRow({ name: 'big.pdf', sizeBytes: 2_500_000 });
+    useFiles.setState({ files: [big] });
+    const r = await open('/tools');
+    await press('Compress');
+    expect(r.pathname()).toBe('/tool/compress');
+    await press('Select big.pdf');
+    await press('Next');
+    expect(screen.getByText(`Now ${formatBytes(2_500_000)}`)).toBeTruthy();
+    expect(screen.getByLabelText('Medium')).toBeChecked();
+    expect(screen.getByText('Good balance for sharing.')).toBeTruthy();
+    await press('High');
+    expect(screen.getByText('Smallest file. Images get softer.')).toBeTruthy();
+    await press('Compress');
+    expect(start).toHaveBeenCalledWith(
+      { toolId: 'compress', inputIds: [big.id], level: 'high' },
+      expect.any(Function),
+    );
+  });
+
   it('shows coming soon for tools that are not ready', async () => {
-    await open('/tool/compress');
+    await open('/tool/protect');
     expect(screen.getByText('Coming soon')).toBeTruthy();
     expect(screen.queryByText('Choose PDFs')).toBeNull();
   });
@@ -460,6 +480,30 @@ describe('tool flow', () => {
       expect(start).toHaveBeenCalledTimes(1);
       expect(start).toHaveBeenCalledWith(
         { toolId: 'merge', inputIds: [a.id, b.id], passwords: { 1: 'secret' } },
+        expect.any(Function),
+      );
+    });
+
+    it('asks for a locked file to compress on Run, then passes its password', async () => {
+      jest.mocked(PdfNativeModule.inspectPdf).mockResolvedValue('password');
+      jest
+        .mocked(PdfNativeModule.checkPdfPassword)
+        .mockImplementation((_uri: string, pw: string) =>
+          Promise.resolve(pw === 'secret' ? 'ok' : 'wrong'),
+        );
+      await open(`/tool/compress?inputs=${ID_A}`);
+      await press('Low');
+      await press('Compress');
+      expect(
+        screen.getByText('"ha.pdf" is protected. Enter its password to use it in this tool.'),
+      ).toBeTruthy();
+      await press('Cancel');
+      expect(start).not.toHaveBeenCalled();
+      await press('Compress');
+      await fireEvent.changeText(screen.getByPlaceholderText('Password'), 'secret');
+      await press('Use');
+      expect(start).toHaveBeenCalledWith(
+        { toolId: 'compress', inputIds: [ID_A], level: 'low', passwords: { 0: 'secret' } },
         expect.any(Function),
       );
     });

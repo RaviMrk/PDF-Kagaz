@@ -1,6 +1,7 @@
 import type { FileRow } from '@/db/schema';
 import {
   isPdfNativeError,
+  type CompressLevel,
   type ImageFilter,
   type PdfFileInfo,
   type PdfNativeApi,
@@ -34,6 +35,7 @@ import {
   type RunContext,
   type ToolRunner,
 } from './runners/context';
+import { runCompress } from './runners/compress';
 import { runMerge } from './runners/merge';
 import { runOrganize } from './runners/organize';
 import { runSplit } from './runners/split';
@@ -66,7 +68,7 @@ export type ImagesRequest = {
  * with the job, logged or sent anywhere.
  */
 export type Passwords = Partial<Record<number, string>>;
-export type CompressLevel = 'low' | 'medium' | 'high';
+export type { CompressLevel };
 export type ImageFormat = 'jpg' | 'png';
 export type ExportDpi = 72 | 150 | 300;
 export type StampPosition =
@@ -199,6 +201,7 @@ export type ToolRunDeps = {
     | 'getToolPageCount'
     | 'releaseToolDocument'
     | 'assemblePdf'
+    | 'compressPdf'
   >;
   fs: ToolFs;
   getRows(ids: string[]): FileRow[];
@@ -287,6 +290,7 @@ export const RUNNERS: { [K in PdfToolRequest['toolId']]?: ToolRunner<PdfRequestO
   merge: runMerge,
   split: runSplit,
   organize: runOrganize,
+  compress: runCompress,
 };
 
 type PdfRequestOf<K extends PdfToolRequest['toolId']> = Extract<PdfToolRequest, { toolId: K }>;

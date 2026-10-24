@@ -48,6 +48,12 @@ export type PdfLock = 'none' | 'open' | 'password' | 'restricted';
 /** A password opens the PDF with permission to change it (`ok`), does not open it, or only views it. */
 export type PasswordCheck = 'ok' | 'wrong' | 'restricted';
 
+/** A Compress level; the native side holds each level's image size and JPEG quality. */
+export type CompressLevel = 'low' | 'medium' | 'high';
+
+/** The compressed copy in the job workspace and how many images were replaced. */
+export type CompressResult = { uri: string; sizeBytes: number; imagesRecompressed: number };
+
 /** A tool input copied into the job workspace; `sizeBytes` is the number of bytes copied. */
 export type StagedInput = WorkspaceFile;
 

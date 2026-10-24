@@ -1,5 +1,7 @@
 import PdfNative from '../../../modules/pdf-native';
 import type {
+  CompressLevel,
+  CompressResult,
   FolderChange,
   FolderStamp,
   ImageFilter,
@@ -20,6 +22,8 @@ import type {
 } from '../../../modules/pdf-native';
 
 export type {
+  CompressLevel,
+  CompressResult,
   FolderChange,
   FolderStamp,
   ImageFilter,
@@ -159,6 +163,13 @@ export interface PdfNativeApi {
     outputsJson: string,
     firstOutput: number,
   ): Promise<WorkspaceFile[]>;
+  /**
+   * Compress with PdfBox (a native job: cancelNativeTool stops it): the eligible images of
+   * workspace file `fileUri` of job `jobId` are re-encoded at `level` into `out-compressed.pdf`
+   * (other files: ERR_PERMISSION_DENIED). The output may be no smaller than the input. Unknown
+   * level: ERR_INVALID_NAME; damaged: ERR_PDF_INVALID.
+   */
+  compressPdf(fileUri: string, jobId: string, level: CompressLevel): Promise<CompressResult>;
   /**
    * Page thumbnail of a tool workspace file (anything else: ERR_PERMISSION_DENIED), on its own
    * lane apart from the reader and Files list; 1-based page, width clamped to 1..512.
@@ -303,6 +314,7 @@ export const pdfNative: PdfNativeApi = {
     PdfNative.unlockToolInput(fileUri, jobId, index, password),
   assemblePdf: (jobId, inputUris, outputsJson, firstOutput) =>
     PdfNative.assemblePdf(jobId, inputUris, outputsJson, firstOutput),
+  compressPdf: (fileUri, jobId, level) => PdfNative.compressPdf(fileUri, jobId, level),
   renderToolThumbnail: (fileUri, page, width) =>
     PdfNative.renderToolThumbnail(fileUri, page, width),
   getToolPageCount: (fileUri) => PdfNative.getToolPageCount(fileUri),

@@ -1,4 +1,5 @@
 import type {
+  CompressLevel,
   ImageFilter,
   IncomingPdfEvent,
   PdfFileInfo,
@@ -116,6 +117,13 @@ function createNativeFns(): jest.Mocked<NativeFns> {
             sizeBytes: 1000,
           })),
         ),
+    ),
+    compressPdf: jest.fn((_uri: string, jobId: string, _level: CompressLevel) =>
+      Promise.resolve({
+        uri: `file:///data/cache/tools/${jobId}/out-compressed.pdf`,
+        sizeBytes: 600,
+        imagesRecompressed: 1,
+      }),
     ),
     renderToolThumbnail: jest.fn().mockResolvedValue('file:///tool-thumb.jpg'),
     getToolPageCount: jest.fn().mockResolvedValue(3),

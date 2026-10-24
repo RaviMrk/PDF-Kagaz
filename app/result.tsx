@@ -1,17 +1,19 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { EmptyState } from '@/components/EmptyState';
 import { OutputRow } from '@/components/tools/OutputRow';
+import { SizeChange } from '@/components/tools/SizeChange';
 import type { FileRow } from '@/db/schema';
 import { interstitial } from '@/services/ads/interstitial';
 import { jobFailureMessage } from '@/services/tools/failureMessage';
 import { useFiles } from '@/stores/filesStore';
 import { useToolJobs } from '@/stores/toolJobStore';
 import { useTheme } from '@/theme/useTheme';
+import { fileActionErrorKey } from '@/utils/fileActionError';
 
 const NOTICE_MS = 4000;
 
@@ -47,6 +49,9 @@ export default function ResultScreen() {
   const view = useToolJobs.getState().outcomeOf(jobId);
   const [notice, setNotice] = useState<string | null>(null);
   const [retryFailed, setRetryFailed] = useState<string | null>(null);
+  // A compressed file that is not smaller: the user deletes it or keeps both.
+  const [notSmaller, setNotSmaller] = useState<'ask' | 'kept' | 'deleted'>('ask');
+  const deleting = useRef(false);
 
   // Also when a running job finishes while this screen is open (markSeen ignores active jobs).
   const viewKind = view.kind;
@@ -59,6 +64,15 @@ export default function ResultScreen() {
     const timer = setTimeout(() => setNotice(null), NOTICE_MS);
     return () => clearTimeout(timer);
   }, [notice]);
+
+  const deleteNew = async (outputId: string) => {
+    if (deleting.current) return;
+    deleting.current = true;
+    const error = await useFiles.getState().remove(outputId);
+    deleting.current = false;
+    if (error) setNotice(fileActionErrorKey(error));
+    else setNotSmaller('deleted');
+  };
 
   const retry = () => {
     const result = useToolJobs.getState().retry(jobId, t);
@@ -117,6 +131,10 @@ export default function ResultScreen() {
       </View>
     );
   } else if (view.outcome.ok) {
+    const sizes = view.outcome.extras?.sizes;
+    const asking = sizes !== undefined && sizes.after >= sizes.before && notSmaller === 'ask';
+    const deleted = sizes !== undefined && notSmaller === 'deleted';
+    const firstOutput = view.outcome.outputs[0];
     body = (
       <View style={styles.section}>
         {header(t('result.successTitle'))}
@@ -124,7 +142,32 @@ export default function ResultScreen() {
         {view.outcome.extras?.passwordRemoved ? (
           <Text style={{ color: colors.text }}>{t('result.passwordRemoved')}</Text>
         ) : null}
-        {outputs(view.outcome.outputs)}
+        {sizes && (sizes.after < sizes.before || asking) ? (
+          <SizeChange before={sizes.before} after={sizes.after} />
+        ) : null}
+        {asking && firstOutput ? (
+          <View style={styles.actions}>
+            {/* Inline (not button()): its handler reads a ref, so it must stay an event prop. */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('compress.deleteNew')}
+              onPress={() => void deleteNew(firstOutput.id)}
+              style={styles.button}
+            >
+              <Text style={[styles.buttonText, { color: colors.danger }]}>
+                {t('compress.deleteNew')}
+              </Text>
+            </Pressable>
+            {button(t('compress.keepBoth'), () => setNotSmaller('kept'), colors.primary)}
+          </View>
+        ) : null}
+        {deleted ? (
+          <Text accessibilityLiveRegion="polite" style={{ color: colors.text }}>
+            {t('compress.deleted')}
+          </Text>
+        ) : (
+          outputs(view.outcome.outputs)
+        )}
         <View style={styles.actions}>
           {button(
             t('result.done'),
