@@ -1,6 +1,7 @@
 // Generates the large fixtures in __fixtures__/large/ (gitignored, too big for git):
 //  - scanned-50mb.pdf: 48 A4 pages, each one full-page 600x600 RGB noise PNG (>= 50 MB scan)
 //  - fifty-pages-10mb.pdf: 50 A4 pages, each one 260x260 RGB noise PNG (>= 10 MB)
+//  - five-hundred-pages.pdf: 500 A4 pages, each one 270x270 RGB noise PNG (>= 100 MB)
 // Run: npm run fixtures:large
 import { Buffer } from 'node:buffer';
 import fs from 'node:fs';
@@ -99,4 +100,10 @@ await generate('fifty-pages-10mb.pdf', {
   side: 260,
   seed: 0x105eed,
   minBytes: 10_000_000,
+});
+await generate('five-hundred-pages.pdf', {
+  pages: 500,
+  side: 270,
+  seed: 0x500eed,
+  minBytes: 100_000_000,
 });

@@ -1,5 +1,8 @@
 // Generates the PDF fixtures in __fixtures__/. Run: npm run fixtures:generate
+// image-heavy.pdf needs macOS `sips`.
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -54,6 +57,19 @@ addTextPage(prot.doc, prot.font, 'Protected');
 prot.doc.encrypt({ userPassword: 'secret', ownerPassword: 'owner' });
 write('protected.pdf', await prot.doc.save());
 
+// owner-only.pdf: opens without a password, but the owner password forbids changes and copying
+const ownerOnly = await newDoc();
+addTextPage(ownerOnly.doc, ownerOnly.font, 'Owner only');
+ownerOnly.doc.encrypt({
+  userPassword: '',
+  ownerPassword: 'owner',
+  permissions: { modifying: false, copying: false },
+});
+write('owner-only.pdf', await ownerOnly.doc.save());
+
+// image-heavy.pdf: 4 A4 pages, each one full-page 2400x1800 JPEG at quality 95 (1-3 MB in all)
+write('image-heavy.pdf', await imageHeavyPdf());
+
 // mixed-sizes.pdf
 const mixed = await newDoc();
 addTextPage(mixed.doc, mixed.font, 'A4 portrait', A4);
@@ -87,6 +103,60 @@ addOutline(outlined.doc, [
   { title: 'Chapter 3', page: 9 },
 ]);
 write('outline.pdf', await outlined.doc.save());
+
+/**
+ * sips upscales images/landscape-400x300.jpg to 2400x1800 (as BMP); a light deterministic grain
+ * (+-2 per channel, a different seed per page) keeps the q95 JPEGs photo-sized (~0.45 MB each)
+ * instead of the ~80 KB a smooth upscale compresses to, and makes the 4 images distinct.
+ */
+async function imageHeavyPdf() {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'image-heavy-'));
+  try {
+    const bmp = path.join(tmp, 'big.bmp');
+    const source = path.join(outDir, 'images', 'landscape-400x300.jpg');
+    execFileSync('sips', ['-z', '1800', '2400', '-s', 'format', 'bmp', source, '--out', bmp], {
+      stdio: 'ignore',
+    });
+    const { doc } = await newDoc();
+    for (let i = 0; i < 4; i++) {
+      const grained = path.join(tmp, `page-${i}.bmp`);
+      const jpg = path.join(tmp, `page-${i}.jpg`);
+      fs.writeFileSync(grained, addGrain(fs.readFileSync(bmp), 0x1eaf + i, 2));
+      execFileSync(
+        'sips',
+        ['-s', 'format', 'jpeg', '-s', 'formatOptions', '95', grained, '--out', jpg],
+        { stdio: 'ignore' },
+      );
+      const image = await doc.embedJpg(fs.readFileSync(jpg));
+      const page = doc.addPage(A4);
+      page.drawImage(image, { x: 0, y: 0, width: page.getWidth(), height: page.getHeight() });
+    }
+    return await doc.save();
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+/** Adds +-`amplitude` of seeded noise to every colour byte of a 24/32-bit BMP (in place). */
+function addGrain(bmp, seed, amplitude) {
+  const offset = bmp.readUInt32LE(10);
+  const step = bmp.readUInt16LE(28) / 8;
+  let a = seed >>> 0;
+  const random = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  for (let i = offset; i + step <= bmp.length; i += step) {
+    for (let c = 0; c < 3; c++) {
+      const v = bmp[i + c] + Math.round((random() * 2 - 1) * amplitude);
+      bmp[i + c] = Math.min(255, Math.max(0, v));
+    }
+  }
+  return bmp;
+}
 
 /** Adds `items` ({ title, page (1-based), children? }) as the document outline. */
 function addOutline(doc, items) {

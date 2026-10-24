@@ -5,9 +5,13 @@ import type {
   PdfNativeApi,
   PdfNativeErrorCode,
   ScanProgressEvent,
+  ToolProgressEvent,
 } from '../services/native/pdfNative';
 
-type NativeFns = Omit<PdfNativeApi, 'addScanProgressListener' | 'addIncomingPdfListener'>;
+type NativeFns = Omit<
+  PdfNativeApi,
+  'addScanProgressListener' | 'addIncomingPdfListener' | 'addToolProgressListener'
+>;
 
 function infoFromUri(uri: string, name?: string): PdfFileInfo {
   const slash = uri.lastIndexOf('/');
@@ -96,6 +100,7 @@ function createNativeFns(): jest.Mocked<NativeFns> {
         modifiedAt: 0,
       }),
     ),
+    cancelNativeTool: jest.fn().mockResolvedValue(undefined),
     cleanToolWorkspace: jest.fn().mockResolvedValue(undefined),
     cleanupToolLeftovers: jest.fn().mockResolvedValue(0),
     renderToolThumbnail: jest.fn().mockResolvedValue('file:///tool-thumb.jpg'),
@@ -108,11 +113,15 @@ function createNativeFns(): jest.Mocked<NativeFns> {
   };
 }
 
+export type FakePdfNative = jest.Mocked<PdfNativeApi> & {
+  /** Delivers `e` to every subscribed tool progress listener. */
+  emitToolProgress(e: ToolProgressEvent): void;
+};
+
 /** A fully mocked PdfNativeApi for service/store tests. */
-export function createFakePdfNative(
-  overrides: Partial<PdfNativeApi> = {},
-): jest.Mocked<PdfNativeApi> {
-  const fake: jest.Mocked<PdfNativeApi> = {
+export function createFakePdfNative(overrides: Partial<PdfNativeApi> = {}): FakePdfNative {
+  const progressListeners = new Set<(e: ToolProgressEvent) => void>();
+  const fake: FakePdfNative = {
     ...createNativeFns(),
     addScanProgressListener: jest.fn((_cb: (e: ScanProgressEvent) => void) => ({
       remove: jest.fn(),
@@ -120,6 +129,11 @@ export function createFakePdfNative(
     addIncomingPdfListener: jest.fn((_cb: (e: IncomingPdfEvent) => void) => ({
       remove: jest.fn(),
     })),
+    addToolProgressListener: jest.fn((cb: (e: ToolProgressEvent) => void) => {
+      progressListeners.add(cb);
+      return { remove: jest.fn(() => progressListeners.delete(cb)) };
+    }),
+    emitToolProgress: (e) => progressListeners.forEach((cb) => cb(e)),
   };
   return Object.assign(fake, overrides);
 }

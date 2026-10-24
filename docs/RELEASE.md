@@ -292,6 +292,26 @@ dex (0 left).
 The arm64 download size is under the §4 40 MB target. The universal APK is only for sideloading;
 Play never delivers it.
 
+**M7 Task 1: after PdfBox, before M7 tools** (`com.tom-roush:pdfbox-android:2.0.27.0` without
+`bcpkix`/`bcutil`; arm64-only `bundleRelease`, R8 + resource shrinking, Firebase not linked, ads off):
+
+| Measurement | M6 | After PdfBox | Change |
+| --- | --- | --- | --- |
+| AAB download size, arm64 phone (`get-size total`, API 34, 420 dpi, `en`) | 26 488 623 B | 32 286 546 B (30.8 MiB) | +5 797 923 B |
+| AAB download size, arm64-v8a (`get-size total --dimensions=ABI`) | 26 363 402 – 26 498 171 B | 32 159 822 – 32 295 009 B | +5.8 MB |
+
+Task 1 gate (stop at ≥ 34 MB): passed, with 1.7 MB left before the gate and 7.7 MB before the
+§4 40 MB target. Where the growth comes from (stored sizes in `base-master.apk`):
+
+- 4 138 070 B: BouncyCastle post-quantum parameter tables, Java resources that ship next to the
+  dex (`org/bouncycastle/pqc/crypto/picnic/lowmc.properties` 1.57 MB, `pqc/crypto/sike/p751`,
+  `p610`, `p503`, `p434.properties`). PdfBox never uses them (only bcprov's AES). R8 does not
+  remove Java resources, so they need a `packaging { resources { excludes } }` rule in `:app`
+  (config plugin); Task 14 can take this back.
+- 1 618 605 B: PdfBox-Android assets (112 files: CMaps, `LiberationSans-Regular.ttf`, glyph lists).
+- Dex: 9 045 444 B compressed, the same as M6, because R8 strips PdfBox code that nothing calls
+  yet. The M7 tools add their share of PdfBox dex later; Task 14 measures it.
+
 Largest entries of the universal APK (`unzip -lv`, by stored size): `lib/x86/libreactnative.so`
 7.36 MB, `lib/x86_64/libreactnative.so` 7.10 MB, `lib/arm64-v8a/libreactnative.so` 6.99 MB,
 `assets/index.android.bundle` 6.74 MB, `lib/x86_64/libpdfium.so` 4.97 MB,

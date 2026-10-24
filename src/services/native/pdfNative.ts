@@ -13,6 +13,7 @@ import type {
   ScanProgressEvent,
   ScanResult,
   StagedInput,
+  ToolProgressEvent,
 } from '../../../modules/pdf-native';
 
 export type {
@@ -29,6 +30,8 @@ export type {
   ScanProgressEvent,
   ScanResult,
   StagedInput,
+  ToolProgressEvent,
+  WorkspaceFile,
 } from '../../../modules/pdf-native';
 
 export interface PdfNativeApi {
@@ -109,6 +112,11 @@ export interface PdfNativeApi {
   ): Promise<string>;
   /** Publishes a workspace file to Documents/PDFToolkit under a free name (never overwrites). */
   publishToolOutput(tempUri: string, fileName: string): Promise<PdfFileInfo>;
+  /**
+   * Cancels the native job `jobId`: it stops at its next page and rejects with ERR_CANCELLED. A
+   * cancel that arrives before the job begins is remembered for 60 s.
+   */
+  cancelNativeTool(jobId: string): Promise<void>;
   /** Deletes a job workspace; idempotent. */
   cleanToolWorkspace(jobId: string): Promise<void>;
   /** Deletes tool leftovers older than `olderThanMs` (epoch ms); returns how many. */
@@ -154,6 +162,8 @@ export interface PdfNativeApi {
   addScanProgressListener(cb: (e: ScanProgressEvent) => void): { remove(): void };
   /** PDFs shared to the app while it is running (ACTION_VIEW is left to Linking). */
   addIncomingPdfListener(cb: (e: IncomingPdfEvent) => void): { remove(): void };
+  /** Progress (0..1) of running native tool jobs, at most every 100 ms plus once at 1. */
+  addToolProgressListener(cb: (e: ToolProgressEvent) => void): { remove(): void };
 }
 
 export const PDF_NATIVE_ERROR_CODES = [
@@ -170,6 +180,9 @@ export const PDF_NATIVE_ERROR_CODES = [
   'ERR_TOO_LARGE',
   'ERR_IMAGE_INVALID',
   'ERR_SCANNER_UNAVAILABLE',
+  'ERR_PASSWORD_WRONG',
+  'ERR_PASSWORD_RESTRICTED',
+  'ERR_CANCELLED',
 ] as const;
 
 export type PdfNativeErrorCode = (typeof PDF_NATIVE_ERROR_CODES)[number];
@@ -243,6 +256,7 @@ export const pdfNative: PdfNativeApi = {
   renderImageThumbnail: (sessionId, index, width, filter) =>
     PdfNative.renderImageThumbnail(sessionId, index, width, filter),
   publishToolOutput: (tempUri, fileName) => PdfNative.publishToolOutput(tempUri, fileName),
+  cancelNativeTool: (jobId) => PdfNative.cancelNativeTool(jobId),
   cleanToolWorkspace: (jobId) => PdfNative.cleanToolWorkspace(jobId),
   cleanupToolLeftovers: (olderThanMs) => PdfNative.cleanupToolLeftovers(olderThanMs),
   renderToolThumbnail: (fileUri, page, width) =>
@@ -256,4 +270,5 @@ export const pdfNative: PdfNativeApi = {
     PdfNative.scanDocument(sessionId, firstIndex, pageLimit),
   addScanProgressListener: (cb) => PdfNative.addListener('onScanProgress', cb),
   addIncomingPdfListener: (cb) => PdfNative.addListener('onIncomingPdf', cb),
+  addToolProgressListener: (cb) => PdfNative.addListener('onToolProgress', cb),
 };

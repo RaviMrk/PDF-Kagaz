@@ -53,7 +53,7 @@
             "compileSdkVersion": 36,
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
-            "extraProguardRules": "-assumenosideeffects class android.util.Log { public static int d(...); public static int v(...); }\n-keep class org.wonday.pdf.** { *; }\n-keep class io.legere.pdfiumandroid.** { *; }\n-keep class com.google.firebase.crashlytics.FirebaseCrashlytics { public static ** getInstance(); public void setCrashlyticsCollectionEnabled(java.lang.Boolean); }"
+            "extraProguardRules": "-assumenosideeffects class android.util.Log { public static int d(...); public static int v(...); }\n-keep class org.wonday.pdf.** { *; }\n-keep class io.legere.pdfiumandroid.** { *; }\n-keep class com.google.firebase.crashlytics.FirebaseCrashlytics { public static ** getInstance(); public void setCrashlyticsCollectionEnabled(java.lang.Boolean); }\n-dontwarn org.bouncycastle.**\n-dontwarn com.gemalto.jp2.**\n-keep,allowobfuscation class * extends com.tom_roush.pdfbox.pdmodel.encryption.SecurityHandler { public <init>(...); }\n-keep,allowobfuscation class com.tom_roush.pdfbox.pdmodel.documentinterchange.** { *; }"
           }
         }
       ],

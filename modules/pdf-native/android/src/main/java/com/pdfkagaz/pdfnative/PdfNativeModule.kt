@@ -33,11 +33,12 @@ class PdfNativeModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("PdfNative")
 
-    Events(SCAN_PROGRESS_EVENT, INCOMING_PDF_EVENT)
+    Events(SCAN_PROGRESS_EVENT, INCOMING_PDF_EVENT, TOOL_PROGRESS_EVENT)
 
     // Scanner pages a previous module instance never imported (no import can be in flight then
     // unless another instance runs one, which ScanImports guards).
     OnCreate {
+      appContext.reactContext?.let(PdfBoxSupport::init)
       appContext.backgroundCoroutineScope.launch {
         try {
           toolFiles.sweepScannerCache()
@@ -184,6 +185,11 @@ class PdfNativeModule : Module() {
       toolFiles.publish(tempUri, fileName)
     }
 
+    // A cancel for a job that has not begun yet is remembered (NativeJobs).
+    AsyncFunction("cancelNativeTool") { jobId: String ->
+      NativeJobs.cancel(jobId)
+    }
+
     AsyncFunction("cleanToolWorkspace") Coroutine { jobId: String ->
       toolFiles.cleanWorkspace(jobId)
     }
@@ -287,6 +293,10 @@ class PdfNativeModule : Module() {
       }
     }
   }
+
+  /** Starts a native job whose progress is sent as onToolProgress { jobId, fraction }; end it with NativeJobs.end. */
+  internal fun beginToolJob(jobId: String): JobControl =
+    NativeJobs.begin(jobId, { fraction -> sendEvent(TOOL_PROGRESS_EVENT, mapOf("jobId" to jobId, "fraction" to fraction)) })
 
   private val thumbnails by lazy { Thumbnails(context) }
 
@@ -644,6 +654,7 @@ class PdfNativeModule : Module() {
   private companion object {
     const val SCAN_PROGRESS_EVENT = "onScanProgress"
     const val INCOMING_PDF_EVENT = "onIncomingPdf"
+    const val TOOL_PROGRESS_EVENT = "onToolProgress"
     const val PROGRESS_INTERVAL_MS = 200L
 
     /** Folders listed concurrently by a full scan (readdir on shared storage is latency-bound). */

@@ -45,3 +45,15 @@ class ImageInvalidException(message: String = "Image is damaged or in an unsuppo
 /** Play services missing or outdated, the ML Kit scanner unsupported or not downloaded, or its launch failed. */
 class ScannerUnavailableException(message: String = "Document scanner is not available", cause: Throwable? = null) :
   CodedException("ERR_SCANNER_UNAVAILABLE", message, cause)
+
+/** The password typed for an encrypted PDF does not open it. */
+class PasswordWrongException(message: String = "Wrong password", cause: Throwable? = null) :
+  CodedException("ERR_PASSWORD_WRONG", message, cause)
+
+/** The PDF opens, but its permissions forbid the change; the owner password is needed. */
+class PasswordRestrictedException(message: String = "PDF is restricted; the owner password is needed", cause: Throwable? = null) :
+  CodedException("ERR_PASSWORD_RESTRICTED", message, cause)
+
+/** The job was cancelled (cancelNativeTool) before it finished. */
+class CancelledException(message: String = "Cancelled", cause: Throwable? = null) :
+  CodedException("ERR_CANCELLED", message, cause)

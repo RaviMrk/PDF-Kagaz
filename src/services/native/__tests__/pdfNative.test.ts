@@ -1,5 +1,5 @@
 import PdfNativeModule from '../../../../modules/pdf-native';
-import { nativeError } from '../../../test-utils/fakePdfNative';
+import { createFakePdfNative, nativeError } from '../../../test-utils/fakePdfNative';
 import { isPdfNativeError, pdfNative, type ScanResult } from '../pdfNative';
 
 const mockedModule = jest.mocked(PdfNativeModule);
@@ -90,6 +90,18 @@ describe('pdfNative', () => {
     const sub = pdfNative.addIncomingPdfListener(cb);
     expect(mockedModule.addListener).toHaveBeenCalledWith('onIncomingPdf', cb);
     expect(typeof sub.remove).toBe('function');
+  });
+
+  it('subscribes to native tool progress through the module event emitter', () => {
+    const cb = jest.fn();
+    const sub = pdfNative.addToolProgressListener(cb);
+    expect(mockedModule.addListener).toHaveBeenCalledWith('onToolProgress', cb);
+    expect(typeof sub.remove).toBe('function');
+  });
+
+  it('forwards cancelNativeTool with the job id', async () => {
+    await expect(pdfNative.cancelNativeTool('j1')).resolves.toBeUndefined();
+    expect(mockedModule.cancelNativeTool).toHaveBeenCalledWith('j1');
   });
 
   it('forwards printPdf uri and job name', async () => {
@@ -220,5 +232,23 @@ describe('pdfNative', () => {
     expect(
       isPdfNativeError(nativeError('ERR_SCANNER_UNAVAILABLE'), 'ERR_SCANNER_UNAVAILABLE'),
     ).toBe(true);
+    for (const code of [
+      'ERR_PASSWORD_WRONG',
+      'ERR_PASSWORD_RESTRICTED',
+      'ERR_CANCELLED',
+    ] as const) {
+      expect(isPdfNativeError(nativeError(code), code)).toBe(true);
+    }
+  });
+
+  it('lets tests drive tool progress through the fake', () => {
+    const fake = createFakePdfNative();
+    const cb = jest.fn();
+    const sub = fake.addToolProgressListener(cb);
+    fake.emitToolProgress({ jobId: 'j1', fraction: 0.5 });
+    expect(cb).toHaveBeenCalledWith({ jobId: 'j1', fraction: 0.5 });
+    sub.remove();
+    fake.emitToolProgress({ jobId: 'j1', fraction: 1 });
+    expect(cb).toHaveBeenCalledTimes(1);
   });
 });

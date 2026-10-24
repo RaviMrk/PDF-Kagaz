@@ -33,10 +33,16 @@ export type ScanProgressEvent = { scannedFolders: number; found: number };
 export type ReaderFile = { uri: string; copied: boolean; sizeBytes: number };
 
 /**
- * A tool input copied into the private tool workspace: `uri` is a percent-encoded `file://` URI
- * in `cacheDir/tools/<jobId>/`; `sizeBytes` is the number of bytes copied.
+ * A file in a private tool job workspace: `uri` is a percent-encoded `file://` URI in
+ * `cacheDir/tools/<jobId>/`; `sizeBytes` is its size in bytes.
  */
-export type StagedInput = { uri: string; sizeBytes: number };
+export type WorkspaceFile = { uri: string; sizeBytes: number };
+
+/** A tool input copied into the job workspace; `sizeBytes` is the number of bytes copied. */
+export type StagedInput = WorkspaceFile;
+
+/** Progress of a native tool job, 0..1; throttled to one event per 100 ms, plus one at 1. */
+export type ToolProgressEvent = { jobId: string; fraction: number };
 
 /** Colour filter of an image page: as scanned, greyscale, or high-contrast black and white. */
 export type ImageFilter = 'colour' | 'greyscale' | 'bw';
@@ -58,4 +64,5 @@ export type IncomingPdfEvent = { uri: string };
 export type PdfNativeModuleEvents = {
   onScanProgress: (event: ScanProgressEvent) => void;
   onIncomingPdf: (event: IncomingPdfEvent) => void;
+  onToolProgress: (event: ToolProgressEvent) => void;
 };

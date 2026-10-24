@@ -6,6 +6,7 @@ import {
   PDFArray,
   PDFDict,
   PDFDocument,
+  EncryptedPDFError,
   PDFHexString,
   PDFName,
   PDFNumber,
@@ -41,6 +42,21 @@ describe('PDF fixtures', () => {
       ignoreEncryption: true,
     });
     expect(doc.isEncrypted).toBe(true);
+  });
+
+  it('owner-only.pdf opens without a password but is encrypted (owner restrictions)', async () => {
+    // A plain (strict) load refuses encrypted files, even with an empty user password.
+    await expect(PDFDocument.load(read('owner-only.pdf'))).rejects.toThrow(EncryptedPDFError);
+    const doc = await PDFDocument.load(read('owner-only.pdf'), { ignoreEncryption: true });
+    expect(doc.isEncrypted).toBe(true);
+    expect(doc.getPageCount()).toBe(1);
+  });
+
+  it('image-heavy.pdf has 4 pages and weighs 1-3 MB', async () => {
+    const bytes = read('image-heavy.pdf');
+    expect(bytes.length).toBeGreaterThan(1_048_576);
+    expect(bytes.length).toBeLessThanOrEqual(3_145_728);
+    expect((await PDFDocument.load(bytes)).getPageCount()).toBe(4);
   });
 
   it('corrupted.pdf fails to load', async () => {

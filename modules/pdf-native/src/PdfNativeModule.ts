@@ -66,6 +66,8 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
     filter: string,
   ): Promise<string>;
   publishToolOutput(tempUri: string, fileName: string): Promise<PdfFileInfo>;
+  /** Cancels a running native job (its next check throws ERR_CANCELLED); remembered for 60 s if it has not begun. */
+  cancelNativeTool(jobId: string): Promise<void>;
   cleanToolWorkspace(jobId: string): Promise<void>;
   cleanupToolLeftovers(olderThanMs: number): Promise<number>;
   /** Workspace files only; 1-based page, width clamped to 1..512; own lane (not reader / Files list). */
