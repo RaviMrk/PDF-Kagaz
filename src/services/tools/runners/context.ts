@@ -65,16 +65,24 @@ export type ToolRunner<R extends PdfToolRequest = PdfToolRequest> = (
 
 type NativeOpDeps = Pick<ToolRunDeps['native'], 'addToolProgressListener' | 'cancelNativeTool'>;
 
+/** How long a cancelled job waits for its native op to stop before it ends anyway. */
+export const NATIVE_CANCEL_GRACE_MS = 5000;
+
+const noop = () => {};
+
 /**
- * `nativeOp` for one job: native progress events of this job report `processing`; an abort asks
+ * `nativeOp` for one job: native progress events of this job report `processing`. An abort asks
  * the native job to stop (it rejects with ERR_CANCELLED at its next page) and the op ends as
- * cancelled at once, without waiting for it. The listener is always removed.
+ * cancelled once the native op has settled, or after `graceMs` at most, so the workspace is not
+ * cleaned under a running native op and a hung one cannot block the job forever. An op that
+ * settles in any way after an abort still ends as cancelled. The listener is always removed.
  */
 export function createNativeOp(
   jobId: string,
   native: NativeOpDeps,
   signal: AbortSignal,
   processing: (f: number) => void,
+  graceMs: number = NATIVE_CANCEL_GRACE_MS,
 ): RunContext['nativeOp'] {
   return async <T>(fn: () => Promise<T>): Promise<T> => {
     throwIfCancelled(signal);
@@ -83,28 +91,43 @@ export function createNativeOp(
         processing(Math.min(1, Math.max(0, e.fraction)));
       }
     });
-    let onAbort = () => {};
-    const aborted = new Promise<never>((_, reject) => {
-      onAbort = () => {
-        try {
-          native.cancelNativeTool(jobId).catch(() => {});
-        } catch {
-          // The op still ends as cancelled below.
-        }
-        reject(new PdfToolError('cancelled'));
-      };
-    });
-    signal.addEventListener('abort', onAbort, { once: true });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort = noop;
     try {
       const op = fn().catch((e: unknown) => {
         if (isPdfNativeError(e, 'ERR_CANCELLED')) throw new PdfToolError('cancelled');
         throw e;
       });
-      // An op that settles after the abort won the race must not be an unhandled rejection.
-      op.catch(() => {});
-      return await Promise.race([op, aborted]);
+      const settled = op.then(noop, noop);
+      const hung = new Promise<never>((_, reject) => {
+        onAbort = () => {
+          try {
+            native.cancelNativeTool(jobId).catch(noop);
+          } catch {
+            // Waits for the op or the grace delay all the same.
+          }
+          const grace = new Promise<void>((res) => {
+            timer = setTimeout(res, graceMs);
+          });
+          void Promise.race([settled, grace]).then(() => reject(new PdfToolError('cancelled')));
+        };
+      });
+      // Settles only after the op lost the race; never an unhandled rejection.
+      hung.catch(noop);
+      signal.addEventListener('abort', onAbort, { once: true });
+      let value: T;
+      try {
+        value = await Promise.race([op, hung]);
+      } catch (e) {
+        throwIfCancelled(signal);
+        throw e;
+      }
+      // Finished although the job was cancelled meanwhile: its result is never used.
+      throwIfCancelled(signal);
+      return value;
     } finally {
       signal.removeEventListener('abort', onAbort);
+      if (timer !== undefined) clearTimeout(timer);
       sub.remove();
     }
   };

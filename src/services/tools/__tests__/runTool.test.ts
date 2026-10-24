@@ -1031,9 +1031,47 @@ describe('runTool engine', () => {
     expect(seen).toEqual({ route: 'native', inputs: 1, row: r.id });
   });
 
-  it('nativeOp cancels the native job on abort and ends cancelled', async () => {
+  it('on abort, waits for the native op to stop before cleaning the workspace', async () => {
     const r = row('one-page.pdf');
     const s = setup([r]);
+    const order: string[] = [];
+    let started!: () => void;
+    const opStarted = new Promise<void>((res) => (started = res));
+    let stop!: () => void;
+    s.native.cancelNativeTool.mockImplementation(async () => {
+      order.push('cancel');
+      // The native job stops at its next page, a little later.
+      setTimeout(stop, 20);
+    });
+    s.native.cleanToolWorkspace.mockImplementation(async () => {
+      order.push('clean');
+    });
+    RUNNERS.compress = async (ctx) => {
+      await ctx.nativeOp(
+        () =>
+          new Promise<never>((_, reject) => {
+            stop = () => {
+              order.push('op settled');
+              reject(nativeError('ERR_CANCELLED'));
+            };
+            started();
+          }),
+      );
+    };
+    const done = s.run(compress(r.id), 'job-7');
+    await opStarted;
+    s.controller.abort();
+    const outcome = await done;
+    expect(outcome).toEqual({ ok: false, failure: 'cancelled', inputIndex: null, outputs: [] });
+    expect(s.native.cancelNativeTool).toHaveBeenCalledWith('job-7');
+    expect(order).toEqual(['cancel', 'op settled', 'clean']);
+    expect(s.progressListeners.size).toBe(0);
+  });
+
+  it('ends cancelled after the grace delay when the native op never stops', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    s.deps.nativeCancelGraceMs = 30;
     let started!: () => void;
     const opStarted = new Promise<void>((res) => (started = res));
     RUNNERS.compress = async (ctx) => {
@@ -1044,11 +1082,41 @@ describe('runTool engine', () => {
     };
     const done = s.run(compress(r.id), 'job-7');
     await opStarted;
+    const abortedAt = Date.now();
     s.controller.abort();
     const outcome = await done;
+    expect(Date.now() - abortedAt).toBeGreaterThanOrEqual(25);
     expect(s.native.cancelNativeTool).toHaveBeenCalledWith('job-7');
     expect(outcome).toEqual({ ok: false, failure: 'cancelled', inputIndex: null, outputs: [] });
+    expect(s.native.cleanToolWorkspace).toHaveBeenCalledWith('job-7');
     expect(s.progressListeners.size).toBe(0);
+  });
+
+  it('ends cancelled, publishing nothing, when the op finishes despite the abort', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    let started!: () => void;
+    const opStarted = new Promise<void>((res) => (started = res));
+    let finish!: () => void;
+    s.native.cancelNativeTool.mockImplementation(async () => {
+      setTimeout(finish, 10);
+    });
+    RUNNERS.compress = async (ctx) => {
+      const out = await ctx.nativeOp(
+        () =>
+          new Promise<{ uri: string; sizeBytes: number }>((resolve) => {
+            finish = () => resolve(ctx.inputs[0]!);
+            started();
+          }),
+      );
+      await ctx.publishFile(out, 'one-page compressed.pdf', 0, 1);
+    };
+    const done = s.run(compress(r.id));
+    await opStarted;
+    s.controller.abort();
+    const outcome = await done;
+    expect(outcome).toEqual({ ok: false, failure: 'cancelled', inputIndex: null, outputs: [] });
+    expect(s.native.publishToolOutput).not.toHaveBeenCalled();
   });
 
   it('nativeOp turns ERR_CANCELLED into cancelled', async () => {

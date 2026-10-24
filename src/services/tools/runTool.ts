@@ -203,6 +203,8 @@ export type ToolRunDeps = {
   now(): number;
   /** Route caps (tests force the native route with tiny JS caps); default JS_CAPS / NATIVE_CAPS. */
   caps?: { js: Caps; native: Caps };
+  /** How long a cancel waits for a native op to stop; default NATIVE_CANCEL_GRACE_MS. */
+  nativeCancelGraceMs?: number;
 };
 
 export type ToolRunControl = {
@@ -504,7 +506,7 @@ export async function runTool(
       processing,
       save,
       publishFile,
-      nativeOp: createNativeOp(jobId, native, signal, processing),
+      nativeOp: createNativeOp(jobId, native, signal, processing, deps.nativeCancelGraceMs),
       setPages: (n) => {
         pages = n;
       },
