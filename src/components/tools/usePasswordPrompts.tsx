@@ -7,6 +7,7 @@ import { pdfNative } from '@/services/native/pdfNative';
 import { failureMessage } from '@/services/tools/failureMessage';
 import { findLockedInputs, type LockedInput } from '@/services/tools/passwords';
 import type { Passwords } from '@/services/tools/runTool';
+import type { RunnableToolId } from '@/services/tools/toolRegistry';
 import { toToolFailure } from '@/services/tools/toolFailure';
 import { displayName } from '@/utils/displayName';
 
@@ -67,10 +68,13 @@ type Prompt = {
  */
 export function usePasswordPrompts(): {
   dialog: ReactElement | null;
-  ask(rows: FileRow[]): Promise<Passwords | null>;
+  ask(rows: FileRow[], toolId?: RunnableToolId): Promise<Passwords | null>;
+  /** Why the last `ask` refused to start: an input is damaged or gone (null otherwise). */
+  blocked: string | null;
 } {
   const { t } = useTranslation();
   const [prompt, setPrompt] = useState<Prompt | null>(null);
+  const [blocked, setBlocked] = useState<string | null>(null);
   // The answer the open prompt waits for; null while a password is being checked.
   const answer = useRef<((password: string | null) => void) | null>(null);
 
@@ -78,8 +82,14 @@ export function usePasswordPrompts(): {
   useEffect(() => () => answer.current?.(null), []);
 
   const ask = useCallback(
-    async (rows: FileRow[]): Promise<Passwords | null> => {
-      const locked = await findLockedInputs(rows);
+    async (rows: FileRow[], toolId?: RunnableToolId): Promise<Passwords | null> => {
+      setBlocked(null);
+      const { locked, blocked: unusable } = await findLockedInputs(rows, undefined, toolId);
+      const first = unusable[0];
+      if (first !== undefined) {
+        setBlocked(failureMessage(first.failure, rows[first.index]!.name, t));
+        return null;
+      }
       const passwords: Passwords = {};
       try {
         for (const { index, lock } of locked) {
@@ -136,5 +146,5 @@ export function usePasswordPrompts(): {
       onCancel={() => take(null)}
     />
   ) : null;
-  return { dialog, ask };
+  return { dialog, ask, blocked };
 }

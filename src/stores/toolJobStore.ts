@@ -523,6 +523,14 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
       retry(jobId, t) {
         if (get().active) return { ok: false, reason: 'busy' };
         const { last } = get();
+        // A password was missing or wrong: running the same request again cannot succeed.
+        if (
+          last?.jobId === jobId &&
+          !last.outcome.ok &&
+          (last.outcome.failure === 'encrypted' || last.outcome.failure === 'wrongPassword')
+        ) {
+          return { ok: false, reason: 'needsInput' };
+        }
         if (last?.jobId === jobId && last.request) return start(last.request, t);
         let request: ToolRequest | null = null;
         let row: ToolJobRow | undefined;
@@ -533,6 +541,9 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
           request = null;
         }
         if (row && NEEDS_PASSWORD.has(row.toolId)) return { ok: false, reason: 'needsInput' };
+        if (row?.error === 'encrypted' || row?.error === 'wrongPassword') {
+          return { ok: false, reason: 'needsInput' };
+        }
         if (!request) return { ok: false, reason: 'db' };
         // Not run by this process: its image session was deleted at this process's start.
         if (sessionIdOf(request) !== null) return { ok: false, reason: 'gone' };

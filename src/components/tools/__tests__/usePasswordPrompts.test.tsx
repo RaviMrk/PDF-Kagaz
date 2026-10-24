@@ -7,6 +7,7 @@ import type { FileRow } from '@/db/schema';
 import { initI18n } from '@/i18n';
 import { pdfNative, type PdfLock } from '@/services/native/pdfNative';
 import type { Passwords } from '@/services/tools/runTool';
+import type { RunnableToolId } from '@/services/tools/toolRegistry';
 import { nativeError } from '@/test-utils/fakePdfNative';
 import { makeRow } from '@/test-utils/fileRows';
 
@@ -16,14 +17,14 @@ const b = makeRow({ name: 'Report.pdf' });
 
 let answer: Passwords | null | undefined;
 
-function Harness({ rows }: { rows: FileRow[] }) {
-  const { dialog, ask } = usePasswordPrompts();
+function Harness({ rows, toolId }: { rows: FileRow[]; toolId?: RunnableToolId }) {
+  const { dialog, ask, blocked } = usePasswordPrompts();
   return (
     <>
       <Pressable
         accessibilityLabel="Run"
         onPress={() => {
-          void ask(rows).then((r) => {
+          void ask(rows, toolId).then((r) => {
             answer = r;
           });
         }}
@@ -31,14 +32,15 @@ function Harness({ rows }: { rows: FileRow[] }) {
         <Text>Run</Text>
       </Pressable>
       {dialog}
+      {blocked ? <Text>{blocked}</Text> : null}
     </>
   );
 }
 
-async function run(rows: FileRow[]) {
+async function run(rows: FileRow[], toolId?: RunnableToolId) {
   await render(
     <I18nextProvider i18n={i18n}>
-      <Harness rows={rows} />
+      <Harness rows={rows} toolId={toolId} />
     </I18nextProvider>,
   );
   await fireEvent.press(screen.getByLabelText('Run'));
@@ -137,8 +139,8 @@ describe('usePasswordPrompts', () => {
     expect(answer).toEqual({ 0: 'one', 1: 'two' });
   });
 
-  it('shows the dialog when the file cannot be inspected', async () => {
-    jest.spyOn(pdfNative, 'inspectPdf').mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+  it('shows the dialog when inspecting fails for another reason', async () => {
+    jest.spyOn(pdfNative, 'inspectPdf').mockRejectedValue(nativeError('ERR_IO'));
     jest.spyOn(pdfNative, 'checkPdfPassword').mockResolvedValue('ok');
     await run([a]);
     expect(screen.getByText('Password required')).toBeTruthy();
@@ -158,5 +160,20 @@ describe('usePasswordPrompts', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
     await act(async () => {});
     expect(answer).toBeNull();
+  });
+
+  it('shows why instead of a dialog when the file is damaged, and starts nothing', async () => {
+    jest.spyOn(pdfNative, 'inspectPdf').mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+    await run([a], 'compress');
+    expect(screen.queryByPlaceholderText('Password')).toBeNull();
+    expect(screen.getByText('"a.pdf" is damaged or isn\'t a PDF')).toBeTruthy();
+    expect(answer).toBeNull();
+  });
+
+  it('lets a routed tool start on a file PdfBox cannot read', async () => {
+    jest.spyOn(pdfNative, 'inspectPdf').mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+    await run([{ ...a, sizeBytes: 1000 }], 'merge');
+    expect(screen.queryByPlaceholderText('Password')).toBeNull();
+    expect(answer).toEqual({});
   });
 });

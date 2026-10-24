@@ -162,7 +162,7 @@ describe('toolJobStore', () => {
     const native = createFakePdfNative();
     native.inspectPdf.mockResolvedValue('none');
     const asked = async () =>
-      (await findLockedInputs([makeRow({ id: 'a', name: 'a.pdf' })], native)).length;
+      (await findLockedInputs([makeRow({ id: 'a', name: 'a.pdf' })], native)).locked.length;
     expect(await asked()).toBe(0);
     s.store.getState().start(merge, t);
     s.calls[0]!.resolve({ ok: false, failure: 'encrypted', inputIndex: 0, outputs: [] });
@@ -218,6 +218,19 @@ describe('toolJobStore', () => {
     expect(s.calls[1]!.request).toEqual(split);
     expect(s.store.getState().retry('unknown-job', t)).toEqual({ ok: false, reason: 'busy' });
   });
+
+  it.each(['encrypted', 'wrongPassword'] as const)(
+    'retry after a %s failure needs the password again and does not run',
+    async (failure) => {
+      const s = setup();
+      const first = s.store.getState().start(merge, t);
+      if (!first.ok) throw new Error('expected ok');
+      s.calls[0]!.resolve({ ok: false, failure, inputIndex: 0, outputs: [] });
+      await flush();
+      expect(s.store.getState().retry(first.jobId, t)).toEqual({ ok: false, reason: 'needsInput' });
+      expect(s.calls).toHaveLength(1);
+    },
+  );
 
   it('reports each finished job once with its request, outcome and duration', async () => {
     const onJobFinished = jest.fn();

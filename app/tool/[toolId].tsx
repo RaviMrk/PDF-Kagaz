@@ -78,7 +78,7 @@ function ToolFlow({ tool, inputIds }: { tool: ToolDef; inputIds: string[] }) {
   // One start per tap: a second press can land before the job id re-renders.
   const starting = useRef(false);
   const asking = useRef(false);
-  const { dialog, ask } = usePasswordPrompts();
+  const { dialog, ask, blocked } = usePasswordPrompts();
   const [notice, setNotice] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const active = useToolJobs((s) => s.active);
@@ -134,7 +134,10 @@ function ToolFlow({ tool, inputIds }: { tool: ToolDef; inputIds: string[] }) {
     let passwords: Passwords | null;
     try {
       // In request order: a password belongs to its input index.
-      passwords = await ask(request.inputIds.flatMap((id) => rows.find((r) => r.id === id) ?? []));
+      passwords = await ask(
+        request.inputIds.flatMap((id) => rows.find((r) => r.id === id) ?? []),
+        request.toolId,
+      );
     } finally {
       asking.current = false;
     }
@@ -171,9 +174,9 @@ function ToolFlow({ tool, inputIds }: { tool: ToolDef; inputIds: string[] }) {
               {t(tool.labelKey)}
             </Text>
           </View>
-          {notice ? (
+          {(notice ?? blocked) ? (
             <Text accessibilityLiveRegion="polite" style={{ color: colors.danger }}>
-              {notice}
+              {notice ?? blocked}
             </Text>
           ) : null}
           {tool.id === 'merge' ? (
