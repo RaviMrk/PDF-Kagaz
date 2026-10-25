@@ -87,7 +87,7 @@ export const TOOLS: readonly ToolDef[] = [
   def('pdf-to-images', 'T-09', 'convert', 'file-image-outline', true),
   def('watermark', 'T-10', 'edit', 'water-outline', true),
   def('page-numbers', 'T-11', 'edit', 'numeric', true),
-  def('sign', 'T-12', 'edit', 'draw'),
+  def('sign', 'T-12', 'edit', 'draw', true),
   def('ocr', 'T-13', 'convert', 'text-recognition'),
   def('metadata', 'T-14', 'edit', 'tag-outline'),
 ];

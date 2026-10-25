@@ -4,6 +4,7 @@ import { getDb } from '@/db/client';
 import type { ToolJobRow } from '@/db/schema';
 import type { IndexDb } from '@/services/index/fileIndexRepo';
 import { pdfNative, type ImageFilter } from '@/services/native/pdfNative';
+import { getSignature } from '@/services/signatures/signatureRepo';
 import { isImageLayout } from '@/services/pdf/imageLayout';
 import type { PageEdit } from '@/services/pdf/organize';
 import type { Translate } from '@/services/tools/outputNames';
@@ -647,6 +648,7 @@ export const useToolJobs = createToolJobStore({
     fs: expoToolFs,
     getRows: (ids) => useFiles.getState().getRows(ids),
     registerOutputs: (infos) => useFiles.getState().registerOutputs(infos),
+    getSignaturePng: (id) => getSignature(getDb(), id)?.pngPath ?? null,
     t,
     now: Date.now,
   }),

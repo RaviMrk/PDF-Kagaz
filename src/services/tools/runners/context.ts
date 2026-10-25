@@ -39,6 +39,8 @@ export async function as<T>(
  */
 export type RunContext<R extends PdfToolRequest = PdfToolRequest> = {
   jobId: string;
+  /** The job workspace (file:// directory); the job's own files go here. */
+  workspace: string;
   request: R;
   rows: FileRow[];
   inputs: WorkspaceFile[];

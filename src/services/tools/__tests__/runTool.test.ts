@@ -30,12 +30,13 @@ import {
   type CompressLevel,
   type ImageFormat,
   type ImagesRequest,
+  type SignaturePlacement,
   type ToolPhase,
   type ToolRequest,
   type ToolRunDeps,
   type WatermarkOptions,
 } from '../runTool';
-import { watermarkSpec } from '../stampSpecs';
+import { signatureSpec, watermarkSpec } from '../stampSpecs';
 
 const i18n = initI18n('en');
 const t = (key: string, options?: Record<string, unknown>): string => i18n.t(key, options);
@@ -230,6 +231,14 @@ function setup(rows: FileRow[], sources: string[] = []) {
     writeBytes: jest.fn(nodeToolFs.writeBytes),
   };
   const recordOutput = jest.fn<void, [string, PdfFileInfo]>();
+  // Saved signature 7: a real transparent PNG in the app's files dir (outside any workspace).
+  const signatures = path.join(tmp, 'files', 'signatures');
+  fs.mkdirSync(signatures, { recursive: true });
+  const signaturePng = path.join(signatures, 'sig-1-abc123.png');
+  fs.copyFileSync(path.join(FIXTURES, 'images', 'alpha-200x100.png'), signaturePng);
+  const getSignaturePng = jest.fn((id: number): string | null =>
+    id === 7 ? `file://${signaturePng}` : null,
+  );
   const clock = { now: Date.now() };
   const deps: ToolRunDeps = {
     native,
@@ -237,6 +246,7 @@ function setup(rows: FileRow[], sources: string[] = []) {
     getRows: (ids) => rows.filter((r) => ids.includes(r.id)),
     registerOutputs,
     recordOutput,
+    getSignaturePng,
     t,
     now: () => clock.now,
   };
@@ -267,6 +277,8 @@ function setup(rows: FileRow[], sources: string[] = []) {
     deps,
     progressListeners,
     emitToolProgress,
+    signaturePng,
+    getSignaturePng,
   };
 }
 
@@ -2138,5 +2150,130 @@ describe('runTool watermark and page numbers', () => {
       `file://${s.tmp}/j1/out-stamped.pdf`,
       'mixed-sizes numbered.pdf',
     );
+  });
+});
+
+describe('runTool sign', () => {
+  const placements: SignaturePlacement[] = [
+    { signatureId: 7, page: 1, cx: 0.3, cy: 0.4, width: 0.3 },
+    { signatureId: 7, page: 3, cx: 0.72, cy: 0.85, width: 0.25 },
+  ];
+
+  it('stamps the saved signature on pages 1 and 3 in pdf-lib, never on page 2', async () => {
+    const r = row('mixed-sizes.pdf');
+    const s = setup([r]);
+    const outcome = await s.run({ toolId: 'sign', inputIds: [r.id], placements });
+    expect(outcome.ok).toBe(true);
+    expect(s.native.stampPdf).not.toHaveBeenCalled();
+    expect(s.getSignaturePng).toHaveBeenCalledWith(7);
+    expect(s.published.map((p) => p.name)).toEqual(['mixed-sizes signed.pdf']);
+    const pages = await inspectImages(new Uint8Array(fs.readFileSync(s.published[0]!.path)));
+    expect(pages).toHaveLength(3);
+    const signature = expect.objectContaining({ width: 200, height: 100 });
+    expect(pages[0]!.images).toEqual(expect.arrayContaining([signature]));
+    expect(pages[1]!.images).not.toEqual(expect.arrayContaining([signature]));
+    expect(pages[2]!.images).toEqual(expect.arrayContaining([signature]));
+    // The saved signature itself is never touched.
+    expect(fs.existsSync(s.signaturePng)).toBe(true);
+  });
+
+  it('a placed signature that was deleted fails as signatureGone', async () => {
+    const r = row('mixed-sizes.pdf');
+    const s = setup([r]);
+    s.getSignaturePng.mockReturnValue(null);
+    const outcome = await s.run({ toolId: 'sign', inputIds: [r.id], placements });
+    expect(outcome).toEqual({ ok: false, failure: 'signatureGone', inputIndex: null, outputs: [] });
+    expect(s.native.publishToolOutput).not.toHaveBeenCalled();
+  });
+
+  it('a signature file that is gone from disk fails as signatureGone', async () => {
+    const r = row('mixed-sizes.pdf');
+    const s = setup([r]);
+    fs.rmSync(s.signaturePng);
+    const outcome = await s.run({ toolId: 'sign', inputIds: [r.id], placements });
+    expect(outcome).toEqual({ ok: false, failure: 'signatureGone', inputIndex: null, outputs: [] });
+  });
+
+  it('stamps natively over the JS caps with centre anchors and a copy in the job workspace', async () => {
+    const r = row('mixed-sizes.pdf');
+    const s = setup([r]);
+    s.deps.caps = { js: { file: 10, total: 10 }, native: { file: 1e9, total: 1e9 } };
+    const copies: { uri: string; bytes: Buffer }[] = [];
+    const stampImpl = s.native.stampPdf.getMockImplementation()!;
+    s.native.stampPdf.mockImplementationOnce(async (fileUri, jobId, json) => {
+      for (const stamp of (JSON.parse(json) as { stamps: { png: string }[] }).stamps) {
+        copies.push({ uri: stamp.png, bytes: fs.readFileSync(tempPathOf(stamp.png)) });
+      }
+      return stampImpl(fileUri, jobId, json);
+    });
+    const outcome = await s.run({ toolId: 'sign', inputIds: [r.id], placements });
+    expect(outcome.ok).toBe(true);
+    const [input, jobId, json] = s.native.stampPdf.mock.calls[0]!;
+    expect(input).toBe(`file://${s.tmp}/j1/in-0.pdf`);
+    expect(jobId).toBe('j1');
+    const spec = JSON.parse(json) as { stamps: { png: string }[] };
+    const png = spec.stamps[0]!.png;
+    // PdfStamper only takes PNGs of the job's own workspace: the saved PNG is copied there.
+    expect(png.startsWith(`file://${s.tmp}/j1/`)).toBe(true);
+    expect(spec).toEqual(signatureSpec(placements, () => png));
+    expect(spec).toEqual({
+      stamps: [
+        {
+          kind: 'image',
+          png,
+          pages: [1],
+          anchor: { cx: 0.3, cy: 0.4 },
+          widthFrac: 0.3,
+          angle: 0,
+          opacity: 1,
+        },
+        {
+          kind: 'image',
+          png,
+          pages: [3],
+          anchor: { cx: 0.72, cy: 0.85 },
+          widthFrac: 0.25,
+          angle: 0,
+          opacity: 1,
+        },
+      ],
+    });
+    expect(copies.map((c) => c.uri)).toEqual([png, png]);
+    expect(copies[0]!.bytes.equals(fs.readFileSync(s.signaturePng))).toBe(true);
+    expect(s.native.publishToolOutput).toHaveBeenCalledWith(
+      `file://${s.tmp}/j1/out-stamped.pdf`,
+      'mixed-sizes signed.pdf',
+    );
+  });
+
+  it('copies each distinct signature once', async () => {
+    const r = row('mixed-sizes.pdf');
+    const s = setup([r]);
+    s.getSignaturePng.mockImplementation((id) =>
+      id === 7 || id === 8 ? `file://${s.signaturePng}` : null,
+    );
+    s.deps.caps = { js: { file: 10, total: 10 }, native: { file: 1e9, total: 1e9 } };
+    const outcome = await s.run({
+      toolId: 'sign',
+      inputIds: [r.id],
+      placements: [...placements, { signatureId: 8, page: 2, cx: 0.5, cy: 0.5, width: 0.2 }],
+    });
+    expect(outcome.ok).toBe(true);
+    const spec = JSON.parse(s.native.stampPdf.mock.calls[0]![2]) as { stamps: { png: string }[] };
+    const pngs = spec.stamps.map((st) => st.png);
+    expect(pngs[0]).toBe(pngs[1]);
+    expect(pngs[2]).not.toBe(pngs[0]);
+    expect(s.getSignaturePng.mock.calls.map(([id]) => id).sort()).toEqual([7, 8]);
+  });
+
+  it('refuses no placements or more than 50', async () => {
+    const r = row('mixed-sizes.pdf');
+    const s = setup([r]);
+    const none = await s.run({ toolId: 'sign', inputIds: [r.id], placements: [] });
+    expect(none).toEqual(expect.objectContaining({ ok: false, failure: 'badPages' }));
+    const many = Array.from({ length: 51 }, () => placements[0]!);
+    const tooMany = await s.run({ toolId: 'sign', inputIds: [r.id], placements: many }, 'j2');
+    expect(tooMany).toEqual(expect.objectContaining({ ok: false, failure: 'badPages' }));
+    expect(s.native.publishToolOutput).not.toHaveBeenCalled();
   });
 });

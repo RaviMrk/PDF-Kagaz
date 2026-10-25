@@ -37,7 +37,7 @@ const CARDS = [
   'Remove password',
   'Add watermark',
   'Add page numbers',
-  'Sign PDF, coming soon',
+  'Sign PDF',
   'Edit details, coming soon',
 ];
 
@@ -91,7 +91,7 @@ describe('Tools tab', () => {
 
   it('does nothing for a tool that is coming soon', async () => {
     const r = await renderTools();
-    await fireEvent.press(screen.getByLabelText('Sign PDF, coming soon'));
+    await fireEvent.press(screen.getByLabelText('Edit details, coming soon'));
     expect(r.pathname()).toBe('/tools');
   });
 });

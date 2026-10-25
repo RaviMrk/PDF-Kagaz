@@ -13,6 +13,7 @@ import { PdfToImagesOptions } from '@/components/tools/PdfToImagesOptions';
 import { PickFilesList } from '@/components/tools/PickFilesList';
 import { ProgressSheet } from '@/components/tools/ProgressSheet';
 import { ProtectOptions } from '@/components/tools/ProtectOptions';
+import { SignOptions } from '@/components/tools/SignOptions';
 import { SplitOptions } from '@/components/tools/SplitOptions';
 import { UnlockOptions } from '@/components/tools/UnlockOptions';
 import { usePasswordPrompts } from '@/components/tools/usePasswordPrompts';
@@ -247,6 +248,19 @@ function ToolFlow({ tool, inputIds }: { tool: ToolDef; inputIds: string[] }) {
                   toolId: 'page-numbers',
                   inputIds: [rows[0]!.id],
                   numbers,
+                  ...(passwords ? { passwords } : {}),
+                })
+              }
+            />
+          ) : null}
+          {tool.id === 'sign' && rows[0] ? (
+            <SignOptions
+              row={rows[0]}
+              onRun={(placements, passwords) =>
+                run({
+                  toolId: 'sign',
+                  inputIds: [rows[0]!.id],
+                  placements,
                   ...(passwords ? { passwords } : {}),
                 })
               }

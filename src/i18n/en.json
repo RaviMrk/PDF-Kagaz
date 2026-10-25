@@ -640,5 +640,25 @@
     "deleteBody": "It will be removed from this phone.",
     "full": "You can keep up to 10 signatures. Delete one first.",
     "saveFailed": "Couldn't save the signature"
+  },
+  "sign": {
+    "choose": "Choose a signature",
+    "drawNew": "Draw new",
+    "noSignatures": "No saved signature yet. Draw one to start.",
+    "page": "Page {{page}} of {{count}}",
+    "prevPage": "Previous page",
+    "nextPage": "Next page",
+    "moveUp": "Move signature up",
+    "moveDown": "Move signature down",
+    "moveLeft": "Move signature left",
+    "moveRight": "Move signature right",
+    "smaller": "Make signature smaller",
+    "bigger": "Make signature bigger",
+    "add": "Add to page",
+    "placed": "Signature on page {{page}}",
+    "remove": "Remove signature from page {{page}}",
+    "max": "You can place up to 50 signatures",
+    "dragHint": "Drag to move. Pinch to resize.",
+    "run": "Sign PDF"
   }
 }

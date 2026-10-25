@@ -1,10 +1,11 @@
 import { act, fireEvent } from '@testing-library/react-native';
 import { renderRouter, screen } from 'expo-router/testing-library';
-import { BackHandler } from 'react-native';
+import { BackHandler, Image } from 'react-native';
 import path from 'path';
 
 import { useFiles } from '@/stores/filesStore';
 import { useSettings } from '@/stores/settingsStore';
+import { useSignatures } from '@/stores/signaturesStore';
 import { useStorage } from '@/stores/storageStore';
 import { useToolJobs, type StartResult } from '@/stores/toolJobStore';
 import { openToolPreview } from '@/services/tools/toolPreview';
@@ -462,8 +463,48 @@ describe('tool flow', () => {
     );
   });
 
+  it('signs the picked file with a saved signature', async () => {
+    useSignatures.setState({
+      items: [{ id: 7, pngPath: 'file:///files/signatures/sig-1-abc123.png', createdAt: 1 }],
+      load: jest.fn(),
+    });
+    (jest.spyOn(Image, 'getSize') as jest.SpyInstance).mockResolvedValue({
+      width: 200,
+      height: 100,
+    });
+    await open(`/tool/sign?inputs=${ID_A}`);
+    await press('Add to page');
+    await press('Next page');
+    await press('Bottom left');
+    await press('Add to page');
+    expect(screen.getByText('Signature on page 2')).toBeTruthy();
+    await press('Sign PDF');
+    expect(start).toHaveBeenCalledWith(
+      {
+        toolId: 'sign',
+        inputIds: [ID_A],
+        placements: [
+          { signatureId: 7, page: 1, cx: 0.72, cy: 0.85, width: 0.3 },
+          expect.objectContaining({ signatureId: 7, page: 2, width: 0.3 }),
+        ],
+      },
+      expect.any(Function),
+    );
+    const second = start.mock.calls[0]![0].placements[1];
+    expect(second.cx).toBeLessThan(0.5);
+    expect(second.cy).toBeGreaterThan(0.5);
+  });
+
+  it('opens the signature pad from Sign when there is no signature', async () => {
+    useSignatures.setState({ items: [], load: jest.fn() });
+    const r = await open(`/tool/sign?inputs=${ID_A}`);
+    expect(screen.getByText('No saved signature yet. Draw one to start.')).toBeTruthy();
+    await press('Draw new');
+    expect(r.pathname()).toBe('/signature');
+  });
+
   it('shows coming soon for tools that are not ready', async () => {
-    await open('/tool/sign');
+    await open('/tool/metadata');
     expect(screen.getByText('Coming soon')).toBeTruthy();
     expect(screen.queryByText('Choose PDFs')).toBeNull();
   });

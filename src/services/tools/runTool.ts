@@ -43,6 +43,7 @@ import { runMerge } from './runners/merge';
 import { runOrganize } from './runners/organize';
 import { runPageNumbers } from './runners/pageNumbers';
 import { runPdfToImages } from './runners/pdfToImages';
+import { runSign } from './runners/sign';
 import { runSplit } from './runners/split';
 import { runWatermark } from './runners/watermark';
 import { knownSize, toToolFailure } from './toolFailure';
@@ -220,6 +221,8 @@ export type ToolRunDeps = {
   registerOutputs(infos: PdfFileInfo[]): Promise<FileRow[]>;
   /** Records a published output on the job row as soon as it exists (errors are ignored). */
   recordOutput(jobId: string, info: PdfFileInfo): void;
+  /** The PNG (file:// URI) of saved signature `id`; null when it was deleted. */
+  getSignaturePng(id: number): string | null;
   t: Translate;
   now(): number;
   /** Route caps (tests force the native route with tiny JS caps); default JS_CAPS / NATIVE_CAPS. */
@@ -308,6 +311,7 @@ export const RUNNERS: { [K in PdfToolRequest['toolId']]?: ToolRunner<PdfRequestO
   'pdf-to-images': runPdfToImages,
   watermark: runWatermark,
   'page-numbers': runPageNumbers,
+  sign: runSign,
 };
 
 type PdfRequestOf<K extends PdfToolRequest['toolId']> = Extract<PdfToolRequest, { toolId: K }>;
@@ -515,6 +519,7 @@ export async function runTool(
 
     const base: Omit<RunContext, 'route' | 'locks'> = {
       jobId,
+      workspace,
       request,
       rows,
       inputs: staged,
