@@ -130,7 +130,16 @@ describe('SignOptions', () => {
 
   it('stops at 50 signatures', async () => {
     const { press } = await setup([sig(7, 1000)]);
-    for (let i = 0; i < 50; i++) await press('Add to page');
+    // 49 presses in one render pass (one batched update each), so the test does not render the
+    // list 49 times; the 50th and 51st presses go through the normal path.
+    await act(async () => {
+      const add = screen.getByLabelText('Add to page');
+      for (let i = 0; i < 49; i++) await fireEvent.press(add);
+    });
+    expect(screen.getAllByText(/^Signature on page/)).toHaveLength(49);
+    expect(screen.getByLabelText('Add to page')).toBeEnabled();
+    await press('Add to page');
+    await press('Add to page');
     expect(screen.getByText('You can place up to 50 signatures')).toBeTruthy();
     expect(screen.getByLabelText('Add to page')).toBeDisabled();
     expect(screen.getAllByText(/^Signature on page/)).toHaveLength(50);

@@ -41,6 +41,8 @@ function makeDb() {
 }
 
 const ROOT = 'file:///storage/emulated/0';
+/** Statements one applyScan of 1,000 files may run (one per file would be over 1,000). */
+const STATEMENT_BUDGET = 100;
 
 function info(path: string, overrides: Partial<PdfFileInfo> = {}): PdfFileInfo {
   const uri = `${ROOT}/${path}`;
@@ -217,14 +219,19 @@ describe('applyScan', () => {
   });
 
   it('is fast for 1,000 files, including an identical rescan', () => {
-    const db = makeDb();
+    // Counted in SQL statements, not wall-clock time (which a loaded test run makes flaky): the
+    // work is batched, never one statement per file.
+    let statements = 0;
+    const sqlite = new Database(':memory:');
+    const db = drizzle(sqlite, { logger: { logQuery: () => void statements++ } });
+    migrate(db, { migrationsFolder: 'src/db/migrations' });
     const many = Array.from({ length: 1000 }, (_, i) => info(`D${i % 20}/f${i}.pdf`));
-    let t = Date.now();
+    statements = 0;
     expect(applyScan(db, scan(many)).added).toBe(1000);
-    expect(Date.now() - t).toBeLessThan(1000);
-    t = Date.now();
+    expect(statements).toBeLessThan(STATEMENT_BUDGET);
+    statements = 0;
     expect(applyScan(db, scan(many))).toEqual({ added: 0, updated: 0, removed: 0 });
-    expect(Date.now() - t).toBeLessThan(1000);
+    expect(statements).toBeLessThan(STATEMENT_BUDGET);
   });
 });
 
