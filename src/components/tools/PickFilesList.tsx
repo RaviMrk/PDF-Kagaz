@@ -58,7 +58,13 @@ export function PickFilesList({
     // Not listed yet (or still hidden for this render): the next render scrolls.
     if (index < 0) return;
     revealed.current = reveal;
-    list.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 }).catch(() => {});
+    if (index === visible.length - 1) {
+      // A row just added at the end (a picked file) is not laid out yet: scrolling to its index
+      // stops one row short, while scrollToEnd settles on the real end.
+      list.current?.scrollToEnd({ animated: true });
+    } else {
+      list.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 }).catch(() => {});
+    }
   }, [reveal, visible]);
 
   return (

@@ -9,6 +9,7 @@ import { formatBytes } from '@/utils/fileSize';
 import { makeRow } from '@/test-utils/fileRows';
 
 const mockScrollToIndex = jest.fn(async () => {});
+const mockScrollToEnd = jest.fn();
 // The real FlashList, with its ref's scrollToIndex recorded (Jest has no native scrolling).
 jest.mock('@shopify/flash-list', () => {
   const actual = jest.requireActual<typeof import('@shopify/flash-list')>('@shopify/flash-list');
@@ -17,7 +18,10 @@ jest.mock('@shopify/flash-list', () => {
   return {
     ...actual,
     FlashList: forwardRef((props: object, ref) => {
-      useImperativeHandle(ref, () => ({ scrollToIndex: mockScrollToIndex }));
+      useImperativeHandle(ref, () => ({
+        scrollToIndex: mockScrollToIndex,
+        scrollToEnd: mockScrollToEnd,
+      }));
       return createElement(actual.FlashList, props as never);
     }),
   };
@@ -162,6 +166,13 @@ describe('PickFilesList', () => {
       );
       await act(async () => {});
       expect(mockScrollToIndex).toHaveBeenCalledTimes(2);
+    });
+
+    it('scrolls to the end for the last row (a picked file just added there)', async () => {
+      const last = many[29]!;
+      await render(list(many, [last.id], 5, JS_MAX_FILE_BYTES, { id: last.id }));
+      expect(mockScrollToEnd).toHaveBeenCalledWith({ animated: true });
+      expect(mockScrollToIndex).not.toHaveBeenCalled();
     });
 
     it('clears a search that hides it, then scrolls to it', async () => {
