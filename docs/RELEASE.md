@@ -2,7 +2,8 @@
 
 This guide covers what the code already does for a Play Store release, what only you can do
 (accounts, keys, Play Console), how to build, and what still has to be checked on real phones.
-Measured numbers come from the M6 release smoke run (Task 11, 2026-10-24).
+Measured numbers come from the M6 release smoke run (Task 11, 2026-10-24) and the M7 release run
+(Task 14, 2026-10-25; see [Release verification (M7 Task 14)](#release-verification-m7-task-14)).
 
 ## Ads are off by default
 
@@ -28,7 +29,7 @@ rest is a user action below.
 
 | §10.2 item | Status |
 | --- | --- |
-| P0 acceptance criteria on a real Android 11+ and Android 9 device | Emulator smoke passed on the minified release build (Pixel_10a API 37 with 16 KB pages, Pixel_Fold_API_34 folded and unfolded); see [Release verification](#release-verification-task-11). Real devices: user action (see [Known limitations](#known-limitations)) |
+| P0 acceptance criteria on a real Android 11+ and Android 9 device | Emulator smoke passed on the minified release build (M6: Pixel_10a API 37 with 16 KB pages, Pixel_Fold_API_34 folded and unfolded, see [Release verification](#release-verification-task-11); M7: every new tool on Pixel_10a API 37 and Rangoli_LowEnd_API34, a 2.5 GB phone AVD, see [M7 Task 14](#release-verification-m7-task-14)). Real devices: user action (see [Known limitations](#known-limitations)) |
 | Denying All Files Access still gives a working app (SAF mode) | Code ready (SafProvider, `play-saf` variant). Smoke passed: onboarding "Pick folders instead" → Documents → its PDFs listed, merged and opened on Pixel_Fold_API_34 |
 | Low-RAM phone (≤ 3 GB) with the 50 MB fixture | User action (physical device) |
 | Test ad IDs replaced with production IDs; UMP consent in EU test mode | Code ready: the `production` profile sets `APP_ENV=production`, and `app.config.ts` refuses to build without three well-formed, non-test AdMob IDs. EEA test mode: `ADS_DEBUG_GEOGRAPHY=EEA` on a non-production build; the consent form showed on both emulators. Real IDs: user action |
@@ -36,7 +37,7 @@ rest is a user action below.
 | Data safety form, All Files Access declaration + video, content rating, target audience | User action; the answers and texts are below |
 | Store listing | User action |
 | Signed AAB from the EAS production profile; internal track first | Code ready (`eas.json`: `production` builds an auto-incremented `app-bundle`; `submit.production.android.track` is `internal`). Upload key + Play App Signing: user action |
-| targetSdk 36 and every `.so` passes the 16 KB page-size check | targetSdk/compileSdk 36 set. 16 KB check passed: all 29 arm64 `.so` (and the 4 `libcrashlytics*.so` + `libdatastore_shared_counter.so` of a Firebase build) are zip-aligned to 16 KB and every `LOAD` segment is `align 2**14` |
+| targetSdk 36 and every `.so` passes the 16 KB page-size check | targetSdk/compileSdk 36 set. 16 KB check passed (M6 and again in M7 Task 14, same 29 libraries): all 29 arm64 `.so` (and the 4 `libcrashlytics*.so` + `libdatastore_shared_counter.so` of a Firebase build) are zip-aligned to 16 KB and every `LOAD` segment is `align 2**14` |
 
 Release hardening in the build itself:
 
@@ -69,6 +70,21 @@ Release hardening in the build itself:
   - `-keep class com.google.firebase.crashlytics.FirebaseCrashlytics { public static ** getInstance(); public void setCrashlyticsCollectionEnabled(java.lang.Boolean); }`
     — pdf-native reaches these two members by reflection (Firebase is optional) to apply a crash
     report opt-out immediately. Without Firebase the rule matches nothing.
+  - `-dontwarn org.bouncycastle.**` and `-dontwarn com.gemalto.jp2.**` (M7 Task 1) — PdfBox-Android
+    references BouncyCastle classes that are left out on purpose (`bcpkix`/`bcutil` excluded; only
+    bcprov's AES is used) and the optional JPEG 2000 decoder (`com.gemalto.jp2`), which is not
+    shipped. Without them R8 stops on missing-class warnings; nothing calls those paths.
+  - `-keep,allowobfuscation class * extends com.tom_roush.pdfbox.pdmodel.encryption.SecurityHandler { public <init>(...); }`
+    and `-keep,allowobfuscation class com.tom_roush.pdfbox.pdmodel.documentinterchange.** { *; }`
+    (M7 Task 1) — copied from PdfBox-Android's own AAR `proguard.txt`: security handlers are created
+    by reflection from the PDF's `/Filter`, and the document-interchange classes are looked up by
+    name. They stay in case the consumer rules are dropped. Names may still be obfuscated.
+  - **M7 Task 14 added no keep rule.** The minified release build ran every M7 tool (compress,
+    protect, remove password, PDF to images, watermark text/image on the pdf-lib and PdfBox routes,
+    page numbers, sign, native merge/split/organise over the JS caps, the foreground service and its
+    notifications, the Play review call) on Pixel_10a and Rangoli_LowEnd_API34 with no
+    `ClassNotFoundException`, `NoSuchMethodError`, `NoSuchFieldError`, `Resources$NotFoundException`
+    or fatal exception from the app.
   - All other libraries (Expo modules, React Native, Reanimated/Worklets, Nitro + MMKV, Google
     Mobile Ads, UMP, ML Kit, Firebase) ship consumer rules or `@Keep`/`@DoNotStrip` annotations,
     and the minified build passed a crash check on Pixel_Fold_API_34 and Pixel_10a (reader, merge,
@@ -131,6 +147,9 @@ Everything here needs your accounts or keys, so the code cannot do it.
 7. **Store listing**: app name, short description (≤ 80 characters), full description, at least
    2 (recommended 8) phone screenshots, a 1024×500 feature graphic and a 512×512 icon.
 8. **Advertising ID declaration**: the app uses the advertising ID for advertising (AdMob).
+9. **Foreground service declaration** (App content → Foreground service permissions): type
+   `dataSync`, use "local file processing for user-started PDF tools". Text and video shot list in
+   [Foreground service declaration](#foreground-service-declaration).
 
 ### Legal check of the licence notices
 
@@ -221,7 +240,12 @@ disabled.
     `com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE`.
   - Storage: `MANAGE_EXTERNAL_STORAGE` (not in `production-saf`), `READ_EXTERNAL_STORAGE`
     (max SDK 32), `WRITE_EXTERNAL_STORAGE` (max SDK 29).
-  - Background work: `WAKE_LOCK`, `FOREGROUND_SERVICE`.
+  - Background work: `WAKE_LOCK`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` (M7) and
+    `POST_NOTIFICATIONS` (M7, asked once at the first job on Android 13+; denial is fine). The M7
+    service is `com.pdfkagaz.pdfnative.ToolJobService` (`exported=false`,
+    `foregroundServiceType=dataSync`, `stopWithTask=false`).
+  - **Data safety is unchanged by M7**: the new tools, the notifications and the review prompt send
+    no new data off the device (the Play in-app review flow is Google Play's own UI).
   - The app's own `com.pdfkagaz.pdftoolkit.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` (AndroidX).
   - Not present: `CAMERA`, `READ_MEDIA_*`, `SYSTEM_ALERT_WINDOW`, `ACCESS_WIFI_STATE`,
     `DOWNLOAD_WITHOUT_NOTIFICATION`, `VIBRATE`.
@@ -264,6 +288,25 @@ disabled.
 4. Open one PDF from the list in the reader.
 5. Run one tool (merge two of the found PDFs) and show the result saved to `Documents/PDFToolkit`.
 6. Settings → storage access shows the folder-picker alternative for users who decline.
+
+## Foreground service declaration
+
+**Use description:**
+
+> PDF Toolkit runs a foreground service of type dataSync only while a PDF tool the user started is
+> working (for example compressing, merging or exporting pages of a large PDF). It processes local
+> files on the device, shows a progress notification with a Cancel button, and stops as soon as the
+> job finishes or is cancelled. Nothing is uploaded or synced to a server.
+
+**Demo video shot list (30–60 s, screen recording):**
+
+1. Open Tools → PDF to images, pick a large PDF (for example 500 pages), PNG, 300 DPI, Save.
+2. Press Home while the progress sheet shows: the "Saving pages as images" notification appears
+   with a progress bar.
+3. Pull down the shade and expand it: the **Cancel** button.
+4. Tap Cancel: the notification goes; reopen the app and show "Cancelled. Nothing more was saved."
+5. Start Compress (High) on a big file, press Home: "Compress finished / Tap to see the result"
+   appears; tap it and show the result screen.
 
 ## Size
 
@@ -342,6 +385,61 @@ Native libraries (29 per ABI, identical to the M5 set; the ads SDK adds none): `
 `libcrashlytics-common`, `libcrashlytics-handler`, `libcrashlytics-trampoline` and
 `libdatastore_shared_counter` (all pass the 16 KB checks).
 
+**M7 Task 14 final numbers** (ads off, Firebase not linked, test ad IDs, bundletool 1.17.2):
+
+| Measurement | M6 | M7 Task 1 (PdfBox + pqc exclude) | **M7 Task 14** |
+| --- | --- | --- | --- |
+| AAB download size, arm64 phone (`get-size total`, API 34, 420 dpi, `en`) | 26 488 623 B | 28 146 914 B | **28 460 311 B (27.1 MiB)** |
+| AAB download size, arm64-v8a (`get-size total --dimensions=ABI`) | 26 363 402 – 26 498 171 B | 28 021 309 – 28 155 377 B | **28 334 151 – 28 468 743 B** |
+| armeabi-v7a / x86 / x86_64 | 24.8–24.9 / 27.1–27.2 / 27.0–27.2 MB | — | 26.76–26.90 / 29.04–29.18 / 29.02–29.15 MB |
+| Dex in `base-master.apk` (3 files, compressed / raw) | 9 045 444 B | 9 045 444 / 22 032 892 B | 9 292 416 / 22 601 672 B (+246 972 / +568 780 B) |
+| `app-release.aab` | 94 438 809 B | — | 96 709 546 B |
+| Universal `app-release.apk` (4 ABIs) | 137 357 075 B | — | 139 475 080 B (133.0 MiB) |
+| arm64-only release APK | 51 823 212 B | — | 53 941 217 B (51.4 MiB) |
+
+The arm64 download is **28.5 MB, 11.5 MB under the §4 40 MB gate**: +1 971 688 B over M6 and
++313 397 B over Task 1. The M7 tools brought in the PdfBox code they call, about 0.25 MB of
+compressed dex. Largest universal-APK entries (`unzip -lv`, stored size): `lib/x86/libreactnative.so`
+7.36 MB, `lib/x86_64/libreactnative.so` 7.10 MB, `lib/arm64-v8a/libreactnative.so` 6.99 MB,
+`assets/index.android.bundle` 6.90 MB, `lib/x86_64/libpdfium.so` 4.97 MB,
+`lib/armeabi-v7a/libreactnative.so` 4.86 MB, `lib/arm64-v8a/libpdfium.so` 4.77 MB,
+`lib/x86/libpdfium.so` 4.53 MB, `classes2.dex` 3.41 MB (8.06 MB raw), `lib/armeabi-v7a/libpdfium.so`
+3.19 MB. The `.so` list is the same 29 libraries as M6: PdfBox, the signature view and
+expo-store-review add none.
+
+## Release verification (M7 Task 14)
+
+Builds, one Gradle run each on the 8 GB host with `-Dorg.gradle.jvmargs=-Xmx3072m`: `npx expo
+prebuild --platform android --clean`; `:pdf-native:testDebugUnitTest` (338 tests, 0 failures);
+`bundleRelease` on its own (28 min 55 s); `assembleRelease` (universal); `assembleRelease
+-PreactNativeArchitectures=arm64-v8a`; and, after `APP_VARIANT=play-saf npx expo prebuild`, the
+`play-saf` arm64 `assembleRelease`. All BUILD SUCCESSFUL, and each one ran
+`pdfToolkitReleaseVerifyStorageCaps`. Ads off (`ADS_ENABLED` unset).
+
+| Check | Result |
+| --- | --- |
+| 16 KB (`base-arm64_v8a.apk` from the AAB) | Pass. 29/29 `.so` `zipalign -c -P 16 -v 4` OK, all 88 `LOAD` segments `align 2**14`. `play-saf` APK: zipalign OK, 29 `.so` |
+| Manifest, default (`aapt2 dump xmltree`; the AAB's `bundletool dump manifest` matches; universal = arm64) | M6 list plus exactly `FOREGROUND_SERVICE_DATA_SYNC`, `POST_NOTIFICATIONS` and `ToolJobService` (`exported=false`, `foregroundServiceType=0x1` dataSync, `stopWithTask=false`). `FOREGROUND_SERVICE` was already there. READ max 32 and WRITE max 29 unchanged. None of `CAMERA`, `READ_MEDIA_*`, `SYSTEM_ALERT_WINDOW`, `ACCESS_WIFI_STATE`, `DOWNLOAD_WITHOUT_NOTIFICATION`, `VIBRATE`. Backup attributes unchanged. The ads SDK still contributes, as before (recorded, not judged): `INTERNET`, `ACCESS_NETWORK_STATE`, `com.google.android.gms.permission.AD_ID`, `ACCESS_ADSERVICES_AD_ID/ATTRIBUTION/TOPICS`, `BIND_GET_INSTALL_REFERRER_SERVICE`, `AdActivity`, `AdService`, `MobileAdsInitProvider` and Google's test AdMob app ID |
+| Manifest, `play-saf` | The same without `MANAGE_EXTERNAL_STORAGE`; READ 32, WRITE 29; the same service; `appVariant` = `play-saf`, `allFilesAccessEnabled` = false |
+| R8 smoke, minified arm64 APK, Pixel_10a (API 37) and Rangoli_LowEnd_API34 | Pass on both. Compress Low/Medium/High on `image-heavy.pdf`: 1.7 MB → 154.7 / 59.9 / 26.8 KB (byte-identical to the debug build). Compress High on a gray-image PDF: 348.1 KB → 32.8 KB, tones kept (not blank). Protect (AES-256, `/V 5 /R 6 /AESV3`) then Remove password. PDF to images of `mixed-sizes.pdf`: JPG 150 (1240×1752, 1650×1275, 1752×1240) and PNG 300. Watermark: text "Draft मसुदा" (Devanagari shaped correctly), an image from the photo picker, and text on `scanned-50mb.pdf` (native route, 48 stamps). Page numbers "1" and "Page 1 of N" (pages 1 and 200 checked). Sign: draw, save, place on pages 1 and 2, delete a saved signature. Merge `scanned-50mb.pdf` + `one-page.pdf` (49 pages), split it (24 + 24), organise it (rotate, delete → 47 pages). `protected.pdf` in Split and in Compress through the password dialog (a wrong password → "Wrong password. Try again."); the result says the new file has no password. Logcat: no app `ClassNotFound`/`NoSuchMethod`/`NoSuchField`/`Resources$NotFound`/FATAL (the only FATAL lines came from `uiautomator` itself, and the `Resources$NotFound` warnings came from the system photo picker) |
+| Signature pad, second finger | A second touch pointer, sent through the emulator console (`adb emu event send`, multi-touch slots), touched the pad mid-stroke, moved and lifted while the first finger kept drawing: one continuous stroke, no stray line, on both AVDs |
+| Reader, `mixed-sizes.pdf` scrolled to the end | The whole last page (A4 landscape) is visible above the bottom bar on both AVDs. The counter reads 2 / 3 there (known limitation below) |
+| SAF / `content://` sources | PDF to images on a file picked with Browse files… (system picker, `content://`): 4 images saved. Compress of a browsed file, then **Save as…** to Downloads: byte-identical copy (md5 checked) |
+| Background (both AVDs) | First job → the notification permission prompt, once. Compress High on `scanned-50mb.pdf` + Home → "Compress finished / Tap to see the result"; tapping it opens the result (49.5 MB → 6.4 MB). PDF to images PNG 300 on `five-hundred-pages.pdf` + Home → after about 10 s, the "Saving pages as images" progress notification (`isForeground=true types=0x1`) with **Cancel**; Cancel stops the service and the app shows "Cancelled. Nothing more was saved." with the pages already saved (105 / 125). Swipe-away from Recents mid-job: the process, the service and the notification are gone; reopening shows "PDF to images couldn't finish", and View says "The app was closed before this finished." Permission denied (Rangoli: "Don't allow" on a fresh install; Pixel_10a: `pm revoke`): jobs finish, no notification, same pid |
+| A-05 review prompt | On both AVDs (Play Store installed), the third successful Done logged `PlayCore: ReviewService : requestInAppReview (com.pdfkagaz.pdftoolkit)`. The emulator shows no review UI. The fourth Done logged no request |
+
+**Memory smoke (Review Focus 3)** on Rangoli_LowEnd_API34 (2.5 GB RAM, API 34), minified
+release build. Peak PSS comes from `dumpsys meminfo com.pdfkagaz.pdftoolkit` sampled continuously
+during the job. Durations run from the tap to the result screen, polled every 2–3 s.
+
+| Job on `large/five-hundred-pages.pdf` (104.6 MB, 500 pages) | Duration | Peak PSS | Result |
+| --- | --- | --- | --- |
+| Compress, High | ≈ 5 s | 198 880 KB (194 MiB) | 104.6 MB → 14.2 MB, no crash |
+| PDF to images, JPG, 300 DPI, pages 1–20 | ≈ 6 s | 229 794 KB (224 MiB) | 20 images saved, no crash |
+| Merge with `scanned-50mb.pdf` (49.5 MB) | ≈ 8 s | 261 616 KB (255 MiB) | 154.1 MB output, no crash |
+
+Emulator CPUs are faster than a budget phone; time on a real ≤ 3 GB phone is a user check.
+
 ## Release verification (Task 11)
 
 Local release builds: `npx expo prebuild --platform android --clean`, then
@@ -376,6 +474,12 @@ hint from a debug build and pass it as `ADS_TEST_DEVICE_IDS`.
 
 These need a physical phone and are not covered by the emulator runs:
 
+- **Background jobs under OEM battery savers** (M7): the progress notification, Cancel and the
+  finished notification on a Samsung and a Xiaomi phone with their battery optimisation on.
+- **300 DPI PDF to images on a ≤ 3 GB phone** (M7): time and no out-of-memory on `five-hundred-pages.pdf`.
+- **Signature drawing on a real touchscreen** (M7): smooth strokes, palm or second-finger touches
+  draw no stray line (the emulator check used injected multi-touch events).
+
 - **Ads after a consent refusal with real IDs** (user action 7): the app still requests ads after
   "Do not consent"; whether Google fills them was only seen with test IDs, which always fill.
 
@@ -393,6 +497,20 @@ These need a physical phone and are not covered by the emulator runs:
   2400×1800 images).
 - **Merge and split under 10 s** on a mid-range phone (emulator: 9–14 s on Pixel_10a API 37 with
   software rendering, 3.5–5.7 s on the Fold API 34).
+
+Behaviour accepted as it is (M7):
+
+- **Reader page counter can show N−1/N at the very end** when the last page is shorter than half
+  the screen (react-native-pdf counts the page under the view's centre); jumping by thumbnail shows
+  N/N.
+- **Save as to a cloud provider is synced best effort.** Local outputs are flushed and fsynced
+  before they become visible. A document provider's descriptor may not support sync, and a
+  stream-only provider gets a plain stream, so a crash right after Save as to such a provider could
+  leave a short copy there. The original and the app's own output are never affected.
+- **Swiping the app away from Recents during a background job ends the job.** The process is ended
+  only when a job is running and no app task is left. The original is untouched, partial outputs
+  are cleaned up, and the job shows as interrupted ("couldn't finish / The app was closed before
+  this finished.") at the next start. Pages already saved by PDF to images stay saved.
 
 ## Developer notes
 
