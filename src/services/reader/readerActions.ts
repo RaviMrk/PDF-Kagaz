@@ -34,6 +34,21 @@ export async function runReaderAction(
   }
 }
 
+/** One share sheet for several PDFs (ACTION_SEND_MULTIPLE); no PDFs is `notFound`. */
+export async function shareFiles(
+  uris: readonly string[],
+  title: string,
+  native: Pick<PdfNativeApi, 'sharePdfs'> = pdfNative,
+): Promise<ReaderActionResult> {
+  if (uris.length === 0) return 'notFound';
+  try {
+    await native.sharePdfs([...uris], title);
+    return 'ok';
+  } catch (e) {
+    return resultOf(e);
+  }
+}
+
 type ToggleFn = (input: { fileId: string; page: number }) => { bookmarked: boolean };
 
 const defaultToggle: ToggleFn = ({ fileId, page }) =>

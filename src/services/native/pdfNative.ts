@@ -83,6 +83,8 @@ export interface PdfNativeApi {
   getPersistedFolderUris(): Promise<string[]>;
   /** Share sheet for a PDF (file:// through the app's FileProvider, content:// as is); this app is excluded. */
   sharePdf(uri: string, chooserTitle: string): Promise<void>;
+  /** One share sheet for several PDFs (one: ACTION_SEND, more: ACTION_SEND_MULTIPLE); this app is excluded. */
+  sharePdfs(uris: string[], chooserTitle: string): Promise<void>;
   /** "Open with" chooser (ACTION_VIEW) for a PDF; this app is excluded. */
   openPdfWith(uri: string, chooserTitle: string): Promise<void>;
   /** Hands the PDF to the Android print service. */
@@ -377,6 +379,7 @@ export const pdfNative: PdfNativeApi = {
   releaseFolder: (uri) => PdfNative.releaseFolder(uri),
   getPersistedFolderUris: () => PdfNative.getPersistedFolderUris(),
   sharePdf: (uri, chooserTitle) => PdfNative.sharePdf(uri, chooserTitle),
+  sharePdfs: (uris, chooserTitle) => PdfNative.sharePdfs(uris, chooserTitle),
   openPdfWith: (uri, chooserTitle) => PdfNative.openPdfWith(uri, chooserTitle),
   printPdf: (uri, jobName) => PdfNative.printPdf(uri, jobName),
   takeIncomingPdf: () => PdfNative.takeIncomingPdf(),

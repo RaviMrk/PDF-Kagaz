@@ -69,7 +69,14 @@ class PdfIntents(private val context: Context) {
     )
 
   /** One image: ACTION_SEND; several: ACTION_SEND_MULTIPLE; any image type ([IMAGE_MIME]), a read grant on each. */
-  fun sendImagesChooser(shareUris: List<Uri>, chooserTitle: String): Intent {
+  fun sendImagesChooser(shareUris: List<Uri>, chooserTitle: String): Intent =
+    chooser(sendMany(shareUris, IMAGE_MIME), chooserTitle)
+
+  /** One PDF: ACTION_SEND; several: ACTION_SEND_MULTIPLE, a read grant on each. */
+  fun sendPdfsChooser(shareUris: List<Uri>, chooserTitle: String): Intent =
+    chooser(sendMany(shareUris, IncomingPdf.PDF_MIME), chooserTitle)
+
+  private fun sendMany(shareUris: List<Uri>, mime: String): Intent {
     if (shareUris.isEmpty()) throw FileNotFoundCodedException()
     val clip = ClipData.newRawUri("", shareUris[0]).apply {
       for (uri in shareUris.drop(1)) addItem(ClipData.Item(uri))
@@ -79,10 +86,10 @@ class PdfIntents(private val context: Context) {
     } else {
       Intent(Intent.ACTION_SEND_MULTIPLE).apply { putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(shareUris)) }
     }
-    target.type = IMAGE_MIME
+    target.type = mime
     target.clipData = clip
     target.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    return chooser(target, chooserTitle)
+    return target
   }
 
   /** ACTION_VIEW of one image (its own type when the provider reports one, else [IMAGE_MIME]). */

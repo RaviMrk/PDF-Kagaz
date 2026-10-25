@@ -1,7 +1,7 @@
 import { FlashList } from '@shopify/flash-list';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { AdBanner } from '@/components/AdBanner';
@@ -16,6 +16,7 @@ import { SelectionBar } from '@/components/SelectionBar';
 import { SearchBar } from '@/components/SearchBar';
 import { SortMenu } from '@/components/SortMenu';
 import type { FileRow as FileRowData } from '@/db/schema';
+import { deleteFiles, favoriteTarget } from '@/services/files/bulkActions';
 import {
   groupByFolder,
   queryFiles,
@@ -23,9 +24,11 @@ import {
   type FolderGroup,
 } from '@/services/files/fileQuery';
 import { pruneSelection, selectionActions, toggleId } from '@/services/files/selection';
+import { shareFiles } from '@/services/reader/readerActions';
 import { useFiles } from '@/stores/filesStore';
 import { useSettings } from '@/stores/settingsStore';
 import { useTheme } from '@/theme/useTheme';
+import { displayName } from '@/utils/displayName';
 import { fileActionErrorKey } from '@/utils/fileActionError';
 
 const SEGMENTS: { key: FileSegment; label: string }[] = [
@@ -34,6 +37,8 @@ const SEGMENTS: { key: FileSegment; label: string }[] = [
   { key: 'favorites', label: 'files.segmentFavorites' },
   { key: 'folders', label: 'files.segmentFolders' },
 ];
+
+const RESULT_MS = 4000;
 
 const keyOfFile = (f: FileRowData) => f.id;
 const keyOfFolder = (g: FolderGroup) => g.parentUri;
@@ -56,6 +61,10 @@ function FilesList() {
   const [folder, setFolder] = useState<FolderGroup | null>(null);
   const [actionFile, setActionFile] = useState<FileRowData | null>(null);
   const [pickedIds, setSelectedIds] = useState<string[]>([]);
+  // The outcome of a bulk delete or share, already translated; shown like the store notice.
+  const [result, setResult] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const deletingRef = useRef(false);
   // Rows can vanish (delete, rescan); the selection only keeps ids still present in `files`.
   const selectedIds = useMemo(() => pruneSelection(pickedIds, files), [pickedIds, files]);
   const selecting = selectedIds.length > 0;
@@ -66,6 +75,12 @@ function FilesList() {
     const timer = setTimeout(() => useFiles.getState().clearNotice(), 4000);
     return () => clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    if (!result) return;
+    const timer = setTimeout(() => setResult(null), RESULT_MS);
+    return () => clearTimeout(timer);
+  }, [result]);
 
   // Android back inside a folder returns to the folder list instead of leaving the tab.
   // Focus-scoped: a screen pushed on top (the reader) must get back first.
@@ -151,6 +166,59 @@ function FilesList() {
     setSelectedIds([]);
     router.push({ pathname: '/tool/organize/[id]', params: { id } });
   }, [selectedIds]);
+  const runDelete = useCallback(
+    async (ids: string[]) => {
+      if (deletingRef.current) return;
+      deletingRef.current = true;
+      setDeleting(true);
+      // One at a time through the single-file delete; rows that fail stay in the list.
+      const { deleted, failed } = await deleteFiles(ids, (id) => useFiles.getState().remove(id));
+      deletingRef.current = false;
+      setDeleting(false);
+      setSelectedIds([]);
+      const firstFailure = failed[0];
+      if (!firstFailure) setResult(t('files.deletedMany', { count: deleted.length }));
+      else if (ids.length === 1) setResult(t(fileActionErrorKey(firstFailure.error)));
+      else {
+        setResult(
+          t('files.deletePartial', {
+            deleted: deleted.length,
+            count: ids.length,
+            failed: failed.length,
+          }),
+        );
+      }
+    },
+    [t],
+  );
+  const confirmDeleteSelected = useCallback(() => {
+    const first = selectedRows[0];
+    if (deletingRef.current || !first) return;
+    const count = selectedRows.length;
+    const ids = selectedRows.map((r) => r.id);
+    Alert.alert(
+      t('files.deleteManyTitle', { count }),
+      t('files.deleteManyBody', { count, name: displayName(first.name) }),
+      [
+        { text: t('files.cancel'), style: 'cancel' },
+        { text: t('files.delete'), style: 'destructive', onPress: () => void runDelete(ids) },
+      ],
+    );
+  }, [selectedRows, runDelete, t]);
+  const favoriteSelected = useCallback(() => {
+    const add = favoriteTarget(selectedRows);
+    for (const r of selectedRows) {
+      if (r.isFavorite !== add) useFiles.getState().toggleFavorite(r.id);
+    }
+    setSelectedIds([]);
+  }, [selectedRows]);
+  const shareSelected = useCallback(async () => {
+    const outcome = await shareFiles(
+      selectedRows.map((r) => r.uri),
+      t('files.shareManyTitle'),
+    );
+    if (outcome !== 'ok') setResult(t(fileActionErrorKey(outcome)));
+  }, [selectedRows, t]);
   const openMore = useCallback((f: FileRowData) => setActionFile(f), []);
   const closeMore = useCallback(() => setActionFile(null), []);
   const openFolder = useCallback((g: FolderGroup) => setFolder(g), []);
@@ -176,6 +244,11 @@ function FilesList() {
           <SelectionBar
             count={selectedIds.length}
             actions={actions}
+            favoriteAdds={favoriteTarget(selectedRows)}
+            deleting={deleting}
+            onDelete={confirmDeleteSelected}
+            onShare={() => void shareSelected()}
+            onFavorite={favoriteSelected}
             onMerge={() => launchTool('merge')}
             onSplit={() => launchTool('split')}
             onOrganize={launchOrganize}
@@ -278,10 +351,10 @@ function FilesList() {
         />
       )}
 
-      {notice ? (
+      {result || notice ? (
         <View style={[styles.snackbar, { backgroundColor: colors.text }]}>
           <Text accessibilityLiveRegion="polite" style={{ color: colors.background }}>
-            {t(fileActionErrorKey(notice))}
+            {result ?? (notice ? t(fileActionErrorKey(notice)) : '')}
           </Text>
         </View>
       ) : null}

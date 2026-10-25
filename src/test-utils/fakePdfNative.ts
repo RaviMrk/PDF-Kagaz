@@ -62,6 +62,7 @@ function createNativeFns(): jest.Mocked<NativeFns> {
     releaseFolder: jest.fn().mockResolvedValue(undefined),
     getPersistedFolderUris: jest.fn().mockResolvedValue([]),
     sharePdf: jest.fn().mockResolvedValue(undefined),
+    sharePdfs: jest.fn().mockResolvedValue(undefined),
     openPdfWith: jest.fn().mockResolvedValue(undefined),
     printPdf: jest.fn().mockResolvedValue(undefined),
     takeIncomingPdf: jest.fn().mockResolvedValue(null),

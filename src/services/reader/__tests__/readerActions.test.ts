@@ -1,5 +1,5 @@
 import { nativeError } from '../../../test-utils/fakePdfNative';
-import { runReaderAction, toggleReaderBookmark } from '../readerActions';
+import { runReaderAction, shareFiles, toggleReaderBookmark } from '../readerActions';
 
 const mk = () => ({
   sharePdf: jest.fn().mockResolvedValue(undefined),
@@ -28,6 +28,22 @@ describe('runReaderAction', () => {
     const n = mk();
     n.sharePdf.mockRejectedValue(nativeError(code));
     await expect(runReaderAction('share', { uri: 'u', title: 't' }, n)).resolves.toBe(result);
+  });
+});
+
+describe('shareFiles', () => {
+  it('shares every uri in one share sheet', async () => {
+    const n = { sharePdfs: jest.fn().mockResolvedValue(undefined) };
+    await expect(shareFiles(['a', 'b', 'c'], 'Share PDFs', n)).resolves.toBe('ok');
+    expect(n.sharePdfs).toHaveBeenCalledTimes(1);
+    expect(n.sharePdfs).toHaveBeenCalledWith(['a', 'b', 'c'], 'Share PDFs');
+  });
+
+  it('maps failures and refuses an empty list', async () => {
+    const n = { sharePdfs: jest.fn().mockRejectedValue(nativeError('ERR_PERMISSION_DENIED')) };
+    await expect(shareFiles(['a'], 't', n)).resolves.toBe('permission');
+    await expect(shareFiles([], 't', n)).resolves.toBe('notFound');
+    expect(n.sharePdfs).toHaveBeenCalledTimes(1);
   });
 });
 

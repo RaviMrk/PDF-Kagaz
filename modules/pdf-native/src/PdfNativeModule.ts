@@ -45,6 +45,7 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
   releaseFolder(uri: string): Promise<void>;
   getPersistedFolderUris(): Promise<string[]>;
   sharePdf(uri: string, chooserTitle: string): Promise<void>;
+  sharePdfs(uris: string[], chooserTitle: string): Promise<void>;
   openPdfWith(uri: string, chooserTitle: string): Promise<void>;
   printPdf(uri: string, jobName: string): Promise<void>;
   takeIncomingPdf(): Promise<string | null>;

@@ -141,6 +141,12 @@ class PdfNativeModule : Module() {
       withContext(Dispatchers.Main) { intents.start(appContext.currentActivity, intents.sendChooser(shareUri, chooserTitle)) }
     }
 
+    AsyncFunction("sharePdfs") Coroutine { uris: List<String>, chooserTitle: String ->
+      if (uris.isEmpty()) throw FileNotFoundCodedException()
+      val shareUris = uris.map { intents.shareUriOf(it) }
+      withContext(Dispatchers.Main) { intents.start(appContext.currentActivity, intents.sendPdfsChooser(shareUris, chooserTitle)) }
+    }
+
     AsyncFunction("openPdfWith") Coroutine { uri: String, chooserTitle: String ->
       val shareUri = intents.shareUriOf(uri)
       withContext(Dispatchers.Main) { intents.start(appContext.currentActivity, intents.viewChooser(shareUri, chooserTitle)) }
