@@ -29,7 +29,6 @@ import {
   type ToolRunDeps,
 } from '@/services/tools/runTool';
 import { IMAGE_QUALITIES } from '@/services/tools/limits';
-import { clearEncryptedFailures, noteEncryptedFailure } from '@/services/tools/passwords';
 import { expoToolFs, signaturesDirUri } from '@/services/tools/toolFs';
 import { telemetry } from '@/services/telemetry/telemetry';
 import { pagesOf, toolFinishedEvent } from '@/services/telemetry/toolEvent';
@@ -97,6 +96,11 @@ export type ToolJobsState = {
    * (`passwords`, Protect's `newPassword`) leave memory; a later retry reports `needsInput`.
    */
   dismiss(jobId: string): void;
+  /**
+   * The result of `jobId` closed without Done / Close (system back): the request's passwords leave
+   * memory (a later retry reports `needsInput`); the job, and an image job's session, are kept.
+   */
+  forgetPasswords(jobId: string): void;
   /** Name of the input a failure points at (this process's last job only); null when unknown. */
   inputNameOf(jobId: string, inputIndex: number | null): string | null;
 };
@@ -463,12 +467,6 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
         const id = request.inputIds[outcome.inputIndex];
         if (id !== undefined) useFiles.getState().dropMissing(id);
       }
-      // An input that was locked although the pre-check said otherwise is asked for next time.
-      if (outcome.ok) clearEncryptedFailures(request.inputIds);
-      else if (outcome.failure === 'encrypted' && outcome.inputIndex !== null) {
-        const id = request.inputIds[outcome.inputIndex];
-        if (id !== undefined) noteEncryptedFailure(id);
-      }
       // The session is kept after a failure or cancel, so "Try again" can use it in this process.
       const session = sessionIdOf(request);
       if (outcome.ok && session !== null) cleanSession(session);
@@ -636,10 +634,14 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
           set({ last: rest });
           return;
         }
-        if (holdsPassword(last.request)) {
-          const { request: _secret, ...rest } = last;
-          set({ last: { ...rest, passwordsDropped: true } });
-        }
+        get().forgetPasswords(jobId);
+      },
+
+      forgetPasswords(jobId) {
+        const { last } = get();
+        if (last?.jobId !== jobId || !last.request || !holdsPassword(last.request)) return;
+        const { request: _secret, ...rest } = last;
+        set({ last: { ...rest, passwordsDropped: true } });
       },
 
       inputNameOf(jobId, inputIndex) {

@@ -80,6 +80,17 @@ describe('openToolPreview', () => {
       });
     });
 
+    it('fails invalid, without a lock to ask for, when pdfium finds it encrypted', async () => {
+      const native = createFakePdfNative();
+      native.inspectPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+      native.getToolPageCount.mockRejectedValue(nativeError('ERR_PDF_ENCRYPTED'));
+      expect(await openToolPreview(row, { toolId: 'split' }, { native })).toEqual({
+        ok: false,
+        failure: 'invalid',
+      });
+      expect(native.unlockToolInput).not.toHaveBeenCalled();
+    });
+
     it('fails invalid when pdfium cannot count it either', async () => {
       const native = createFakePdfNative();
       native.inspectPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));

@@ -2,7 +2,7 @@
 import { createFakePdfNative, nativeError } from '@/test-utils/fakePdfNative';
 import { makeRow } from '@/test-utils/fileRows';
 
-import { clearEncryptedFailures, findLockedInputs, noteEncryptedFailure } from '../passwords';
+import { findLockedInputs } from '../passwords';
 
 const rows = [makeRow({ name: 'a.pdf' }), makeRow({ name: 'b.pdf' }), makeRow({ name: 'c.pdf' })];
 const locks: Record<string, 'none' | 'password' | 'restricted'> = {
@@ -76,21 +76,6 @@ describe('findLockedInputs', () => {
       const small = rows.map((r) => ({ ...r, sizeBytes: 1000 }));
       const result = await findLockedInputs(small, inspectFails('ERR_FILE_NOT_FOUND'), 'merge');
       expect(result.blocked).toEqual([{ index: 1, failure: 'notFound' }]);
-    });
-  });
-
-  describe('after an encrypted failure', () => {
-    afterEach(() => clearEncryptedFailures(rows.map((r) => r.id)));
-
-    it('asks for that input even when it inspects as open or none', async () => {
-      const native = createFakePdfNative();
-      native.inspectPdf.mockResolvedValue('none');
-      noteEncryptedFailure(rows[0]!.id);
-      expect((await findLockedInputs(rows, native)).locked).toEqual([
-        { index: 0, lock: 'password' },
-      ]);
-      clearEncryptedFailures([rows[0]!.id]);
-      expect((await findLockedInputs(rows, native)).locked).toEqual([]);
     });
   });
 });

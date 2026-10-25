@@ -1752,6 +1752,21 @@ describe('runTool locked inputs', () => {
       expect(outcome.outputs).toHaveLength(1);
     });
 
+    it('a passed-through file pdf-lib finds encrypted fails invalid (no password can open it)', async () => {
+      const rows = [row('one-page.pdf'), row('protected.pdf')];
+      const s = setup(rows);
+      s.native.inspectPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+      const merged = await s.run({ toolId: 'merge', inputIds: rows.map((r) => r.id) });
+      expect(merged).toMatchObject({ ok: false, failure: 'invalid', inputIndex: 1 });
+      const split = await s.run({
+        toolId: 'split',
+        inputIds: [rows[1]!.id],
+        split: { mode: 'ranges', ranges: '1' },
+      });
+      expect(split).toMatchObject({ ok: false, failure: 'invalid', inputIndex: 0 });
+      expect(s.native.unlockToolInput).not.toHaveBeenCalled();
+    });
+
     it('a file pdf-lib cannot load either still fails invalid on the JS route', async () => {
       const r = row('corrupted.pdf');
       const s = setup([r]);

@@ -64,6 +64,12 @@ export default function ResultScreen() {
     };
   }, []);
 
+  // Leaving without Done or Close (system back): the job's passwords still leave memory.
+  useEffect(() => {
+    if (!jobId) return;
+    return () => useToolJobs.getState().forgetPasswords(jobId);
+  }, [jobId]);
+
   // Also when a running job finishes while this screen is open (markSeen ignores active jobs).
   const viewKind = view.kind;
   useEffect(() => {

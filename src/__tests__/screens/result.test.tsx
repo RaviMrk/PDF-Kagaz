@@ -35,6 +35,7 @@ let markSeen: jest.Mock;
 let retry: jest.Mock<StartResult>;
 let cancel: jest.Mock;
 let dismiss: jest.Mock;
+let forgetPasswords: jest.Mock;
 
 const NO_PASSWORD_NOTE =
   'The new file has no password. Use Protect with password to lock it again.';
@@ -68,7 +69,9 @@ describe('result screen', () => {
     retry = jest.fn((): StartResult => ({ ok: true, jobId: 'j2' }));
     cancel = jest.fn();
     dismiss = jest.fn();
+    forgetPasswords = jest.fn();
     useToolJobs.setState({
+      forgetPasswords,
       active: null,
       last: null,
       outcomeOf,
@@ -253,6 +256,17 @@ describe('result screen', () => {
     );
     await open();
     expect(screen.queryByText(NO_PASSWORD_NOTE)).toBeNull();
+  });
+
+  it('drops the job passwords when the screen goes away without Done or Close', async () => {
+    outcomeOf.mockReturnValue(done({ ok: false, failure: 'io', inputIndex: null, outputs: [] }));
+    await open();
+    expect(forgetPasswords).not.toHaveBeenCalled();
+    await act(async () => {
+      screen.unmount();
+    });
+    expect(forgetPasswords).toHaveBeenCalledWith('j1');
+    expect(dismiss).not.toHaveBeenCalled();
   });
 
   it('explains an interrupted job that saved nothing', async () => {

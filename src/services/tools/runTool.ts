@@ -341,6 +341,8 @@ export async function runTool(
   const published: PdfFileInfo[] = [];
   let workspaceUsed = false;
   let pages = 0;
+  /** Inputs PdfBox could not open, passed through to pdf-lib undecrypted (see unlockInputs). */
+  let unreadable: number[] = [];
   let extras: ToolExtras | undefined;
 
   let registered: Promise<FileRow[]> | null = null;
@@ -540,7 +542,9 @@ export async function runTool(
         extras = { ...extras, ...e };
       },
     };
-    const { inputs, locks, unreadable } = await unlockInputs(base);
+    const unlocked = await unlockInputs(base);
+    const { inputs, locks } = unlocked;
+    unreadable = unlocked.unreadable;
     const route = routeFor(
       request.toolId,
       inputs.map((input) => input.sizeBytes),
@@ -571,7 +575,13 @@ export async function runTool(
     if (e instanceof RegistrationFailure) {
       return { ok: false, failure: 'io', inputIndex: null, outputs: e.outputs };
     }
-    const { failure, inputIndex } = failureOf(e, request.inputIds.length === 1);
+    const mapped = failureOf(e, request.inputIds.length === 1);
+    const { inputIndex } = mapped;
+    // A passed-through input was never decrypted, so no password can open it: it reads as damaged.
+    const failure =
+      mapped.failure === 'encrypted' && inputIndex !== null && unreadable.includes(inputIndex)
+        ? 'invalid'
+        : mapped.failure;
     const outputs = await register().catch((r: unknown) =>
       r instanceof RegistrationFailure ? r.outputs : [],
     );

@@ -66,6 +66,8 @@ export async function openToolPreview(
   if (knownSize(row.sizeBytes) > maxBytes) return { ok: false, failure: 'tooLarge' };
   const workspace = `preview-${row.id}`;
   let lock: PdfLock | undefined;
+  // PdfBox could not open it: previewed undecrypted, so no password can help.
+  let passedThrough = false;
   try {
     await native.createToolWorkspace(workspace);
     const staged = await native.stageToolInput(row.uri, workspace, 0, maxBytes);
@@ -76,6 +78,7 @@ export async function openToolPreview(
         opts.toolId !== undefined && routeFor(opts.toolId, [staged.sizeBytes]) === 'js';
       if (!(jsRoute && isPdfNativeError(e, 'ERR_PDF_INVALID'))) throw e;
       lock = 'none';
+      passedThrough = true;
     }
     const file =
       lock === 'none'
@@ -98,7 +101,8 @@ export async function openToolPreview(
     };
   } catch (e) {
     quietly(() => native.cleanToolWorkspace(workspace));
-    const failure = toToolFailure(e);
+    const mapped = toToolFailure(e);
+    const failure = passedThrough && mapped === 'encrypted' ? 'invalid' : mapped;
     return lock === undefined || lock === 'none'
       ? { ok: false, failure }
       : { ok: false, failure, lock };

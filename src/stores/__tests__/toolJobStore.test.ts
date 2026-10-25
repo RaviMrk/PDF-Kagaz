@@ -23,7 +23,6 @@ import {
 import { getFile } from '@/services/index/fileIndexRepo';
 import { reviewPrompt } from '@/services/review/reviewPrompt';
 import { telemetry } from '@/services/telemetry/telemetry';
-import { findLockedInputs } from '@/services/tools/passwords';
 import type { ToolId } from '@/services/tools/toolRegistry';
 import type { PdfFileInfo } from '@/services/native/pdfNative';
 import { fileIdForUri } from '@/utils/fileId';
@@ -161,23 +160,6 @@ describe('toolJobStore', () => {
     expect(mockFiles.dropMissing).not.toHaveBeenCalled();
     if (!second.ok) throw new Error('expected ok');
     expect(getJob(s.db, second.jobId)).toMatchObject({ status: 'failed', error: 'permission' });
-  });
-
-  it('makes the next Run ask for an input that failed encrypted, until a job succeeds', async () => {
-    const s = setup();
-    const native = createFakePdfNative();
-    native.inspectPdf.mockResolvedValue('none');
-    const asked = async () =>
-      (await findLockedInputs([makeRow({ id: 'a', name: 'a.pdf' })], native)).locked.length;
-    expect(await asked()).toBe(0);
-    s.store.getState().start(merge, t);
-    s.calls[0]!.resolve({ ok: false, failure: 'encrypted', inputIndex: 0, outputs: [] });
-    await flush();
-    expect(await asked()).toBe(1);
-    s.store.getState().start(merge, t);
-    s.calls[1]!.resolve({ ok: true, outputs: [] });
-    await flush();
-    expect(await asked()).toBe(0);
   });
 
   it('cancel aborts the running job, which ends cancelled', async () => {
@@ -904,6 +886,35 @@ describe('toolJobStore v1.1 tools', () => {
     expect(secretsOf(s.store.getState().last?.request)).toEqual([]);
     expect(s.store.getState().retry(first.jobId, t)).toEqual({ ok: false, reason: 'needsInput' });
     expect(s.calls).toHaveLength(1);
+  });
+
+  it('leaving the result another way drops the passwords but keeps the job', async () => {
+    const s = setup();
+    const first = s.store.getState().start(watermarkText, t);
+    if (!first.ok) throw new Error('expected ok');
+    s.calls[0]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    s.store.getState().forgetPasswords('other');
+    expect(secretsOf(s.store.getState().last?.request)).toEqual(['pw-in']);
+    s.store.getState().forgetPasswords(first.jobId);
+    expect(secretsOf(s.store.getState().last?.request)).toEqual([]);
+    expect(s.store.getState().last).toMatchObject({ jobId: first.jobId, seen: false });
+    expect(s.store.getState().outcomeOf(first.jobId)).toMatchObject({
+      kind: 'done',
+      outcome: { ok: false, failure: 'io' },
+    });
+    expect(s.store.getState().retry(first.jobId, t)).toEqual({ ok: false, reason: 'needsInput' });
+    expect(s.cleanSession).not.toHaveBeenCalled();
+  });
+
+  it('forgetting passwords keeps an image job retryable (no passwords to drop)', async () => {
+    const s = setup();
+    const first = s.store.getState().start(imagesReq, t);
+    if (!first.ok) throw new Error('expected ok');
+    s.calls[0]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    s.store.getState().forgetPasswords(first.jobId);
+    expect(s.store.getState().retry(first.jobId, t).ok).toBe(true);
   });
 
   it('a job without passwords stays retryable after Close', async () => {
