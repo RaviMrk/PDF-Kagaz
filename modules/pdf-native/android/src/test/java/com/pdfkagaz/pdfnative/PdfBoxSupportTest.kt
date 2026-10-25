@@ -76,6 +76,13 @@ class PdfBoxSupportTest {
   }
 
   @Test
+  fun pdfboxRejectsFixtureIsPdfInvalid() {
+    // pdf-lib loads this fixture (fixtures.test.ts): JS-routed tools pass it through to pdf-lib.
+    val e = codedFailure { PdfBoxSupport.open(Fixtures.file("pdfbox-rejects.pdf"), null, tempDir) }
+    assertEquals("ERR_PDF_INVALID", e.code)
+  }
+
+  @Test
   fun junkAfterEofStillOpens() {
     // Scanners pad to a block size, gateways append bytes: 4 KB of NULs after %%EOF.
     val padded = File(tmp.root, "padded.pdf")

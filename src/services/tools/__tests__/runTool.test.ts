@@ -1695,6 +1695,27 @@ describe('runTool locked inputs', () => {
   });
 
   describe('PdfBox rejects an input pdf-lib can open (inspect: ERR_PDF_INVALID)', () => {
+    it('merges and splits pdfbox-rejects.pdf (the real fixture) on the JS route', async () => {
+      const rows = [row('pdfbox-rejects.pdf'), row('one-page.pdf')];
+      const s = setup(rows);
+      const inspect = s.native.inspectPdf.getMockImplementation()!;
+      s.native.inspectPdf.mockImplementation(async (uri: string) =>
+        uri.endsWith('/in-0.pdf') ? Promise.reject(nativeError('ERR_PDF_INVALID')) : inspect(uri),
+      );
+      const merged = await s.run({ toolId: 'merge', inputIds: rows.map((r) => r.id) });
+      expect(merged.ok).toBe(true);
+      const bytes = new Uint8Array(fs.readFileSync(s.published[0]!.path));
+      expect((await loadStrict(bytes)).getPageCount()).toBe(4);
+
+      const split = await s.run({
+        toolId: 'split',
+        inputIds: [rows[0]!.id],
+        split: { mode: 'everyN', n: 1 },
+      });
+      expect(split.ok).toBe(true);
+      expect(split.outputs).toHaveLength(3);
+    });
+
     it('merge on the JS route treats it as open and lets pdf-lib merge it', async () => {
       const rows = [row('one-page.pdf'), row('mixed-sizes.pdf')];
       const s = setup(rows);

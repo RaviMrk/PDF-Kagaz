@@ -23,6 +23,11 @@ describe('PDF fixtures', () => {
     expect(await pageCount('one-page.pdf')).toBe(1);
     expect(await pageCount('two-hundred-pages.pdf')).toBe(200);
     expect(await pageCount('mixed-sizes.pdf')).toBe(3);
+    // PdfBox refuses it (PdfBoxSupportTest); pdf-lib loads it strictly.
+    const rejected = await PDFDocument.load(read('pdfbox-rejects.pdf'), {
+      throwOnInvalidObject: true,
+    });
+    expect(rejected.getPageCount()).toBe(3);
     expect(await pageCount('अहवाल.pdf'.normalize('NFC'))).toBe(2);
   });
 

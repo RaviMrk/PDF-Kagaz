@@ -1,6 +1,7 @@
 // Generates the PDF fixtures in __fixtures__/. Run: npm run fixtures:generate
 // image-heavy.pdf needs macOS `sips`.
 import { execFileSync } from 'node:child_process';
+import { Buffer } from 'node:buffer';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -88,7 +89,18 @@ const mixed = await newDoc();
 addTextPage(mixed.doc, mixed.font, 'A4 portrait', A4);
 addTextPage(mixed.doc, mixed.font, 'Letter landscape', LETTER_LANDSCAPE);
 addTextPage(mixed.doc, mixed.font, 'A4 rotated 90', A4).setRotation(degrees(90));
-write('mixed-sizes.pdf', await mixed.doc.save());
+const mixedBytes = await mixed.doc.save();
+write('mixed-sizes.pdf', mixedBytes);
+
+// pdfbox-rejects.pdf: mixed-sizes.pdf with its %%EOF marker spoiled and an object without endobj
+// appended. PdfBox's truncation check refuses it (ERR_PDF_INVALID); pdf-lib (strict) and pdfium
+// open it, so JS-routed tools must pass it through to pdf-lib.
+{
+  const text = Buffer.from(mixedBytes).toString('latin1');
+  const eof = text.lastIndexOf('%%EOF');
+  const spoiled = `${text.slice(0, eof)}%%EOX${text.slice(eof + 5)}\n99 0 obj\n<< /Junk 1 >>\n`;
+  write('pdfbox-rejects.pdf', Buffer.from(spoiled, 'latin1'));
+}
 
 // corrupted.pdf: truncated one-page.pdf
 write('corrupted.pdf', onePageBytes.slice(0, 400));
