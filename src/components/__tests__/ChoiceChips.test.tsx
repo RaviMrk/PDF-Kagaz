@@ -61,4 +61,21 @@ describe('ChoiceChips', () => {
     expect(text.props.numberOfLines).toBe(1);
     expect(text.props.ellipsizeMode).toBeUndefined();
   });
+
+  it('scrolls one line of chips sideways instead of wrapping when asked (U1)', async () => {
+    await render(
+      <ChoiceChips
+        label="Filter"
+        options={[...options]}
+        value="colour"
+        onChange={() => {}}
+        scroll
+      />,
+    );
+    expect(screen.getByTestId('choice-chips-scroll').props.horizontal).toBe(true);
+    const group = StyleSheet.flatten(screen.getByLabelText('Filter').props.style);
+    expect(group).toMatchObject({ flexDirection: 'row', flexWrap: 'nowrap' });
+    expect(screen.getByLabelText('Filter').props.accessibilityRole).toBe('radiogroup');
+    expect(screen.getByText('Black & white').props.numberOfLines).toBe(1);
+  });
 });

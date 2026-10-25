@@ -92,6 +92,7 @@
     "mergeSelected": "Merge",
     "splitSelected": "Split",
     "organizeSelected": "Organise",
+    "segmentsLabel": "Show",
     "segmentAll": "All",
     "segmentRecent": "Recent",
     "segmentFavorites": "Favourites",
@@ -429,6 +430,7 @@
     "shareTitle": "Share images"
   },
   "split": {
+    "modeLabel": "Split by",
     "modeRanges": "Page ranges",
     "modeEvery": "Every N pages",
     "modeExtract": "Extract pages",

@@ -74,16 +74,30 @@ describe('Files tab', () => {
     expect(screen.getByText('No PDFs match "zzz"')).toBeTruthy();
   });
 
+  it('shows the segments as a radio group of one-line chips that scrolls, never wraps (U1)', async () => {
+    await renderFiles();
+    const group = screen.getByLabelText('Show');
+    expect(group.props.accessibilityRole).toBe('radiogroup');
+    for (const name of ['All', 'Recent', 'Favourites', 'Folders']) {
+      expect(screen.getByRole('radio', { name })).toBeTruthy();
+      expect(screen.getByText(name).props.numberOfLines).toBe(1);
+    }
+    expect(screen.getByRole('radio', { name: 'All' })).toBeChecked();
+    await fireEvent.press(screen.getByRole('radio', { name: 'Favourites' }));
+    expect(screen.getByRole('radio', { name: 'Favourites' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'All' })).not.toBeChecked();
+  });
+
   it('shows only favourites in the Favourites segment', async () => {
     await renderFiles();
-    await fireEvent.press(screen.getByRole('tab', { name: 'Favourites' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Favourites' }));
     expect(screen.getByText('Fav.pdf')).toBeTruthy();
     expect(screen.queryByText('Zebra.pdf')).toBeNull();
   });
 
   it('shows folders with counts and drills into one with a back chip', async () => {
     await renderFiles();
-    await fireEvent.press(screen.getByRole('tab', { name: 'Folders' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Folders' }));
     expect(screen.getByText('Download')).toBeTruthy();
     expect(screen.getByText('3 PDFs')).toBeTruthy();
     expect(screen.getByText('1 PDF')).toBeTruthy();
@@ -105,7 +119,7 @@ describe('Files tab', () => {
     const pressBack = () =>
       [...handlers].reverse().some((h) => h({} as Parameters<BackListener>[0]) === true);
     await renderFiles();
-    await fireEvent.press(screen.getByRole('tab', { name: 'Folders' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Folders' }));
     await fireEvent.press(screen.getByText('Download'));
     expect(screen.getByText('Zebra.pdf')).toBeTruthy();
     let handled = false;
@@ -128,7 +142,7 @@ describe('Files tab', () => {
     const pressBack = () =>
       [...handlers].reverse().some((h) => h({} as Parameters<BackListener>[0]) === true);
     await renderFiles();
-    await fireEvent.press(screen.getByRole('tab', { name: 'Folders' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Folders' }));
     await fireEvent.press(screen.getByText('Download'));
     await fireEvent.press(screen.getByText('Zebra.pdf'));
     // toHavePathname is unavailable under RNTL v14; the reader's viewer tells where we are.

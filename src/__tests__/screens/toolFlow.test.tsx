@@ -284,6 +284,16 @@ describe('tool flow', () => {
     expect(screen.getByLabelText('Split')).toBeDisabled();
   });
 
+  it('shows the split modes as one-line radio chips that never wrap (U1)', async () => {
+    await open(`/tool/split?inputs=${ID_A}`);
+    expect(screen.getByLabelText('Split by').props.accessibilityRole).toBe('radiogroup');
+    for (const name of ['Page ranges', 'Every N pages', 'Extract pages']) {
+      expect(screen.getByRole('radio', { name })).toBeTruthy();
+      expect(screen.getByText(name).props.numberOfLines).toBe(1);
+    }
+    expect(screen.getByRole('radio', { name: 'Page ranges' })).toBeChecked();
+  });
+
   it('splits every N pages', async () => {
     await open(`/tool/split?inputs=${ID_A}`);
     await press('Every N pages');

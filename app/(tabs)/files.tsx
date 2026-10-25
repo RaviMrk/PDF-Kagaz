@@ -5,6 +5,7 @@ import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { AdBanner } from '@/components/AdBanner';
+import { ChoiceChips } from '@/components/ChoiceChips';
 import { EmptyState } from '@/components/EmptyState';
 import { FileActionsSheet } from '@/components/FileActionsSheet';
 import { FileRow } from '@/components/FileRow';
@@ -13,7 +14,6 @@ import { PermissionGate } from '@/components/PermissionGate';
 import { ScanProgressBanner } from '@/components/ScanProgressBanner';
 import { SelectionBar } from '@/components/SelectionBar';
 import { SearchBar } from '@/components/SearchBar';
-import { SegmentedControl } from '@/components/SegmentedControl';
 import { SortMenu } from '@/components/SortMenu';
 import type { FileRow as FileRowData } from '@/db/schema';
 import {
@@ -192,14 +192,18 @@ function FilesList() {
               focusSignal={focus}
             />
             <View style={styles.controls}>
-              <SegmentedControl
-                value={segment}
-                onChange={(s) => {
-                  setSegment(s);
-                  setFolder(null);
-                }}
-                options={SEGMENTS.map((s) => ({ key: s.key, label: t(s.label) }))}
-              />
+              <View style={styles.segments}>
+                <ChoiceChips
+                  scroll
+                  label={t('files.segmentsLabel')}
+                  value={segment}
+                  onChange={(s) => {
+                    setSegment(s);
+                    setFolder(null);
+                  }}
+                  options={SEGMENTS.map((s) => ({ key: s.key, label: t(s.label) }))}
+                />
+              </View>
               <SortMenu
                 sortKey={sortKey}
                 sortDir={sortDir}
@@ -303,6 +307,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   header: { padding: 16, gap: 8 },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  segments: { flex: 1 },
   chip: {
     alignSelf: 'flex-start',
     minHeight: 48,

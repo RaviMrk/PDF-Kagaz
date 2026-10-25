@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
-import { SegmentedControl } from '@/components/SegmentedControl';
+import { ChoiceChips } from '@/components/ChoiceChips';
 import { PagePicker } from '@/components/tools/PagePicker';
 import { RunButton } from '@/components/tools/RunButton';
 import { useToolPreview } from '@/components/tools/useToolPreview';
@@ -95,18 +95,17 @@ function SplitForm({ fileUri, pageCount, onRun }: FormProps) {
   return (
     <View style={styles.root}>
       <Text style={{ color: colors.textMuted }}>{t('split.pageCount', { count: pageCount })}</Text>
-      <View style={styles.segments}>
-        <SegmentedControl<Mode>
-          options={[
-            { key: 'ranges', label: t('split.modeRanges') },
-            // Every N needs a part boundary: a one-page PDF has none.
-            ...(pageCount >= 2 ? [{ key: 'everyN' as const, label: t('split.modeEvery') }] : []),
-            { key: 'extract', label: t('split.modeExtract') },
-          ]}
-          value={mode}
-          onChange={setMode}
-        />
-      </View>
+      <ChoiceChips<Mode>
+        label={t('split.modeLabel')}
+        options={[
+          { key: 'ranges', label: t('split.modeRanges') },
+          // Every N needs a part boundary: a one-page PDF has none.
+          ...(pageCount >= 2 ? [{ key: 'everyN' as const, label: t('split.modeEvery') }] : []),
+          { key: 'extract', label: t('split.modeExtract') },
+        ]}
+        value={mode}
+        onChange={setMode}
+      />
       {mode === 'ranges' ? (
         <View style={styles.form}>
           <Text style={{ color: colors.text }}>{t('split.rangesLabel')}</Text>
@@ -157,7 +156,6 @@ const styles = StyleSheet.create({
   root: { flex: 1, gap: 12 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
   message: { fontSize: 16, textAlign: 'center' },
-  segments: { flexDirection: 'row' },
   form: { gap: 8 },
   input: { minHeight: 48, borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, fontSize: 16 },
   picker: { flex: 1, gap: 8 },

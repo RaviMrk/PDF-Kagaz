@@ -145,7 +145,7 @@ describe('Files tab selection', () => {
 
   it('works inside a folder and select all stays within it', async () => {
     await renderFiles();
-    await fireEvent.press(screen.getByRole('tab', { name: 'Folders' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Folders' }));
     await fireEvent.press(screen.getByText('Download'));
     await longPress('Zebra.pdf');
     await fireEvent.press(screen.getByRole('button', { name: 'Select all' }));
@@ -183,7 +183,7 @@ describe('Files tab selection', () => {
 
   it('back clears selection inside a folder first, then leaves the folder', async () => {
     await renderFiles();
-    await fireEvent.press(screen.getByRole('tab', { name: 'Folders' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Folders' }));
     await fireEvent.press(screen.getByText('Download'));
     await longPress('Zebra.pdf');
     await act(async () => {
