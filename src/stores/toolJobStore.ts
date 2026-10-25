@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { getDb } from '@/db/client';
 import type { ToolJobRow } from '@/db/schema';
 import type { IndexDb } from '@/services/index/fileIndexRepo';
+import { reviewPrompt } from '@/services/review/reviewPrompt';
 import { pdfNative, type ImageFilter } from '@/services/native/pdfNative';
 import { getSignature } from '@/services/signatures/signatureRepo';
 import { isImageLayout } from '@/services/pdf/imageLayout';
@@ -680,7 +681,9 @@ export const useToolJobs = createToolJobStore({
   now: Date.now,
   random: Math.random,
   cleanSession: (sessionId) => pdfNative.cleanToolWorkspace(sessionId),
-  onJobFinished: (request, outcome, ms) =>
-    telemetry.log(toolFinishedEvent(request, outcome, ms, pagesOf(outcome))),
+  onJobFinished: (request, outcome, ms) => {
+    reviewPrompt.recordOutcome(outcome);
+    telemetry.log(toolFinishedEvent(request, outcome, ms, pagesOf(outcome)));
+  },
   notice: jobNotice,
 });

@@ -10,6 +10,7 @@ import { SavedImagesCard } from '@/components/tools/SavedImagesCard';
 import { SizeChange } from '@/components/tools/SizeChange';
 import type { FileRow } from '@/db/schema';
 import { interstitial } from '@/services/ads/interstitial';
+import { reviewPrompt } from '@/services/review/reviewPrompt';
 import { jobFailureMessage } from '@/services/tools/failureMessage';
 import { useFiles } from '@/stores/filesStore';
 import { useToolJobs } from '@/stores/toolJobStore';
@@ -53,6 +54,7 @@ export default function ResultScreen() {
   // A compressed file that is not smaller: the user deletes it or keeps both.
   const [notSmaller, setNotSmaller] = useState<'ask' | 'kept' | 'deleted'>('ask');
   const deleting = useRef(false);
+  const reviewing = useRef(false);
 
   // Also when a running job finishes while this screen is open (markSeen ignores active jobs).
   const viewKind = view.kind;
@@ -73,6 +75,20 @@ export default function ResultScreen() {
     deleting.current = false;
     if (error) setNotice(fileActionErrorKey(error));
     else setNotSmaller('deleted');
+  };
+
+  // Done on a success: the review ask (once per install) comes before leaving; a tap while it is
+  // pending is ignored.
+  const finish = async () => {
+    if (reviewing.current) return;
+    reviewing.current = true;
+    try {
+      if (reviewPrompt.shouldAsk()) await reviewPrompt.ask();
+    } finally {
+      reviewing.current = false;
+    }
+    dismissAndLeave(jobId);
+    interstitial.showAfterDone();
   };
 
   const retry = () => {
@@ -176,14 +192,15 @@ export default function ResultScreen() {
           outputs(view.outcome.outputs)
         )}
         <View style={styles.actions}>
-          {button(
-            t('result.done'),
-            () => {
-              dismissAndLeave(jobId);
-              interstitial.showAfterDone();
-            },
-            colors.primary,
-          )}
+          {/* Inline (not button()): its handler reads a ref, so it must stay an event prop. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('result.done')}
+            onPress={() => void finish()}
+            style={styles.button}
+          >
+            <Text style={[styles.buttonText, { color: colors.primary }]}>{t('result.done')}</Text>
+          </Pressable>
         </View>
       </View>
     );

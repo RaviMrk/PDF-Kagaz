@@ -80,6 +80,9 @@ describe('Home tab', () => {
     expect(screen.getByLabelText('Compress')).toBeTruthy();
     expect(screen.queryByLabelText('Compress, coming soon')).toBeNull();
     expect(screen.getByLabelText('Images to PDF')).toBeTruthy();
+    expect(screen.queryByLabelText('Scan, coming soon')).toBeNull();
+    expect(screen.queryByLabelText('Merge, coming soon')).toBeNull();
+    expect(screen.queryByLabelText('Images to PDF, coming soon')).toBeNull();
     expect(screen.queryByText('Coming soon')).toBeNull();
   });
 

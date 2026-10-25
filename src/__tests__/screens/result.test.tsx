@@ -4,6 +4,7 @@ import { renderRouter, screen } from 'expo-router/testing-library';
 import path from 'path';
 
 import { interstitial } from '@/services/ads/interstitial';
+import { reviewPrompt } from '@/services/review/reviewPrompt';
 import type { SavedImages, ToolOutcome } from '@/services/tools/runTool';
 import { useFiles } from '@/stores/filesStore';
 import { useSettings } from '@/stores/settingsStore';
@@ -363,6 +364,81 @@ describe('result screen', () => {
       await press('Close');
       expect(dismiss).toHaveBeenCalledWith('j1');
       expect(showAfterDone).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('review prompt', () => {
+    let shouldAsk: jest.SpyInstance;
+    let ask: jest.SpyInstance;
+    let showAfterDone: jest.SpyInstance;
+    beforeEach(() => {
+      shouldAsk = jest.spyOn(reviewPrompt, 'shouldAsk').mockReturnValue(true);
+      ask = jest.spyOn(reviewPrompt, 'ask').mockResolvedValue();
+      showAfterDone = jest.spyOn(interstitial, 'showAfterDone').mockReturnValue(false);
+      jest.spyOn(router, 'replace').mockImplementation(() => {});
+    });
+    afterEach(() => {
+      shouldAsk.mockRestore();
+      ask.mockRestore();
+      showAfterDone.mockRestore();
+      jest.mocked(router.replace).mockRestore();
+    });
+
+    it('asks before leaving, then still shows the interstitial', async () => {
+      outcomeOf.mockReturnValue(done({ ok: true, outputs: [merged] }));
+      const order: string[] = [];
+      ask.mockImplementation(async () => {
+        order.push('ask');
+      });
+      dismiss.mockImplementation(() => order.push('dismiss'));
+      showAfterDone.mockImplementation(() => {
+        order.push('show');
+        return false;
+      });
+      await open();
+      await press('Done');
+      expect(order).toEqual(['ask', 'dismiss', 'show']);
+    });
+
+    it('does not ask when shouldAsk is false', async () => {
+      shouldAsk.mockReturnValue(false);
+      outcomeOf.mockReturnValue(done({ ok: true, outputs: [merged] }));
+      await open();
+      await press('Done');
+      expect(ask).not.toHaveBeenCalled();
+      expect(dismiss).toHaveBeenCalledWith('j1');
+    });
+
+    it('ignores a second Done while the review is pending', async () => {
+      outcomeOf.mockReturnValue(done({ ok: true, outputs: [merged] }));
+      let release: () => void = () => {};
+      ask.mockReturnValue(new Promise<void>((r) => (release = r)));
+      await open();
+      await fireEvent.press(screen.getByLabelText('Done'));
+      await fireEvent.press(screen.getByLabelText('Done'));
+      await act(async () => release());
+      expect(ask).toHaveBeenCalledTimes(1);
+      expect(dismiss).toHaveBeenCalledTimes(1);
+    });
+
+    it('never asks on Close, Open, Share or Save as', async () => {
+      outcomeOf.mockReturnValue(done({ ok: true, outputs: [merged] }));
+      await open();
+      await press('Share a merged.pdf');
+      await press('Save a copy of a merged.pdf');
+      await press('Open a merged.pdf');
+      expect(shouldAsk).not.toHaveBeenCalled();
+      expect(ask).not.toHaveBeenCalled();
+    });
+
+    it('never asks when a failed job is closed', async () => {
+      outcomeOf.mockReturnValue(
+        done({ ok: false, failure: 'interrupted', inputIndex: null, outputs: [] }),
+      );
+      await open();
+      await press('Close');
+      expect(shouldAsk).not.toHaveBeenCalled();
+      expect(ask).not.toHaveBeenCalled();
     });
   });
 

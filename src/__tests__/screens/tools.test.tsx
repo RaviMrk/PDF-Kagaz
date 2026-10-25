@@ -68,6 +68,17 @@ describe('Tools tab', () => {
     for (const label of CARDS) expect(screen.getByLabelText(label)).toBeTruthy();
   });
 
+  it('shows every v1.1 tool live except OCR and Edit details', async () => {
+    await renderTools();
+    const live = ['Compress', 'Protect with password', 'Remove password', 'PDF to images'];
+    for (const label of [...live, 'Add watermark', 'Add page numbers', 'Sign PDF']) {
+      expect(screen.getByLabelText(label)).toBeTruthy();
+      expect(screen.queryByLabelText(`${label}, coming soon`)).toBeNull();
+    }
+    expect(screen.getByLabelText('Make searchable (OCR), coming soon')).toBeTruthy();
+    expect(screen.getByLabelText('Edit details, coming soon')).toBeTruthy();
+  });
+
   it('opens an available tool', async () => {
     const r = await renderTools();
     await fireEvent.press(screen.getByLabelText('Merge'));

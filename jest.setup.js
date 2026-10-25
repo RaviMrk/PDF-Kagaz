@@ -136,3 +136,9 @@ jest.mock('react-native-google-mobile-ads', () => {
 // Ads code is kept but off by default (ADS_ENABLED). Tests run with the flag on; a test turns it off
 // with `(adsEnabled as jest.Mock).mockReturnValue(false)`. adsFlag.test.ts unmocks this.
 jest.mock('./src/config/adsFlag', () => ({ adsEnabled: jest.fn(() => true) }));
+
+// The store review API has no native side under Jest; the review prompt is never really asked.
+jest.mock('expo-store-review', () => ({
+  isAvailableAsync: jest.fn(async () => false),
+  requestReview: jest.fn(async () => {}),
+}));

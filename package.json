@@ -27,6 +27,7 @@
     "expo-splash-screen": "~57.0.10",
     "expo-sqlite": "~57.0.4",
     "expo-status-bar": "~57.0.1",
+    "expo-store-review": "~57.0.3",
     "expo-system-ui": "~57.0.4",
     "i18next": "^26.5.3",
     "prop-types": "^15.8.1",
