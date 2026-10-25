@@ -26,6 +26,9 @@ import type { ToolId } from '@/services/tools/toolRegistry';
 import type { PdfFileInfo } from '@/services/native/pdfNative';
 import { fileIdForUri } from '@/utils/fileId';
 import { createFakePdfNative } from '@/test-utils/fakePdfNative';
+import { renderHook } from '@testing-library/react-native';
+import type { JobNoticeHooks } from '@/services/tools/jobNotice';
+import { useJobCancelRequests } from '@/services/tools/useJobCancelRequests';
 import { makeRow } from '@/test-utils/fileRows';
 
 import {
@@ -953,5 +956,84 @@ describe('toolJobStore v1.1 tools', () => {
         outcome: { ok: false, failure: error },
       });
     }
+  });
+});
+
+describe('toolJobStore notice hooks', () => {
+  function noticeHooks(): jest.Mocked<JobNoticeHooks> {
+    return { started: jest.fn(), progress: jest.fn(), finished: jest.fn() };
+  }
+
+  it('tells the notice when a job starts, progresses (throttled) and finishes', async () => {
+    const notice = noticeHooks();
+    const s = setup(makeDb(), { notice });
+    const started = s.store.getState().start(merge, t);
+    if (!started.ok) throw new Error('expected ok');
+    expect(notice.started).toHaveBeenCalledTimes(1);
+    expect(notice.started).toHaveBeenCalledWith(started.jobId, 'merge', t);
+    const { onProgress } = s.calls[0]!;
+    onProgress('processing', 0.2);
+    s.advance(10);
+    onProgress('processing', 0.25);
+    s.advance(100);
+    onProgress('processing', 0.5);
+    expect(notice.progress.mock.calls).toEqual([
+      [started.jobId, 0.2],
+      [started.jobId, 0.5],
+    ]);
+    const outcome: ToolOutcome = { ok: true, outputs: [] };
+    s.calls[0]!.resolve(outcome);
+    await flush();
+    expect(notice.finished).toHaveBeenCalledTimes(1);
+    expect(notice.finished).toHaveBeenCalledWith(started.jobId, 'merge', outcome, t);
+  });
+
+  it('a throwing hook never affects the job', async () => {
+    const boom = () => {
+      throw new Error('notice');
+    };
+    const notice = { started: jest.fn(boom), progress: jest.fn(boom), finished: jest.fn(boom) };
+    const s = setup(makeDb(), { notice });
+    const started = s.store.getState().start(merge, t);
+    if (!started.ok) throw new Error('expected ok');
+    s.calls[0]!.onProgress('processing', 0.4);
+    expect(s.store.getState().active?.fraction).toBe(0.4);
+    s.calls[0]!.resolve({ ok: true, outputs: [] });
+    await flush();
+    expect(getJob(s.db, started.jobId)?.status).toBe('succeeded');
+    expect(s.store.getState().active).toBeNull();
+    expect(s.store.getState().last?.outcome.ok).toBe(true);
+  });
+
+  it('a cancel request from the notification cancels the active job only', async () => {
+    const s = setup();
+    const native = createFakePdfNative();
+    const hook = await renderHook(() =>
+      useJobCancelRequests({ store: s.store, addListener: native.addJobCancelRequestListener }),
+    );
+    const started = s.store.getState().start(merge, t);
+    if (!started.ok) throw new Error('expected ok');
+
+    native.emitJobCancelRequest({ jobId: 'other-job' });
+    expect(s.calls[0]!.signal.aborted).toBe(false);
+
+    native.emitJobCancelRequest({ jobId: started.jobId });
+    expect(s.calls[0]!.signal.aborted).toBe(true);
+    await flush();
+    expect(s.store.getState().last?.outcome).toMatchObject({ ok: false, failure: 'cancelled' });
+    expect(getJob(s.db, started.jobId)?.status).toBe('cancelled');
+
+    await hook.unmount();
+    expect(native.addJobCancelRequestListener.mock.results[0]!.value.remove).toHaveBeenCalled();
+  });
+
+  it('a cancel request with no active job does nothing', async () => {
+    const s = setup();
+    const native = createFakePdfNative();
+    await renderHook(() =>
+      useJobCancelRequests({ store: s.store, addListener: native.addJobCancelRequestListener }),
+    );
+    expect(() => native.emitJobCancelRequest({ jobId: 'lq2-abc' })).not.toThrow();
+    expect(s.store.getState().active).toBeNull();
   });
 });

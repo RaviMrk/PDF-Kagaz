@@ -3,6 +3,7 @@ import type {
   ImageFilter,
   ImageFormat,
   IncomingPdfEvent,
+  JobCancelRequestEvent,
   PdfFileInfo,
   PdfNativeApi,
   PdfNativeErrorCode,
@@ -12,7 +13,10 @@ import type {
 
 type NativeFns = Omit<
   PdfNativeApi,
-  'addScanProgressListener' | 'addIncomingPdfListener' | 'addToolProgressListener'
+  | 'addScanProgressListener'
+  | 'addIncomingPdfListener'
+  | 'addToolProgressListener'
+  | 'addJobCancelRequestListener'
 >;
 
 function infoFromUri(uri: string, name?: string): PdfFileInfo {
@@ -103,6 +107,10 @@ function createNativeFns(): jest.Mocked<NativeFns> {
       }),
     ),
     cancelNativeTool: jest.fn().mockResolvedValue(undefined),
+    startJobNotice: jest.fn().mockResolvedValue(true),
+    updateJobNotice: jest.fn().mockResolvedValue(undefined),
+    stopJobNotice: jest.fn().mockResolvedValue(undefined),
+    postJobDoneNotice: jest.fn().mockResolvedValue(true),
     cleanToolWorkspace: jest.fn().mockResolvedValue(undefined),
     cleanupToolLeftovers: jest.fn().mockResolvedValue(0),
     inspectPdf: jest.fn().mockResolvedValue('none'),
@@ -189,11 +197,14 @@ function createNativeFns(): jest.Mocked<NativeFns> {
 export type FakePdfNative = jest.Mocked<PdfNativeApi> & {
   /** Delivers `e` to every subscribed tool progress listener. */
   emitToolProgress(e: ToolProgressEvent): void;
+  /** Delivers `e` to every subscribed job cancel request listener (notification **Cancel**). */
+  emitJobCancelRequest(e: JobCancelRequestEvent): void;
 };
 
 /** A fully mocked PdfNativeApi for service/store tests. */
 export function createFakePdfNative(overrides: Partial<PdfNativeApi> = {}): FakePdfNative {
   const progressListeners = new Set<(e: ToolProgressEvent) => void>();
+  const cancelListeners = new Set<(e: JobCancelRequestEvent) => void>();
   const fake: FakePdfNative = {
     ...createNativeFns(),
     addScanProgressListener: jest.fn((_cb: (e: ScanProgressEvent) => void) => ({
@@ -207,6 +218,11 @@ export function createFakePdfNative(overrides: Partial<PdfNativeApi> = {}): Fake
       return { remove: jest.fn(() => progressListeners.delete(cb)) };
     }),
     emitToolProgress: (e) => progressListeners.forEach((cb) => cb(e)),
+    addJobCancelRequestListener: jest.fn((cb: (e: JobCancelRequestEvent) => void) => {
+      cancelListeners.add(cb);
+      return { remove: jest.fn(() => cancelListeners.delete(cb)) };
+    }),
+    emitJobCancelRequest: (e) => cancelListeners.forEach((cb) => cb(e)),
   };
   return Object.assign(fake, overrides);
 }

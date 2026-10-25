@@ -9,6 +9,7 @@ import android.os.SystemClock
 import android.print.PrintManager
 import android.provider.DocumentsContract
 import android.provider.Settings
+import androidx.core.content.ContextCompat
 import expo.modules.kotlin.activityresult.AppContextActivityResultCaller
 import expo.modules.kotlin.activityresult.AppContextActivityResultLauncher
 import expo.modules.kotlin.exception.Exceptions
@@ -33,12 +34,13 @@ class PdfNativeModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("PdfNative")
 
-    Events(SCAN_PROGRESS_EVENT, INCOMING_PDF_EVENT, TOOL_PROGRESS_EVENT)
+    Events(SCAN_PROGRESS_EVENT, INCOMING_PDF_EVENT, TOOL_PROGRESS_EVENT, JOB_CANCEL_EVENT)
 
     // Scanner pages a previous module instance never imported (no import can be in flight then
     // unless another instance runs one, which ScanImports guards).
     OnCreate {
       appContext.reactContext?.let(PdfBoxSupport::init)
+      JobNoticeBus.addListener(jobCancelListener)
       appContext.backgroundCoroutineScope.launch {
         try {
           toolFiles.sweepScannerCache()
@@ -46,6 +48,10 @@ class PdfNativeModule : Module() {
           // Best effort: the next scan or the next start sweeps again.
         }
       }
+    }
+
+    OnDestroy {
+      JobNoticeBus.removeListener(jobCancelListener)
     }
 
     // A VIEW while running arrives through Linking; only PDFs shared with ACTION_SEND are reported here.
@@ -188,6 +194,34 @@ class PdfNativeModule : Module() {
     // A cancel for a job that has not begun yet is remembered (NativeJobs).
     AsyncFunction("cancelNativeTool") { jobId: String ->
       NativeJobs.cancel(jobId)
+    }
+
+    // Job notification (ToolJobService). Never rejects: a refused start resolves false.
+    AsyncFunction("startJobNotice") { jobId: String, title: String, cancelLabel: String, channelName: String ->
+      startJobNotice(jobId, title, cancelLabel, channelName)
+    }
+
+    AsyncFunction("updateJobNotice") { jobId: String, fraction: Double ->
+      if (jobId == noticeJobId) {
+        sendToJobService(Intent(context, ToolJobService::class.java).setAction(ToolJobService.ACTION_UPDATE)
+          .putExtra(ToolJobService.EXTRA_JOB_ID, jobId).putExtra(ToolJobService.EXTRA_FRACTION, fraction))
+      }
+    }
+
+    AsyncFunction("stopJobNotice") { jobId: String ->
+      if (jobId == noticeJobId) {
+        noticeJobId = null
+        sendToJobService(Intent(context, ToolJobService::class.java).setAction(ToolJobService.ACTION_STOP)
+          .putExtra(ToolJobService.EXTRA_JOB_ID, jobId))
+      }
+    }
+
+    AsyncFunction("postJobDoneNotice") { jobId: String, title: String, body: String, channelName: String ->
+      try {
+        ToolJobService.postDone(context, jobId, title, body, channelName)
+      } catch (e: Exception) {
+        false
+      }
     }
 
     AsyncFunction("cleanToolWorkspace") Coroutine { jobId: String ->
@@ -461,6 +495,45 @@ class PdfNativeModule : Module() {
   private val fileOps by lazy { FileOps(context, ::hasAllFilesAccess) }
 
   private val toolFiles by lazy { ToolFiles(context) }
+
+  /** The job whose notification this module started (one job at a time); updates for others are dropped. */
+  @Volatile
+  private var noticeJobId: String? = null
+
+  private val jobCancelListener: (String) -> Unit = { jobId -> sendEvent(JOB_CANCEL_EVENT, mapOf("jobId" to jobId)) }
+
+  // region Job notification
+
+  /** Starts ToolJobService for [jobId] (call while the app is in the foreground); false when refused. */
+  private fun startJobNotice(jobId: String, title: String, cancelLabel: String, channelName: String): Boolean {
+    if (!ToolPaths.isValidJobId(jobId)) return false
+    return try {
+      val intent = Intent(context, ToolJobService::class.java)
+        .setAction(ToolJobService.ACTION_START)
+        .putExtra(ToolJobService.EXTRA_JOB_ID, jobId)
+        .putExtra(ToolJobService.EXTRA_TITLE, title)
+        .putExtra(ToolJobService.EXTRA_CANCEL_LABEL, cancelLabel)
+        .putExtra(ToolJobService.EXTRA_CHANNEL_NAME, channelName)
+      // Throws ForegroundServiceStartNotAllowedException (API 31+) from the background or once the
+      // dataSync budget is used up (API 35+).
+      ContextCompat.startForegroundService(context, intent)
+      noticeJobId = jobId
+      true
+    } catch (e: Exception) {
+      false
+    }
+  }
+
+  /** Update / stop of a running notice; a service that is gone or not allowed to start is ignored. */
+  private fun sendToJobService(intent: Intent) {
+    try {
+      context.startService(intent)
+    } catch (e: Exception) {
+      // IllegalStateException from the background when the service already stopped: nothing to update.
+    }
+  }
+
+  // endregion
 
   private val toolThumbnails by lazy { ToolThumbnails(context) }
 
@@ -813,6 +886,7 @@ class PdfNativeModule : Module() {
     const val SCAN_PROGRESS_EVENT = "onScanProgress"
     const val INCOMING_PDF_EVENT = "onIncomingPdf"
     const val TOOL_PROGRESS_EVENT = "onToolProgress"
+    const val JOB_CANCEL_EVENT = "onJobCancelRequested"
     const val PROGRESS_INTERVAL_MS = 200L
 
     /** Folders listed concurrently by a full scan (readdir on shared storage is latency-bound). */

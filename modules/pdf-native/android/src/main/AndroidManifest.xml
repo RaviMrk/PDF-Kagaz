@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Long tool jobs keep running while the app is in the background (ToolJobService). -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
   <application>
     <provider
       android:name="com.pdfkagaz.pdfnative.PdfNativeFileProvider"
@@ -9,5 +13,10 @@
         android:name="android.support.FILE_PROVIDER_PATHS"
         android:resource="@xml/pdf_native_file_paths" />
     </provider>
+    <service
+      android:name="com.pdfkagaz.pdfnative.ToolJobService"
+      android:exported="false"
+      android:foregroundServiceType="dataSync"
+      android:stopWithTask="true" />
   </application>
 </manifest>

@@ -115,6 +115,12 @@ export type SignaturePadViewRef = {
   clear(): Promise<void>;
 };
 
+/** Texts of a job's progress notification (localised by JS). */
+export type JobNoticeTexts = { title: string; cancelLabel: string; channelName: string };
+
+/** **Cancel** was pressed in the progress notification of `jobId`. */
+export type JobCancelRequestEvent = { jobId: string };
+
 /** A PDF shared to the app (ACTION_SEND) while it is running; `uri` is the shared stream. */
 export type IncomingPdfEvent = { uri: string };
 
@@ -122,4 +128,5 @@ export type PdfNativeModuleEvents = {
   onScanProgress: (event: ScanProgressEvent) => void;
   onIncomingPdf: (event: IncomingPdfEvent) => void;
   onToolProgress: (event: ToolProgressEvent) => void;
+  onJobCancelRequested: (event: JobCancelRequestEvent) => void;
 };

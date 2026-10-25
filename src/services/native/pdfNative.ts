@@ -8,6 +8,8 @@ import type {
   ImageFormat,
   ImportedImage,
   IncomingPdfEvent,
+  JobCancelRequestEvent,
+  JobNoticeTexts,
   PasswordCheck,
   PdfFileInfo,
   PdfLock,
@@ -25,6 +27,8 @@ import type {
 } from '../../../modules/pdf-native';
 
 export type {
+  JobCancelRequestEvent,
+  JobNoticeTexts,
   CompressLevel,
   CompressResult,
   ExportedSignature,
@@ -133,6 +137,27 @@ export interface PdfNativeApi {
    * cancel that arrives before the job begins is remembered for 60 s.
    */
   cancelNativeTool(jobId: string): Promise<void>;
+  /**
+   * Starts the foreground service (dataSync) of job `jobId` with an ongoing, silent progress
+   * notification whose **Cancel** cancels the job (`onJobCancelRequested`). Call while the app is in
+   * the foreground. Resolves false when the start is refused (ForegroundServiceStartNotAllowed, an
+   * invalid job id); never rejects.
+   */
+  startJobNotice(jobId: string, texts: JobNoticeTexts): Promise<boolean>;
+  /** Progress 0..1 of the running job notice (shown at most every 500 ms, and at 100 %). */
+  updateJobNotice(jobId: string, fraction: number): Promise<void>;
+  /** Removes the job notice and stops the service. */
+  stopJobNotice(jobId: string): Promise<void>;
+  /**
+   * One auto-cancelling "finished" notification (channel `tool_done`, named `channelName`) opening
+   * `/result?jobId=…`; false when notifications are off or not permitted.
+   */
+  postJobDoneNotice(
+    jobId: string,
+    title: string,
+    body: string,
+    channelName: string,
+  ): Promise<boolean>;
   /** Deletes a job workspace; idempotent. */
   cleanToolWorkspace(jobId: string): Promise<void>;
   /** Deletes tool leftovers older than `olderThanMs` (epoch ms); returns how many. */
@@ -288,6 +313,8 @@ export interface PdfNativeApi {
   addIncomingPdfListener(cb: (e: IncomingPdfEvent) => void): { remove(): void };
   /** Progress (0..1) of running native tool jobs, at most every 100 ms plus once at 1. */
   addToolProgressListener(cb: (e: ToolProgressEvent) => void): { remove(): void };
+  /** **Cancel** pressed in a job's progress notification. */
+  addJobCancelRequestListener(cb: (e: JobCancelRequestEvent) => void): { remove(): void };
 }
 
 export const PDF_NATIVE_ERROR_CODES = [
@@ -381,6 +408,12 @@ export const pdfNative: PdfNativeApi = {
     PdfNative.renderImageThumbnail(sessionId, index, width, filter),
   publishToolOutput: (tempUri, fileName) => PdfNative.publishToolOutput(tempUri, fileName),
   cancelNativeTool: (jobId) => PdfNative.cancelNativeTool(jobId),
+  startJobNotice: (jobId, texts) =>
+    PdfNative.startJobNotice(jobId, texts.title, texts.cancelLabel, texts.channelName),
+  updateJobNotice: (jobId, fraction) => PdfNative.updateJobNotice(jobId, fraction),
+  stopJobNotice: (jobId) => PdfNative.stopJobNotice(jobId),
+  postJobDoneNotice: (jobId, title, body, channelName) =>
+    PdfNative.postJobDoneNotice(jobId, title, body, channelName),
   cleanToolWorkspace: (jobId) => PdfNative.cleanToolWorkspace(jobId),
   cleanupToolLeftovers: (olderThanMs) => PdfNative.cleanupToolLeftovers(olderThanMs),
   inspectPdf: (uri) => PdfNative.inspectPdf(uri),
@@ -416,4 +449,5 @@ export const pdfNative: PdfNativeApi = {
   addScanProgressListener: (cb) => PdfNative.addListener('onScanProgress', cb),
   addIncomingPdfListener: (cb) => PdfNative.addListener('onIncomingPdf', cb),
   addToolProgressListener: (cb) => PdfNative.addListener('onToolProgress', cb),
+  addJobCancelRequestListener: (cb) => PdfNative.addListener('onJobCancelRequested', cb),
 };

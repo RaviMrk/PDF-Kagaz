@@ -8,6 +8,7 @@ import { getSignature } from '@/services/signatures/signatureRepo';
 import { isImageLayout } from '@/services/pdf/imageLayout';
 import type { PageEdit } from '@/services/pdf/organize';
 import type { Translate } from '@/services/tools/outputNames';
+import { jobNotice, type JobNoticeHooks } from '@/services/tools/jobNotice';
 import {
   isImagesRequest,
   runTool,
@@ -107,6 +108,8 @@ export type ToolJobStoreDeps = {
   cleanSession: (sessionId: string) => Promise<void>;
   /** Told about every job this process finishes (telemetry); errors are ignored. */
   onJobFinished?: (request: ToolRequest, outcome: ToolOutcome, durationMs: number) => void;
+  /** Background notice (foreground service + notifications); each call's errors are ignored. */
+  notice?: JobNoticeHooks;
 };
 
 const PROGRESS_INTERVAL_MS = 100;
@@ -419,7 +422,23 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
       }
     }
 
-    function finish(jobId: string, request: ToolRequest, outcome: ToolOutcome, startedAt: number) {
+    /** Calls a notice hook; a notice never affects a job. */
+    function tellNotice(call: (notice: JobNoticeHooks) => void) {
+      if (!deps.notice) return;
+      try {
+        call(deps.notice);
+      } catch {
+        // Ignored.
+      }
+    }
+
+    function finish(
+      jobId: string,
+      request: ToolRequest,
+      outcome: ToolOutcome,
+      startedAt: number,
+      t: Translate,
+    ) {
       try {
         finishJob(deps.getDb(), jobId, resultOf(request, outcome, deps.now()));
       } catch {
@@ -455,6 +474,7 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
           request,
         },
       });
+      tellNotice((n) => n.finished(jobId, request.toolId, outcome, t));
       try {
         deps.onJobFinished?.(request, outcome, deps.now() - startedAt);
       } catch {
@@ -481,6 +501,9 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
       controller = ac;
       running = request;
       set({ active: { jobId, toolId: request.toolId, phase: 'preparing', fraction: 0 } });
+      // While the app is in the foreground (the user just started the job): a foreground service
+      // may not be started from the background.
+      tellNotice((n) => n.started(jobId, request.toolId, t));
 
       let appliedAt = Number.NEGATIVE_INFINITY;
       const onProgress = (phase: ToolPhase, fraction: number) => {
@@ -490,6 +513,7 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
         if (phase === active.phase && now - appliedAt < PROGRESS_INTERVAL_MS) return;
         appliedAt = now;
         set({ active: { ...active, phase, fraction } });
+        tellNotice((n) => n.progress(jobId, fraction));
       };
 
       // Started synchronously: picked documents carry a transient grant, so staging must not wait.
@@ -507,7 +531,7 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
         } catch {
           outcome = { ok: false, failure: 'unknown', inputIndex: null, outputs: [] };
         }
-        finish(jobId, request, outcome, startedAt);
+        finish(jobId, request, outcome, startedAt, t);
       })();
       return { ok: true, jobId };
     }
@@ -658,4 +682,5 @@ export const useToolJobs = createToolJobStore({
   cleanSession: (sessionId) => pdfNative.cleanToolWorkspace(sessionId),
   onJobFinished: (request, outcome, ms) =>
     telemetry.log(toolFinishedEvent(request, outcome, ms, pagesOf(outcome))),
+  notice: jobNotice,
 });

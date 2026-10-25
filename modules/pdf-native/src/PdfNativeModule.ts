@@ -76,6 +76,22 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
   publishToolOutput(tempUri: string, fileName: string): Promise<PdfFileInfo>;
   /** Cancels a running native job (its next check throws ERR_CANCELLED); remembered for 60 s if it has not begun. */
   cancelNativeTool(jobId: string): Promise<void>;
+  /** Starts the job's foreground service and progress notification; false when refused (never rejects). */
+  startJobNotice(
+    jobId: string,
+    title: string,
+    cancelLabel: string,
+    channelName: string,
+  ): Promise<boolean>;
+  updateJobNotice(jobId: string, fraction: number): Promise<void>;
+  stopJobNotice(jobId: string): Promise<void>;
+  /** Channel `tool_done`; false when notifications are off. */
+  postJobDoneNotice(
+    jobId: string,
+    title: string,
+    body: string,
+    channelName: string,
+  ): Promise<boolean>;
   cleanToolWorkspace(jobId: string): Promise<void>;
   cleanupToolLeftovers(olderThanMs: number): Promise<number>;
   inspectPdf(uri: string): Promise<PdfLock>;
