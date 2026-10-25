@@ -226,6 +226,35 @@ describe('result screen', () => {
     expect(screen.getByText('a merged.pdf')).toBeTruthy();
   });
 
+  it('partial outputs from a locked input say the new files have no password', async () => {
+    outcomeOf.mockReturnValue(
+      done({
+        ok: false,
+        failure: 'cancelled',
+        inputIndex: null,
+        outputs: [merged],
+        extras: { passwordRemoved: true },
+      }),
+    );
+    await open();
+    expect(screen.getByText('These files were saved before the problem:')).toBeTruthy();
+    expect(screen.getByText(NO_PASSWORD_NOTE)).toBeTruthy();
+  });
+
+  it('a failure that saved nothing has no password note', async () => {
+    outcomeOf.mockReturnValue(
+      done({
+        ok: false,
+        failure: 'io',
+        inputIndex: null,
+        outputs: [],
+        extras: { passwordRemoved: true },
+      }),
+    );
+    await open();
+    expect(screen.queryByText(NO_PASSWORD_NOTE)).toBeNull();
+  });
+
   it('explains an interrupted job that saved nothing', async () => {
     outcomeOf.mockReturnValue(
       done({ ok: false, failure: 'interrupted', inputIndex: null, outputs: [] }),
@@ -500,6 +529,20 @@ describe('result screen', () => {
           'The app was closed before this finished. Images already saved are in Pictures/PDFToolkit.',
         ),
       ).toBeTruthy();
+    });
+
+    it('partial images from a locked input carry no password note', async () => {
+      outcomeOf.mockReturnValue(
+        imagesDone({
+          ok: false,
+          failure: 'cancelled',
+          inputIndex: null,
+          outputs: [],
+          extras: { images: images({ count: 2, uris: URIS.slice(0, 2) }), passwordRemoved: true },
+        }),
+      );
+      await open();
+      expect(screen.queryByText(NO_PASSWORD_NOTE)).toBeNull();
     });
 
     it('says one image in the singular and notes reduced pages', async () => {

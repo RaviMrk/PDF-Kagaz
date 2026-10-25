@@ -245,6 +245,10 @@ export default function ResultScreen() {
         {partial.length > 0 ? (
           <>
             <Text style={{ color: colors.text }}>{t('result.partial')}</Text>
+            {/* Parts already saved from a locked input have no password either. */}
+            {view.outcome.extras?.passwordRemoved ? (
+              <Text style={{ color: colors.text }}>{t('result.passwordRemoved')}</Text>
+            ) : null}
             {outputs(partial)}
           </>
         ) : null}
