@@ -360,6 +360,9 @@ export function requestFromJob(row: ToolJobRow): ToolRequest | null {
   }
 }
 
+/** Failures only a typed password can fix: "Try again" asks for it instead of running. */
+const PASSWORD_FAILURES: readonly ToolFailure[] = ['encrypted', 'wrongPassword', 'restricted'];
+
 /** Tools whose stored rows cannot run again without a password the user types. */
 const NEEDS_PASSWORD: ReadonlySet<string> = new Set(['protect', 'unlock']);
 
@@ -558,11 +561,11 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
       retry(jobId, t) {
         if (get().active) return { ok: false, reason: 'busy' };
         const { last } = get();
-        // A password was missing or wrong: running the same request again cannot succeed.
+        // A password was missing, wrong or not the owner's: the same request cannot succeed.
         if (
           last?.jobId === jobId &&
           !last.outcome.ok &&
-          (last.outcome.failure === 'encrypted' || last.outcome.failure === 'wrongPassword')
+          PASSWORD_FAILURES.includes(last.outcome.failure)
         ) {
           return { ok: false, reason: 'needsInput' };
         }
@@ -579,7 +582,7 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
           request = null;
         }
         if (row && NEEDS_PASSWORD.has(row.toolId)) return { ok: false, reason: 'needsInput' };
-        if (row?.error === 'encrypted' || row?.error === 'wrongPassword') {
+        if (PASSWORD_FAILURES.some((f) => f === row?.error)) {
           return { ok: false, reason: 'needsInput' };
         }
         if (!request) return { ok: false, reason: 'db' };

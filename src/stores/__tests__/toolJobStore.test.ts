@@ -928,6 +928,23 @@ describe('toolJobStore v1.1 tools', () => {
     expect(s.calls[1]!.request).toEqual(protect);
   });
 
+  it('Try again after a restricted failure needs the owner password and does not run', async () => {
+    const s = setup();
+    const first = s.store.getState().start(watermarkText, t);
+    if (!first.ok) throw new Error('expected ok');
+    s.calls[0]!.resolve({ ok: false, failure: 'restricted', inputIndex: 0, outputs: [] });
+    await flush();
+    expect(s.store.getState().retry(first.jobId, t)).toEqual({ ok: false, reason: 'needsInput' });
+    expect(s.calls).toHaveLength(1);
+    // The same from the stored row in a later process.
+    const next = setup(s.db);
+    expect(next.store.getState().retry(first.jobId, t)).toEqual({
+      ok: false,
+      reason: 'needsInput',
+    });
+    expect(next.run).not.toHaveBeenCalled();
+  });
+
   it('retry of a password tool row asks the user to start again', async () => {
     const s = setup();
     const first = s.store.getState().start(protect, t);
