@@ -26,6 +26,7 @@ class SignaturePadView(context: Context, appContext: AppContext) : ExpoView(cont
   private val onPadChange by EventDispatcher()
 
   private val strokes = SignatureStrokes()
+  private val touch = SignatureTouch(strokes)
   private var inkColor = DEFAULT_INK
   private var strokeWidthDp = DEFAULT_STROKE_DP
   private var offscreen: Bitmap? = null
@@ -62,6 +63,7 @@ class SignaturePadView(context: Context, appContext: AppContext) : ExpoView(cont
 
   fun clear() {
     val wasEmpty = strokes.isEmpty
+    touch.cancel()
     strokes.clear()
     drawing = false
     redraw()
@@ -143,33 +145,49 @@ class SignaturePadView(context: Context, appContext: AppContext) : ExpoView(cont
         // Keep the enclosing ScrollView from taking a vertical stroke as a scroll.
         parent?.requestDisallowInterceptTouchEvent(true)
         val wasEmpty = strokes.isEmpty
-        strokes.start(event.x, event.y)
+        touch.down(event.getPointerId(0), event.x, event.y)
         drawing = true
         invalidate()
         if (wasEmpty) onPadChange(mapOf("empty" to false))
       }
+      MotionEvent.ACTION_POINTER_DOWN -> touch.pointerDown()
       MotionEvent.ACTION_MOVE -> {
+        val index = touch.activeIndex(event::findPointerIndex)
+        if (index < 0) return true
         var added = false
-        for (i in 0 until event.historySize) {
-          added = strokes.move(event.getHistoricalX(i), event.getHistoricalY(i)) || added
+        for (h in 0 until event.historySize) {
+          added = touch.move(event.getHistoricalX(index, h), event.getHistoricalY(index, h)) || added
         }
-        added = strokes.move(event.x, event.y) || added
+        added = touch.move(event.getX(index), event.getY(index)) || added
         if (added) invalidate()
       }
-      MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-        strokes.end()
-        if (drawing) {
-          drawing = false
-          val last = strokes.strokes.lastOrNull()
-          val bitmap = offscreen
-          if (last != null && bitmap != null) drawStroke(Canvas(bitmap), last)
-          invalidate()
-        }
+      MotionEvent.ACTION_POINTER_UP -> {
+        if (touch.pointerUp(event.getPointerId(event.actionIndex)) == SignatureTouch.Result.ENDED) commitStroke()
+      }
+      MotionEvent.ACTION_UP -> {
+        touch.up()
+        commitStroke()
+        parent?.requestDisallowInterceptTouchEvent(false)
+      }
+      // A cancel (system gesture, parent intercept) keeps the partial stroke, like a lift.
+      MotionEvent.ACTION_CANCEL -> {
+        touch.cancel()
+        commitStroke()
         parent?.requestDisallowInterceptTouchEvent(false)
       }
       else -> return false
     }
     return true
+  }
+
+  /** Moves the stroke that just ended from the live layer into the offscreen bitmap. */
+  private fun commitStroke() {
+    if (!drawing) return
+    drawing = false
+    val last = strokes.strokes.lastOrNull()
+    val bitmap = offscreen
+    if (last != null && bitmap != null) drawStroke(Canvas(bitmap), last)
+    invalidate()
   }
 
   private fun applyPaint() {
