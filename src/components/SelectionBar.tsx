@@ -16,6 +16,8 @@ type Props = {
   favoriteAdds: boolean;
   /** A delete is running: Delete is disabled and shows progress. */
   deleting: boolean;
+  /** A share is being prepared: Share is disabled and shows progress. */
+  sharing: boolean;
   onDelete: () => void;
   onShare: () => void;
   onFavorite: () => void;
@@ -35,6 +37,7 @@ export function SelectionBar({
   actions,
   favoriteAdds,
   deleting,
+  sharing,
   onDelete,
   onShare,
   onFavorite,
@@ -116,7 +119,7 @@ export function SelectionBar({
       </View>
       <View style={styles.actions}>
         {barAction(t('files.delete'), 'delete-outline', !deleting, onDelete, deleting)}
-        {barAction(t('files.shareSelected'), 'share-variant', true, onShare)}
+        {barAction(t('files.shareSelected'), 'share-variant', !sharing, onShare, sharing)}
         {barAction(t('files.mergeSelected'), 'file-multiple-outline', actions.merge, onMerge)}
         {barAction(t('files.moreSelected'), 'dots-horizontal', true, () => setMoreOpen(true))}
       </View>

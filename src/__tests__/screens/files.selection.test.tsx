@@ -353,6 +353,21 @@ describe('Files tab selection', () => {
       );
     });
 
+    it('opens one share sheet for a double tap while the first is being prepared', async () => {
+      let finish: () => void = () => {};
+      const share = jest
+        .spyOn(pdfNative, 'sharePdfs')
+        .mockImplementation(() => new Promise<void>((r) => (finish = r)));
+      await renderFiles();
+      await selectThree();
+      await fireEvent.press(screen.getByRole('button', { name: 'Share' }));
+      expect(disabled('Share')).toBe(true);
+      await fireEvent.press(screen.getByRole('button', { name: 'Share' }));
+      expect(share).toHaveBeenCalledTimes(1);
+      await act(async () => finish());
+      expect(disabled('Share')).toBe(false);
+    });
+
     it('keeps Delete, Share and Merge on the bar and the rest under More', async () => {
       await renderFiles();
       await longPress('Zebra.pdf');

@@ -15,7 +15,9 @@ jest.mock('react-native-safe-area-context', () => ({
 
 const file = makeRow({ name: 'Report.pdf' });
 const remove = jest.fn(() => Promise.resolve(null));
-const rename = jest.fn((): Promise<string | null> => Promise.resolve(null));
+const rename = jest.fn((): Promise<{ error: string | null; id: string }> =>
+  Promise.resolve({ error: null, id: 'id-New.pdf' }),
+);
 const onClose = jest.fn();
 
 function renderSheet(f = file) {
@@ -34,7 +36,7 @@ describe('FileActionsSheet', () => {
       rename: rename as never,
       toggleFavorite: jest.fn(),
       duplicate: jest.fn(() => Promise.resolve(null)),
-      moveToAppFolder: jest.fn(() => Promise.resolve(null)),
+      moveToAppFolder: jest.fn(() => Promise.resolve({ error: null, id: 'id-moved' })),
     });
   });
 
@@ -79,7 +81,7 @@ describe('FileActionsSheet', () => {
   });
 
   it('shows the store error when the name exists', async () => {
-    rename.mockResolvedValueOnce('exists');
+    rename.mockResolvedValueOnce({ error: 'exists', id: file.id });
     await renderSheet();
     await fireEvent.press(screen.getByLabelText('Rename'));
     await fireEvent.changeText(screen.getByLabelText('Rename PDF'), 'New');

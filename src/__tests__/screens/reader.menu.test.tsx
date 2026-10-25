@@ -62,7 +62,6 @@ function useRows(rows: FileRow[]) {
     dropMissing: jest.fn(),
     markOpened: jest.fn(),
     getRow: (id: string) => rows.find((r) => r.id === id) ?? null,
-    renames: {},
   });
 }
 
@@ -103,6 +102,7 @@ describe('Reader menu file actions and tool shortcuts (U3)', () => {
     useStorage.setState({ mode: 'full', roots: [], canRequestFullAccess: true });
     useRows([makeRow({ name: 'a.pdf' })]);
     jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(pdfNative, 'prepareReaderFile');
   });
 
   afterEach(() => jest.restoreAllMocks());
@@ -147,35 +147,44 @@ describe('Reader menu file actions and tool shortcuts (U3)', () => {
     expect(screen.getByRole('button', { name: 'Add to favourites' })).toBeTruthy();
   });
 
-  it('renames the file and follows it to its new id: title, favourite and tools', async () => {
-    // Like the store: a rename changes the uri, so the row gets a new id.
-    const rename = jest.fn(async (id: string, name: string) => {
+  /** Like the store: rename and move change the uri, so the row comes back under a new id. */
+  const replacing = (nextName: (name: string) => string) =>
+    jest.fn(async (id: string, newName?: string) => {
+      const row = useFiles.getState().files.find((f) => f.id === id)!;
+      const name = newName ?? nextName(row.name);
       const next = `id-${name}`;
       useFiles.setState((s) => ({
         files: s.files.map((f) => (f.id === id ? { ...f, id: next, name } : f)),
-        renames: { ...s.renames, [id]: next },
       }));
       mockDb.update(files).set({ id: next, name }).run();
-      return null;
+      return { error: null, id: next };
     });
-    useFiles.setState({ rename });
-    await renderReader();
-    await load(10);
-    expect(screen.getByText('a.pdf')).toBeTruthy();
+
+  async function renameTo(name: string) {
     await openMenu();
     await press('Rename');
-    await fireEvent.changeText(screen.getByLabelText('Rename PDF'), 'b.pdf');
+    await fireEvent.changeText(screen.getByLabelText('Rename PDF'), name);
     await press('Save');
+  }
+
+  it('switches to the new id after a rename: title, favourite, tools and delete use it', async () => {
+    const rename = replacing((n) => n);
+    const remove = jest.fn(() => Promise.resolve(null));
+    useFiles.setState({ rename, remove });
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    await renderReader();
+    await load(10);
+    await renameTo('b.pdf');
     expect(rename).toHaveBeenCalledWith(ID, 'b.pdf');
+    expect(rendered.getPathname()).toBe('/reader/id-b.pdf');
     expect(screen.getByText('b.pdf')).toBeTruthy();
-    expect(screen.queryByText('a.pdf')).toBeNull();
-    // The viewer kept its document: no reload.
+    // Same document, not reopened.
+    expect(pdfNative.prepareReaderFile).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('reader-viewer')).toBeTruthy();
 
     await openMenu();
     await press('Add to favourites');
     expect(useFiles.getState().files[0]).toMatchObject({ id: 'id-b.pdf', isFavorite: true });
-    expect(screen.getByRole('button', { name: 'Remove from favourites' })).toBeTruthy();
 
     const push = jest.spyOn(router, 'push').mockImplementation(() => {});
     await press('Compress');
@@ -183,6 +192,69 @@ describe('Reader menu file actions and tool shortcuts (U3)', () => {
       pathname: '/tool/[toolId]',
       params: { toolId: 'compress', inputs: 'id-b.pdf' },
     });
+
+    await openMenu();
+    await press('Delete');
+    const [, , buttons] = alert.mock.calls.at(-1) as [string, string, AlertButton[]];
+    await act(async () => buttons.find((b) => b.style === 'destructive')!.onPress!());
+    expect(remove).toHaveBeenCalledWith('id-b.pdf');
+  });
+
+  it('switches to the new id after Move to app folder', async () => {
+    const moveToAppFolder = replacing((n) => `moved-${n}`);
+    useFiles.setState({ moveToAppFolder });
+    await renderReader();
+    await load(10);
+    await openMenu();
+    await press('Move to PDFToolkit folder');
+    expect(moveToAppFolder).toHaveBeenCalledWith(ID);
+    expect(rendered.getPathname()).toBe('/reader/id-moved-a.pdf');
+    expect(pdfNative.prepareReaderFile).toHaveBeenCalledTimes(1);
+    const push = jest.spyOn(router, 'push').mockImplementation(() => {});
+    await openMenu();
+    await press('Compress');
+    expect(push).toHaveBeenCalledWith({
+      pathname: '/tool/[toolId]',
+      params: { toolId: 'compress', inputs: 'id-moved-a.pdf' },
+    });
+  });
+
+  it('writes the last page to the new row after a rename', async () => {
+    useFiles.setState({ rename: replacing((n) => n) });
+    await renderReader();
+    await load(10);
+    await act(async () => fakePdf.lastProps().onPageChanged(4, 10));
+    await renameTo('b.pdf');
+    // The page reached before the rename was saved to the old row first (the DB carries it over).
+    expect(setLastPage).toHaveBeenCalledWith(ID, 4);
+    setLastPage.mockClear();
+    await act(async () => fakePdf.lastProps().onPageChanged(7, 10));
+    jest.spyOn(router, 'push').mockImplementation(() => {});
+    await openMenu();
+    await press('Compress');
+    expect(setLastPage).toHaveBeenCalledWith('id-b.pdf', 7);
+    expect(setLastPage).not.toHaveBeenCalledWith(ID, expect.anything());
+  });
+
+  it('opens a newly indexed file at an old id as that file, not the renamed one', async () => {
+    useFiles.setState({ rename: replacing((n) => n) });
+    await renderReader();
+    await load(10);
+    await renameTo('b.pdf');
+    await act(async () => router.back());
+    expect(rendered.getPathname()).toBe('/files');
+    // Another app saves a new a.pdf where the old one was: it is indexed under the old id.
+    const fresh = makeRow({ name: 'a.pdf', sizeBytes: 999 });
+    const renamed = useFiles.getState().files[0]!;
+    useFiles.setState({
+      files: [renamed, fresh],
+      getRow: (id: string) => [renamed, fresh].find((r) => r.id === id) ?? null,
+    });
+    await act(async () => router.push(`/reader/${ID}`));
+    await act(async () => {});
+    expect(rendered.getPathname()).toBe(`/reader/${ID}`);
+    expect(screen.getByText('a.pdf')).toBeTruthy();
+    expect(screen.queryByText('b.pdf')).toBeNull();
   });
 
   it('duplicates through the same store action as the Files tab', async () => {
@@ -197,7 +269,9 @@ describe('Reader menu file actions and tool shortcuts (U3)', () => {
 
   it('deletes after confirming, releases the document and goes back', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    let releasedBeforeRemove = false;
     const remove = jest.fn(async (id: string) => {
+      releasedBeforeRemove = release.mock.calls.length > 0;
       useFiles.setState((s) => ({ files: s.files.filter((f) => f.id !== id) }));
       return null;
     });
@@ -217,6 +291,8 @@ describe('Reader menu file actions and tool shortcuts (U3)', () => {
     expect(remove).not.toHaveBeenCalled();
     await act(async () => buttons.find((b) => b.style === 'destructive')!.onPress!());
     expect(remove).toHaveBeenCalledWith(ID);
+    // The reader lets go of its document before the file is deleted.
+    expect(releasedBeforeRemove).toBe(true);
     // Released while the reader is still the screen, before going back.
     expect(release).toHaveBeenCalled();
     expect(pathAtRelease).toBe(`/reader/${ID}`);

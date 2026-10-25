@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { FileInfoSheet } from '@/components/FileInfoSheet';
 import { RenameDialog } from '@/components/RenameDialog';
 import type { FileRow } from '@/db/schema';
-import { useFiles, type FileActionError } from '@/stores/filesStore';
+import { useFiles, type FileActionError, type FileReplaceResult } from '@/stores/filesStore';
 import { useTheme } from '@/theme/useTheme';
 import { isInAppFolder } from '@/utils/appFolder';
 import { displayName } from '@/utils/displayName';
@@ -24,8 +24,13 @@ export type FileActionItem = {
 };
 
 type Options = {
-  /** An action finished (favourite toggled, renamed, duplicated, moved, deleted). */
-  onDone: (key: FileActionKey) => void;
+  /**
+   * An action finished (favourite toggled, renamed, duplicated, moved, deleted). `id` is the
+   * file's id afterwards: a new one after a rename or a move (ids come from uris).
+   */
+  onDone: (key: FileActionKey, id: string) => void;
+  /** Deletes the file; defaults to the store's single-file delete. */
+  remove?: (id: string) => Promise<FileActionError | null>;
 };
 
 /** Output rows (moved or created by the app) and files already in the app folder. */
@@ -50,7 +55,7 @@ function useIsMounted(): () => boolean {
  * shared by the Files tab's sheet and the reader's menu. Rename and info open their own panel,
  * which the caller shows in place of its list while `panel` is set.
  */
-export function useFileActions(file: FileRow, { onDone }: Options) {
+export function useFileActions(file: FileRow, { onDone, remove }: Options) {
   const { t } = useTranslation();
   const [panel, setPanel] = useState<'rename' | 'info' | null>(null);
   // File actions wait for an in-flight scan (writer lock): show which one is pending.
@@ -58,15 +63,20 @@ export function useFileActions(file: FileRow, { onDone }: Options) {
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const isMounted = useIsMounted();
 
-  const run = async (key: FileActionKey, op: () => Promise<FileActionError | null>) => {
+  const run = async (
+    key: FileActionKey,
+    op: () => Promise<FileActionError | null | FileReplaceResult>,
+  ) => {
     if (busy) return;
     setBusy(key);
     setErrorKey(null);
-    const error = await op();
+    const outcome = await op();
+    const { error, id } =
+      outcome !== null && typeof outcome === 'object' ? outcome : { error: outcome, id: file.id };
     if (!isMounted()) return; // The caller moved on to another file (or closed).
     setBusy(null);
     if (error) setErrorKey(fileActionErrorKey(error));
-    else onDone(key);
+    else onDone(key, id);
   };
 
   const confirmDelete = () =>
@@ -75,7 +85,7 @@ export function useFileActions(file: FileRow, { onDone }: Options) {
       {
         text: t('files.delete'),
         style: 'destructive',
-        onPress: () => void run('delete', () => useFiles.getState().remove(file.id)),
+        onPress: () => void run('delete', () => (remove ?? useFiles.getState().remove)(file.id)),
       },
     ]);
 
@@ -86,7 +96,7 @@ export function useFileActions(file: FileRow, { onDone }: Options) {
       label: file.isFavorite ? t('files.unfavorite') : t('files.favorite'),
       onPress: () => {
         useFiles.getState().toggleFavorite(file.id);
-        onDone('favorite');
+        onDone('favorite', file.id);
       },
     },
     {
@@ -126,9 +136,9 @@ export function useFileActions(file: FileRow, { onDone }: Options) {
       <RenameDialog
         file={file}
         onCancel={() => setPanel(null)}
-        onDone={() => {
+        onDone={(id) => {
           setPanel(null);
-          onDone('rename');
+          onDone('rename', id);
         }}
       />
     );

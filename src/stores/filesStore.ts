@@ -39,6 +39,11 @@ export type FileActionError =
   'notFound' | 'unavailable' | 'exists' | 'invalidName' | 'permission' | 'unknown';
 /** Index-level failure the UI can show: the cached list could not be read, or a scan failed. */
 export type FilesError = 'cache' | 'scan';
+/**
+ * Outcome of an action that replaces the file (rename, move): a row's id comes from its uri, so on
+ * success `id` is the row's new id; on failure it is the id passed in.
+ */
+export type FileReplaceResult = { error: FileActionError | null; id: string };
 
 export type FilesState = {
   files: FileRow[];
@@ -47,19 +52,14 @@ export type FilesState = {
   lastScanAt: number | null;
   notice: FileActionError | null;
   error: FilesError | null;
-  /**
-   * Old id → new id for each rename this session (a row's id comes from its uri), so a screen
-   * holding an id (the reader) can follow the file. Read it with `followRenames`.
-   */
-  renames: Record<string, string>;
   loadFromCache: () => void;
   refresh: (kind: 'full' | 'quick') => Promise<void>;
   toggleFavorite: (id: string) => void;
   markOpened: (id: string) => void;
-  rename: (id: string, newName: string) => Promise<FileActionError | null>;
+  rename: (id: string, newName: string) => Promise<FileReplaceResult>;
   remove: (id: string) => Promise<FileActionError | null>;
   duplicate: (id: string) => Promise<FileActionError | null>;
-  moveToAppFolder: (id: string) => Promise<FileActionError | null>;
+  moveToAppFolder: (id: string) => Promise<FileReplaceResult>;
   /** The row from state, else from the DB (e.g. a reader opened before the list loaded). */
   getRow: (id: string) => FileRow | null;
   setLastPage: (id: string, page: number) => void;
@@ -88,18 +88,6 @@ export type FilesState = {
   reportError: (error: FilesError) => void;
 };
 
-/** The id a row has now, after any renames since `id` was taken. */
-export function followRenames(renames: Readonly<Record<string, string>>, id: string): string {
-  let current = id;
-  const seen = new Set<string>([current]);
-  for (let next = renames[current]; next !== undefined; next = renames[current]) {
-    if (seen.has(next)) break;
-    seen.add(next);
-    current = next;
-  }
-  return current;
-}
-
 export type FilesStoreDeps = {
   getDb: () => IndexDb;
   getProvider: () => StorageProvider | null;
@@ -126,7 +114,13 @@ function toActionError(e: unknown): FileActionError {
   return 'unknown';
 }
 
-type FileOp = (provider: StorageProvider, ref: FileRef, row: FileRow, db: IndexDb) => Promise<void>;
+/** A file action; one that replaces the row resolves to the row's new id. */
+type FileOp = (
+  provider: StorageProvider,
+  ref: FileRef,
+  row: FileRow,
+  db: IndexDb,
+) => Promise<string | void>;
 
 /** Rows regenerated at once after a cache clear; the rest follow as the list renders them. */
 const RESET_REQUEUE = 48;
@@ -286,12 +280,17 @@ export function createFilesStore(deps: FilesStoreDeps) {
     }
 
     function runFileOp(id: string, op: FileOp): Promise<FileActionError | null> {
+      return exclusive(() => fileOp(id, op)).then((r) => r.error);
+    }
+
+    function runReplaceOp(id: string, op: FileOp): Promise<FileReplaceResult> {
       return exclusive(() => fileOp(id, op));
     }
 
-    async function fileOp(id: string, op: FileOp): Promise<FileActionError | null> {
+    async function fileOp(id: string, op: FileOp): Promise<FileReplaceResult> {
+      const fail = (error: FileActionError): FileReplaceResult => ({ error, id });
       const provider = deps.getProvider();
-      if (!provider) return 'permission';
+      if (!provider) return fail('permission');
       let row: FileRow | undefined;
       try {
         const db = deps.getDb();
@@ -299,11 +298,11 @@ export function createFilesStore(deps: FilesStoreDeps) {
         row = getFile(db, id);
         if (!row) {
           dropRow(id);
-          return 'notFound';
+          return fail('notFound');
         }
-        await op(provider, { uri: row.uri, parentUri: row.parentUri }, row, db);
+        const nextId = await op(provider, { uri: row.uri, parentUri: row.parentUri }, row, db);
         reload();
-        return null;
+        return { error: null, id: nextId ?? id };
       } catch (e) {
         const error = toActionError(e);
         if (error === 'notFound') {
@@ -316,7 +315,7 @@ export function createFilesStore(deps: FilesStoreDeps) {
           }
           dropRow(id);
         }
-        return error;
+        return fail(error);
       }
     }
 
@@ -327,7 +326,6 @@ export function createFilesStore(deps: FilesStoreDeps) {
       lastScanAt: null,
       notice: null,
       error: null,
-      renames: {},
 
       loadFromCache() {
         const status = get().status === 'scanning' ? 'scanning' : 'idle';
@@ -485,13 +483,11 @@ export function createFilesStore(deps: FilesStoreDeps) {
       },
 
       rename: (id, newName) =>
-        runFileOp(id, async (provider, ref, row, db) => {
-          const next = replaceFile(db, id, await provider.rename(ref, newName), row.source);
-          if (next.id === id) return;
-          // The new id is live again: drop any entry that would lead away from it.
-          const { [next.id]: _stale, ...renames } = get().renames;
-          set({ renames: { ...renames, [id]: next.id } });
-        }),
+        runReplaceOp(
+          id,
+          async (provider, ref, row, db) =>
+            replaceFile(db, id, await provider.rename(ref, newName), row.source).id,
+        ),
 
       remove: (id) =>
         runFileOp(id, async (provider, ref, row, db) => {
@@ -506,10 +502,10 @@ export function createFilesStore(deps: FilesStoreDeps) {
         }),
 
       moveToAppFolder: (id) =>
-        runFileOp(id, async (provider, ref, _row, db) => {
+        runReplaceOp(id, async (provider, ref, _row, db) => {
           const info = await provider.moveToAppFolder(ref);
           // The app folder is outside the granted SAF trees, so it is tracked as output there.
-          replaceFile(db, id, info, provider.mode === 'saf' ? 'output' : provider.source);
+          return replaceFile(db, id, info, provider.mode === 'saf' ? 'output' : provider.source).id;
         }),
 
       requestThumb(file) {

@@ -25,8 +25,8 @@ const REASON_KEYS = {
 type Props = {
   file: FileRow;
   onCancel: () => void;
-  /** The file was renamed. */
-  onDone: () => void;
+  /** The file was renamed; `id` is its new id (ids come from uris). */
+  onDone: (id: string) => void;
 };
 
 export function RenameDialog({ file, onCancel, onDone }: Props) {
@@ -45,10 +45,10 @@ export function RenameDialog({ file, onCancel, onDone }: Props) {
     }
     setErrorKey(null);
     setBusy(true);
-    const error = await useFiles.getState().rename(file.id, result.name);
+    const { error, id } = await useFiles.getState().rename(file.id, result.name);
     setBusy(false);
     if (error) setErrorKey(fileActionErrorKey(error));
-    else onDone();
+    else onDone(id);
   };
 
   return (

@@ -65,6 +65,9 @@ function FilesList() {
   const [result, setResult] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const deletingRef = useRef(false);
+  // A share copies each file:// PDF first: one at a time, shown on the button while it runs.
+  const [sharing, setSharing] = useState(false);
+  const sharingRef = useRef(false);
   // Rows can vanish (delete, rescan); the selection only keeps ids still present in `files`.
   const selectedIds = useMemo(() => pruneSelection(pickedIds, files), [pickedIds, files]);
   const selecting = selectedIds.length > 0;
@@ -213,10 +216,19 @@ function FilesList() {
     setSelectedIds([]);
   }, [selectedRows]);
   const shareSelected = useCallback(async () => {
-    const outcome = await shareFiles(
-      selectedRows.map((r) => r.uri),
-      t('files.shareManyTitle'),
-    );
+    if (sharingRef.current) return;
+    sharingRef.current = true;
+    setSharing(true);
+    let outcome;
+    try {
+      outcome = await shareFiles(
+        selectedRows.map((r) => r.uri),
+        t('files.shareManyTitle'),
+      );
+    } finally {
+      sharingRef.current = false;
+      setSharing(false);
+    }
     if (outcome !== 'ok') setResult(t(fileActionErrorKey(outcome)));
   }, [selectedRows, t]);
   const openMore = useCallback((f: FileRowData) => setActionFile(f), []);
@@ -246,6 +258,7 @@ function FilesList() {
             actions={actions}
             favoriteAdds={favoriteTarget(selectedRows)}
             deleting={deleting}
+            sharing={sharing}
             onDelete={confirmDeleteSelected}
             onShare={() => void shareSelected()}
             onFavorite={favoriteSelected}

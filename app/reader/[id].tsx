@@ -41,7 +41,7 @@ import { readerBackground, readerFilter } from '@/services/reader/readerFilters'
 import { readerReducer, type ReaderFailure } from '@/services/reader/readerState';
 import type { RunnableToolId } from '@/services/tools/toolRegistry';
 import { useBookmarks } from '@/services/reader/useBookmarks';
-import { followRenames, useFiles } from '@/stores/filesStore';
+import { useFiles } from '@/stores/filesStore';
 import { useSettings } from '@/stores/settingsStore';
 import { useTheme } from '@/theme/useTheme';
 import { displayName } from '@/utils/displayName';
@@ -103,27 +103,29 @@ function startPage(row: FileRow): number {
 }
 
 export default function ReaderScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  // A new document id gets a fresh reader (state, saver, native document).
-  return <Reader key={id} id={id} />;
+  const { id, from } = useLocalSearchParams<{ id: string; from?: string }>();
+  // A new document gets a fresh reader (state, saver, native document). A rename or move from the
+  // menu hands the open document over to the file's new id (`from` = the id it had), so the
+  // reader keeps its document, page and zoom instead of reopening.
+  const [doc, setDoc] = useState({ key: id, id });
+  if (id !== doc.id) setDoc({ key: from === doc.id ? doc.key : id, id });
+  return <Reader key={doc.key} id={id} />;
 }
 
 function Reader({ id }: { id: string }) {
   const { t } = useTranslation();
   const [row] = useState(() => useFiles.getState().getRow(id));
 
-  useEffect(() => () => closeReader(), [id]);
+  useEffect(() => () => closeReader(), []);
 
   if (!row) return <ReaderMessage title={t('reader.errorNoRow')} onClose={leave} />;
-  return <OpenReader row={row} />;
+  return <OpenReader row={row} id={id} />;
 }
 
-function OpenReader({ row: openedRow }: { row: FileRow }) {
+/** `id` is the file's current id: it changes when a rename or move from the menu hands it over. */
+function OpenReader({ row: openedRow, id }: { row: FileRow; id: string }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  // A rename from the menu gives the row a new id (ids come from uris): follow it, so saving the
-  // page, bookmarks, the menu's actions and tool shortcuts keep working on the same file.
-  const id = useFiles((s) => followRenames(s.renames, openedRow.id));
   // The live row: a rename or favourite from the menu shows at once. A deleted row keeps the last one.
   const row = useFiles((s) => s.files.find((f) => f.id === id)) ?? openedRow;
   const [phase, dispatch] = useReducer(readerReducer, { kind: 'preparing' });
@@ -136,6 +138,8 @@ function OpenReader({ row: openedRow }: { row: FileRow }) {
   const [menuVisible, setMenuVisible] = useState(false);
   const [outline, setOutline] = useState<OutlineRow[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
+  // Set while a delete from the menu runs: the viewer lets go of the file first.
+  const [viewerReleased, setViewerReleased] = useState(false);
   // Share / print / open-with may copy a large file first; one at a time, shown while it runs.
   const [actionBusy, setActionBusy] = useState(false);
   const busyRef = useRef(false);
@@ -281,10 +285,26 @@ function OpenReader({ row: openedRow }: { row: FileRow }) {
     router.push({ pathname: '/tool/[toolId]', params: { toolId, inputs: id } });
   };
 
+  const openMenu = () => {
+    // Save the position now: a rename or move from the menu gives the row a new id.
+    saver.current?.flush();
+    setMenuVisible(true);
+  };
+
+  // A rename or move replaced the row: switch to its new id without reopening the document.
+  const onReplaced = (newId: string) => router.setParams({ id: newId, from: id });
+
+  // Release the document and the viewer's hold on the file before deleting it; back on failure.
+  const deleteFromReader = async (fileId: string) => {
+    closeReader();
+    setViewerReleased(true);
+    const error = await useFiles.getState().remove(fileId);
+    if (error) setViewerReleased(false);
+    return error;
+  };
+
   const onDeleted = () => {
     setMenuVisible(false);
-    // Release the working copy before leaving, so nothing stays open on the deleted file.
-    closeReader();
     leave();
   };
 
@@ -324,17 +344,19 @@ function OpenReader({ row: openedRow }: { row: FileRow }) {
             backgroundColor: readerBackground(readerTheme),
           }}
         >
-          <PdfView
-            ref={pdf}
-            fileUri={phase.fileUri}
-            password={phase.password}
-            initialPage={page}
-            horizontal={horizontal}
-            onLoad={onLoad}
-            onPageChange={onPageChange}
-            onError={onError}
-            onTap={onTap}
-          />
+          {viewerReleased ? null : (
+            <PdfView
+              ref={pdf}
+              fileUri={phase.fileUri}
+              password={phase.password}
+              initialPage={page}
+              horizontal={horizontal}
+              onLoad={onLoad}
+              onPageChange={onPageChange}
+              onError={onError}
+              onTap={onTap}
+            />
+          )}
         </View>
       ) : phase.kind === 'preparing' ? (
         <View style={styles.center}>
@@ -362,7 +384,7 @@ function OpenReader({ row: openedRow }: { row: FileRow }) {
                 label={t('reader.more')}
                 icon="dots-vertical"
                 color={colors.text}
-                onPress={() => setMenuVisible(true)}
+                onPress={openMenu}
               />
             </>
           ) : null}
@@ -432,7 +454,9 @@ function OpenReader({ row: openedRow }: { row: FileRow }) {
         onHorizontal={(on) => useSettings.getState().setReaderHorizontal(on)}
         onAction={(action) => void runAction(action)}
         onTool={openTool}
+        onDelete={deleteFromReader}
         onDeleted={onDeleted}
+        onReplaced={onReplaced}
         onClose={() => setMenuVisible(false)}
       />
       <JumpToPageDialog

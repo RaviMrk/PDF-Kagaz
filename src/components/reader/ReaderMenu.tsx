@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { BottomSheet } from '@/components/BottomSheet';
 import { FileActionRow, useFileActions, type FileActionKey } from '@/components/useFileActions';
 import type { FileRow } from '@/db/schema';
+import type { FileActionError } from '@/stores/filesStore';
 import type { ReaderAction } from '@/services/reader/readerActions';
 import { toolById, type RunnableToolId } from '@/services/tools/toolRegistry';
 import type { ReaderTheme } from '@/stores/settingsStore';
@@ -35,8 +36,12 @@ type Props = {
   onAction(a: ReaderAction): void;
   /** Opens a tool with this file chosen. */
   onTool(toolId: RunnableToolId): void;
+  /** Deletes the file the reader's way (it lets go of the document first). */
+  onDelete(id: string): Promise<FileActionError | null>;
   /** The file was deleted: the reader should close. */
   onDeleted(): void;
+  /** A rename or move gave the file a new id: the reader switches to it. */
+  onReplaced(id: string): void;
   onClose(): void;
 };
 
@@ -82,16 +87,20 @@ export function ReaderMenu({
   onHorizontal,
   onAction,
   onTool,
+  onDelete,
   onDeleted,
+  onReplaced,
   onClose,
 }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const fileActions = useFileActions(file, {
-    onDone: (key: FileActionKey) => {
-      if (key === 'delete') onDeleted();
+    remove: onDelete,
+    onDone: (key: FileActionKey, id: string) => {
+      if (key === 'delete') return onDeleted();
+      if (id !== file.id) onReplaced(id);
       // A favourite flips in place; the other actions are done with the menu.
-      else if (key !== 'favorite') onClose();
+      if (key !== 'favorite') onClose();
     },
   });
   const fileBusy = fileActions.busy !== null;

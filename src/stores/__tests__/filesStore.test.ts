@@ -17,7 +17,7 @@ import type { StorageProvider } from '@/services/storage/StorageProvider';
 import { createFakePdfNative, nativeError } from '@/test-utils/fakePdfNative';
 import { fileIdForUri } from '@/utils/fileId';
 
-import { createFilesStore, followRenames } from '../filesStore';
+import { createFilesStore } from '../filesStore';
 
 function makeDb(): IndexDb {
   const sqlite = new Database(':memory:');
@@ -256,7 +256,11 @@ describe('filesStore', () => {
     const { store, db } = setup({ provider, seed: [info('A/a.pdf')] });
     setFavorite(db, idOf('A/a.pdf'), true);
     store.getState().loadFromCache();
-    await expect(store.getState().rename(idOf('A/a.pdf'), 'renamed.pdf')).resolves.toBeNull();
+    // The caller gets the row's new id (ids come from uris).
+    await expect(store.getState().rename(idOf('A/a.pdf'), 'renamed.pdf')).resolves.toEqual({
+      error: null,
+      id: idOf('A/renamed.pdf'),
+    });
     expect(provider.rename).toHaveBeenCalledWith(
       { uri: `${ROOT}/A/a.pdf`, parentUri: `${ROOT}/A` },
       'renamed.pdf',
@@ -269,28 +273,6 @@ describe('filesStore', () => {
       parentUri: `${ROOT}/A`,
       folder: 'A',
     });
-    // An open reader follows the row to its new id.
-    expect(followRenames(store.getState().renames, idOf('A/a.pdf'))).toBe(idOf('A/renamed.pdf'));
-  });
-
-  it('follows a chain of renames and leaves unknown ids alone', () => {
-    expect(followRenames({ a: 'b', b: 'c' }, 'a')).toBe('c');
-    expect(followRenames({ a: 'b' }, 'x')).toBe('x');
-  });
-
-  it('a rename back to the first name leads home again', async () => {
-    const provider = fakeProvider({
-      rename: jest
-        .fn()
-        .mockResolvedValueOnce(info('A/b.pdf'))
-        .mockResolvedValueOnce(info('A/a.pdf')),
-    });
-    const { store } = setup({ provider, seed: [info('A/a.pdf')] });
-    store.getState().loadFromCache();
-    await store.getState().rename(idOf('A/a.pdf'), 'b.pdf');
-    await store.getState().rename(idOf('A/b.pdf'), 'a.pdf');
-    expect(followRenames(store.getState().renames, idOf('A/a.pdf'))).toBe(idOf('A/a.pdf'));
-    expect(followRenames(store.getState().renames, idOf('A/b.pdf'))).toBe(idOf('A/a.pdf'));
   });
 
   it('rename rejecting ERR_FILE_EXISTS returns exists and leaves the row unchanged', async () => {
@@ -300,9 +282,13 @@ describe('filesStore', () => {
     const { store } = setup({ provider, seed: [info('A/a.pdf')] });
     store.getState().loadFromCache();
     const before = store.getState().files;
-    await expect(store.getState().rename(idOf('A/a.pdf'), 'b.pdf')).resolves.toBe('exists');
+    await expect(store.getState().rename(idOf('A/a.pdf'), 'b.pdf')).resolves.toEqual({
+      error: 'exists',
+      id: idOf('A/a.pdf'),
+    });
     expect(store.getState().files).toEqual(before);
-    expect(store.getState().renames).toEqual({});
+    // No session-wide id mapping: nothing can redirect a later open of this id.
+    expect('renames' in store.getState()).toBe(false);
   });
 
   it.each([
@@ -313,7 +299,9 @@ describe('filesStore', () => {
     const provider = fakeProvider({ rename: jest.fn().mockRejectedValue(nativeError(code)) });
     const { store } = setup({ provider, seed: [info('A/a.pdf')] });
     store.getState().loadFromCache();
-    await expect(store.getState().rename(idOf('A/a.pdf'), 'x.pdf')).resolves.toBe(expected);
+    await expect(store.getState().rename(idOf('A/a.pdf'), 'x.pdf')).resolves.toMatchObject({
+      error: expected,
+    });
     expect(store.getState().files).toHaveLength(1);
   });
 
@@ -348,7 +336,10 @@ describe('filesStore', () => {
     const { store, db } = setup({ provider });
     upsertFile(db, info('A/a.pdf'), 'saf');
     store.getState().loadFromCache();
-    await expect(store.getState().moveToAppFolder(idOf('A/a.pdf'))).resolves.toBeNull();
+    await expect(store.getState().moveToAppFolder(idOf('A/a.pdf'))).resolves.toEqual({
+      error: null,
+      id: idOf('Documents/PDF Toolkit/a.pdf'),
+    });
     expect(store.getState().files).toHaveLength(1);
     expect(store.getState().files[0]).toMatchObject({
       id: idOf('Documents/PDF Toolkit/a.pdf'),
@@ -471,7 +462,7 @@ describe('filesStore: index writers are serialized', () => {
     // The scan listed the folder before the rename happened.
     scanDone.resolve(result([info('A/a.pdf')]));
     await scan;
-    await expect(renamed).resolves.toBeNull();
+    await expect(renamed).resolves.toEqual({ error: null, id: idOf('A/b.pdf') });
 
     const b = idOf('A/b.pdf');
     expect(names(listFiles(db))).toEqual(['b.pdf']);
@@ -718,7 +709,9 @@ describe('filesStore: final review fixes', () => {
     upsertFile(db, info('A/a.pdf'), 'saf');
     setFavorite(db, idOf('A/a.pdf'), true);
     store.getState().loadFromCache();
-    await expect(store.getState().moveToAppFolder(idOf('A/a.pdf'))).resolves.toBeNull();
+    await expect(store.getState().moveToAppFolder(idOf('A/a.pdf'))).resolves.toMatchObject({
+      error: null,
+    });
     await store.getState().refresh('full');
     expect(store.getState().files).toHaveLength(1);
     expect(store.getState().files[0]).toMatchObject({

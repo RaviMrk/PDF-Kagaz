@@ -18,7 +18,7 @@ export function FileActionsSheet({ file, onClose }: Props) {
 function Sheet({ file, onClose }: { file: FileRow; onClose: () => void }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const { items, busy, errorKey, panel } = useFileActions(file, { onDone: onClose });
+  const { items, busy, errorKey, panel } = useFileActions(file, { onDone: () => onClose() });
 
   // Dismissal (backdrop, hardware back) is ignored while an action is pending.
   const dismiss = () => {
