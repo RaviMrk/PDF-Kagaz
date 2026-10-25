@@ -23,3 +23,15 @@ describe('initI18n', () => {
     expect(initI18n('en').t('tabs.files')).toBe('Files');
   });
 });
+
+describe('counted strings', () => {
+  const t = initI18n('en').t;
+  it.each([
+    ['split.pageCount', '1 page', '3 pages'],
+    ['files.scanning', 'Scanning… 1 PDF found', 'Scanning… 3 PDFs found'],
+    ['merge.run', 'Merge 1 PDF', 'Merge 3 PDFs'],
+  ])('%s has a singular form', (key, one, many) => {
+    expect(t(key, { count: 1 })).toBe(one);
+    expect(t(key, { count: 3 })).toBe(many);
+  });
+});

@@ -602,6 +602,7 @@ describe('tool flow', () => {
       preview: { fileUri: 'file:///cache/p.pdf', pageCount: 1, close: jest.fn() },
     });
     await open(`/tool/split?inputs=${ID_A}`);
+    expect(screen.getByText('1 page')).toBeTruthy();
     expect(screen.getByLabelText('Page ranges')).toBeTruthy();
     expect(screen.getByLabelText('Extract pages')).toBeTruthy();
     expect(screen.queryByLabelText('Every N pages')).toBeNull();

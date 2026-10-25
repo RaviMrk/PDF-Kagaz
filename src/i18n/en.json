@@ -105,6 +105,7 @@
     "pages": "{{count}} pages",
     "pages_one": "{{count}} page",
     "scanning": "Scanning… {{count}} PDFs found",
+    "scanning_one": "Scanning… {{count}} PDF found",
     "emptyAll": "No PDFs found yet",
     "emptyScanning": "Looking for PDFs…",
     "emptyFavorites": "Star a file to see it here",
@@ -368,7 +369,8 @@
     "remove": "Remove {{name}}",
     "orderTitle": "Arrange files",
     "orderHint": "Drag to reorder, or use the arrows",
-    "run": "Merge {{count}} PDFs"
+    "run": "Merge {{count}} PDFs",
+    "run_one": "Merge {{count}} PDF"
   },
   "protect": {
     "password": "New password",
@@ -437,6 +439,7 @@
     "makesFiles_one": "Makes {{count}} file",
     "extractHint": "Selected pages go into one new PDF",
     "pageCount": "{{count}} pages",
+    "pageCount_one": "{{count}} page",
     "run": "Split"
   },
   "toolError": {
