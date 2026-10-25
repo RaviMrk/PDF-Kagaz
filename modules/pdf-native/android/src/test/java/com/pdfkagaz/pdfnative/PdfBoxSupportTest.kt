@@ -111,6 +111,19 @@ class PdfBoxSupportTest {
   }
 
   @Test
+  fun outOfMemoryIsItsOwnCodeNotTooLarge() {
+    val oom = { throw OutOfMemoryError("Failed to allocate 512 MB") }
+    for (e in listOf(
+      codedFailure { PdfBoxSupport.mapOpenErrors(null, oom) },
+      codedFailure { PdfBoxSupport.mapReadErrors(oom) },
+      codedFailure { PdfBoxSupport.mapSaveErrors(oom) },
+    )) {
+      assertEquals("ERR_OUT_OF_MEMORY", e.code)
+      assertClean(e)
+    }
+  }
+
+  @Test
   fun missingFileErrorCarriesNoPathInMessageOrCause() {
     val e = codedFailure { PdfBoxSupport.open(File(tmp.root, "one-page.pdf"), null, tempDir) }
     assertEquals("ERR_PDF_INVALID", e.code)

@@ -1794,6 +1794,14 @@ describe('runTool compress', () => {
     expect(outcome.outputs).toHaveLength(1);
   });
 
+  it('reports running out of memory as outOfMemory, not tooLarge', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    s.native.compressPdf.mockRejectedValueOnce(nativeError('ERR_OUT_OF_MEMORY'));
+    const outcome = await s.run({ toolId: 'compress', inputIds: [r.id], level: 'high' });
+    expect(outcome).toMatchObject({ ok: false, failure: 'outOfMemory', inputIndex: 0 });
+  });
+
   it('uses the staged size when the row size is unknown', async () => {
     const r = row('one-page.pdf', { sizeBytes: Number.NaN });
     const s = setup([r]);

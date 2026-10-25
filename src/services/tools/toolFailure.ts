@@ -15,6 +15,8 @@ export function toToolFailure(e: unknown): ToolFailure {
         return 'permission';
       case 'ERR_TOO_LARGE':
         return 'tooLarge';
+      case 'ERR_OUT_OF_MEMORY':
+        return 'outOfMemory';
       case 'ERR_IO':
         return 'io';
       case 'ERR_PDF_ENCRYPTED':

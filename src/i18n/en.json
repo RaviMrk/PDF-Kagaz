@@ -469,7 +469,8 @@
     "restricted": "This PDF doesn't allow changes. Enter its owner password to use it in a tool.",
     "signatureGone": "A signature you placed was deleted. Place it again.",
     "needsInput": "Start the tool again to enter the password.",
-    "notProtected": "This PDF has no password to remove"
+    "notProtected": "This PDF has no password to remove",
+    "outOfMemory": "This phone ran out of memory for this file. Close other apps and try again, or try a smaller file."
   },
   "ads": {
     "label": "Advertisement"

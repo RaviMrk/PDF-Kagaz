@@ -33,6 +33,12 @@ describe('failureMessage', () => {
       `These files are over ${formatBytes(JS_CAPS.total)} together. Use fewer files at a time.`,
     );
   });
+  it('says the phone ran out of memory, not that the file is over the cap', () => {
+    const copy =
+      'This phone ran out of memory for this file. Close other apps and try again, or try a smaller file.';
+    expect(failureMessage('outOfMemory', 'big.pdf', t)).toBe(copy);
+    expect(jobFailureMessage('outOfMemory', null, 0, t, 'compress')).toBe(copy);
+  });
   it('strips bidi controls from the name', () => {
     expect(failureMessage('notFound', '‮fdp.exe‬', t)).toBe('"fdp.exe" no longer exists');
   });

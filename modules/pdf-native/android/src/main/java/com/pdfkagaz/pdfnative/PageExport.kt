@@ -90,7 +90,7 @@ class PageExport(private val context: Context) {
     return try {
       Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap = it }
     } catch (e: OutOfMemoryError) {
-      throw IoCodedException("Not enough memory to render the page")
+      throw OutOfMemoryCodedException("Not enough memory to render the page")
     }
   }
 

@@ -945,6 +945,19 @@ describe('toolJobStore v1.1 tools', () => {
     expect(next.run).not.toHaveBeenCalled();
   });
 
+  it('reads an outOfMemory failure back from its row', async () => {
+    const s = setup();
+    const first = s.store.getState().start(watermarkText, t);
+    if (!first.ok) throw new Error('expected ok');
+    s.calls[0]!.resolve({ ok: false, failure: 'outOfMemory', inputIndex: 0, outputs: [] });
+    await flush();
+    const next = setup(s.db);
+    expect(next.store.getState().outcomeOf(first.jobId)).toMatchObject({
+      kind: 'done',
+      outcome: { ok: false, failure: 'outOfMemory' },
+    });
+  });
+
   it('retry of a password tool row asks the user to start again', async () => {
     const s = setup();
     const first = s.store.getState().start(protect, t);

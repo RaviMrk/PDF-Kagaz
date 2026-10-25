@@ -57,3 +57,7 @@ class PasswordRestrictedException(message: String = "PDF is restricted; the owne
 /** The job was cancelled (cancelNativeTool) before it finished. */
 class CancelledException(message: String = "Cancelled", cause: Throwable? = null) :
   CodedException("ERR_CANCELLED", message, cause)
+
+/** The phone ran out of memory (an OutOfMemoryError) on this input; not a size-cap refusal. */
+class OutOfMemoryCodedException(message: String = "Not enough memory for this file", cause: Throwable? = null) :
+  CodedException("ERR_OUT_OF_MEMORY", message, cause)

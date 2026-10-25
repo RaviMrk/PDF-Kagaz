@@ -32,7 +32,7 @@ object PdfBoxSupport {
   /**
    * Opens [file]; a null [password] tries the empty user password. Encrypted and no password →
    * ERR_PDF_ENCRYPTED; a password that does not open it → ERR_PASSWORD_WRONG; truncated, damaged
-   * or unreadable → ERR_PDF_INVALID; out of memory → ERR_TOO_LARGE. The caller closes the document.
+   * or unreadable → ERR_PDF_INVALID; out of memory → ERR_OUT_OF_MEMORY. The caller closes the document.
    */
   fun open(file: File, password: String?, tempDir: File): PDDocument = mapOpenErrors(password) {
     // PdfBox's lenient parser rebuilds a file cut short from whatever objects survive.
@@ -68,7 +68,7 @@ object PdfBoxSupport {
 
   /**
    * Saves [doc] to `<target>.part` (flushed and fsynced, [DurableWrites]), then renames it over
-   * [target], so [target] never holds a half-written file, even after a crash. The part file is removed on failure (ERR_IO, or ERR_TOO_LARGE when out of memory).
+   * [target], so [target] never holds a half-written file, even after a crash. The part file is removed on failure (ERR_IO, or ERR_OUT_OF_MEMORY when out of memory).
    */
   fun saveTo(doc: PDDocument, target: File) {
     val part = File(target.parentFile, target.name + ".part")
@@ -98,12 +98,12 @@ object PdfBoxSupport {
       // PdfBox 2.0 throws IllegalArgumentException, ClassCastException, NPE… on malformed input.
       throw PdfInvalidException()
     } catch (e: OutOfMemoryError) {
-      throw TooLargeException()
+      throw OutOfMemoryCodedException()
     }
 
   /**
    * The error mapping of work that reads (and decodes) an open document: a failure there is a
-   * damaged input (ERR_PDF_INVALID), out of memory ERR_TOO_LARGE; coded errors pass through.
+   * damaged input (ERR_PDF_INVALID), out of memory ERR_OUT_OF_MEMORY; coded errors pass through.
    */
   internal fun <T> mapReadErrors(block: () -> T): T =
     try {
@@ -115,7 +115,7 @@ object PdfBoxSupport {
     } catch (e: RuntimeException) {
       throw PdfInvalidException()
     } catch (e: OutOfMemoryError) {
-      throw TooLargeException()
+      throw OutOfMemoryCodedException()
     }
 
   /** The error mapping of [saveTo]; coded errors pass through, causes are dropped. */
@@ -129,6 +129,6 @@ object PdfBoxSupport {
     } catch (e: RuntimeException) {
       throw IoCodedException()
     } catch (e: OutOfMemoryError) {
-      throw TooLargeException()
+      throw OutOfMemoryCodedException()
     }
 }

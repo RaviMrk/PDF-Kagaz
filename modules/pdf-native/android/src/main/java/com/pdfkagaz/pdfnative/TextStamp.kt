@@ -48,7 +48,7 @@ object TextStamp {
       if (!written || !part.renameTo(target)) throw IoCodedException()
       return mapOf("uri" to Uri.fromFile(target).toString(), "width" to width, "height" to height, "sizeBytes" to target.length())
     } catch (e: OutOfMemoryError) {
-      throw TooLargeException()
+      throw OutOfMemoryCodedException()
     } catch (e: java.io.IOException) {
       throw IoCodedException()
     } finally {

@@ -167,7 +167,7 @@ class ImageFiles(private val context: Context) {
         if (!written || !part.renameTo(target)) throw IoCodedException("Could not write image")
         return cw to ch
       } catch (e: OutOfMemoryError) {
-        throw IoCodedException("Not enough memory for this image", e)
+        throw OutOfMemoryCodedException("Not enough memory for this image")
       } catch (e: IOException) {
         throw IoCodedException("Could not write image", e)
       } finally {

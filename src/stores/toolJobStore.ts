@@ -137,6 +137,7 @@ const FAILURES: readonly ToolFailure[] = [
   'restricted',
   'signatureGone',
   'notProtected',
+  'outOfMemory',
   'unknown',
 ];
 

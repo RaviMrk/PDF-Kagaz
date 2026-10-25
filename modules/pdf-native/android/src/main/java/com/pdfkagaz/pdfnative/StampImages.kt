@@ -56,7 +56,7 @@ class StampImages(private val context: Context) {
           if (!written || !part.renameTo(target)) throw IoCodedException()
           mapOf("uri" to Uri.fromFile(target).toString(), "width" to cw, "height" to ch, "sizeBytes" to target.length())
         } catch (e: OutOfMemoryError) {
-          throw TooLargeException()
+          throw OutOfMemoryCodedException()
         } catch (e: IOException) {
           throw IoCodedException()
         } finally {
