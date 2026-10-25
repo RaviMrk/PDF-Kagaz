@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, View, type DimensionValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/theme/useTheme';
@@ -17,6 +17,8 @@ type Props = {
   padding?: number;
   gap?: number;
   radius?: number;
+  /** Caps the panel's height (e.g. '85%'); put a ScrollView inside to scroll the rest. */
+  maxHeight?: DimensionValue;
   testID?: string;
   children: ReactNode;
 };
@@ -34,6 +36,7 @@ export function BottomSheet({
   padding = 16,
   gap,
   radius = 16,
+  maxHeight,
   testID,
   children,
 }: Props) {
@@ -62,6 +65,7 @@ export function BottomSheet({
             gap,
             borderTopLeftRadius: radius,
             borderTopRightRadius: radius,
+            maxHeight,
           }}
         >
           {children}

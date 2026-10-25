@@ -17,7 +17,7 @@ import type { StorageProvider } from '@/services/storage/StorageProvider';
 import { createFakePdfNative, nativeError } from '@/test-utils/fakePdfNative';
 import { fileIdForUri } from '@/utils/fileId';
 
-import { createFilesStore } from '../filesStore';
+import { createFilesStore, followRenames } from '../filesStore';
 
 function makeDb(): IndexDb {
   const sqlite = new Database(':memory:');
@@ -269,6 +269,28 @@ describe('filesStore', () => {
       parentUri: `${ROOT}/A`,
       folder: 'A',
     });
+    // An open reader follows the row to its new id.
+    expect(followRenames(store.getState().renames, idOf('A/a.pdf'))).toBe(idOf('A/renamed.pdf'));
+  });
+
+  it('follows a chain of renames and leaves unknown ids alone', () => {
+    expect(followRenames({ a: 'b', b: 'c' }, 'a')).toBe('c');
+    expect(followRenames({ a: 'b' }, 'x')).toBe('x');
+  });
+
+  it('a rename back to the first name leads home again', async () => {
+    const provider = fakeProvider({
+      rename: jest
+        .fn()
+        .mockResolvedValueOnce(info('A/b.pdf'))
+        .mockResolvedValueOnce(info('A/a.pdf')),
+    });
+    const { store } = setup({ provider, seed: [info('A/a.pdf')] });
+    store.getState().loadFromCache();
+    await store.getState().rename(idOf('A/a.pdf'), 'b.pdf');
+    await store.getState().rename(idOf('A/b.pdf'), 'a.pdf');
+    expect(followRenames(store.getState().renames, idOf('A/a.pdf'))).toBe(idOf('A/a.pdf'));
+    expect(followRenames(store.getState().renames, idOf('A/b.pdf'))).toBe(idOf('A/a.pdf'));
   });
 
   it('rename rejecting ERR_FILE_EXISTS returns exists and leaves the row unchanged', async () => {
@@ -280,6 +302,7 @@ describe('filesStore', () => {
     const before = store.getState().files;
     await expect(store.getState().rename(idOf('A/a.pdf'), 'b.pdf')).resolves.toBe('exists');
     expect(store.getState().files).toEqual(before);
+    expect(store.getState().renames).toEqual({});
   });
 
   it.each([

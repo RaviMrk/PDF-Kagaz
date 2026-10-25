@@ -47,6 +47,11 @@ export type FilesState = {
   lastScanAt: number | null;
   notice: FileActionError | null;
   error: FilesError | null;
+  /**
+   * Old id → new id for each rename this session (a row's id comes from its uri), so a screen
+   * holding an id (the reader) can follow the file. Read it with `followRenames`.
+   */
+  renames: Record<string, string>;
   loadFromCache: () => void;
   refresh: (kind: 'full' | 'quick') => Promise<void>;
   toggleFavorite: (id: string) => void;
@@ -82,6 +87,18 @@ export type FilesState = {
   clearNotice: () => void;
   reportError: (error: FilesError) => void;
 };
+
+/** The id a row has now, after any renames since `id` was taken. */
+export function followRenames(renames: Readonly<Record<string, string>>, id: string): string {
+  let current = id;
+  const seen = new Set<string>([current]);
+  for (let next = renames[current]; next !== undefined; next = renames[current]) {
+    if (seen.has(next)) break;
+    seen.add(next);
+    current = next;
+  }
+  return current;
+}
 
 export type FilesStoreDeps = {
   getDb: () => IndexDb;
@@ -310,6 +327,7 @@ export function createFilesStore(deps: FilesStoreDeps) {
       lastScanAt: null,
       notice: null,
       error: null,
+      renames: {},
 
       loadFromCache() {
         const status = get().status === 'scanning' ? 'scanning' : 'idle';
@@ -468,7 +486,11 @@ export function createFilesStore(deps: FilesStoreDeps) {
 
       rename: (id, newName) =>
         runFileOp(id, async (provider, ref, row, db) => {
-          replaceFile(db, id, await provider.rename(ref, newName), row.source);
+          const next = replaceFile(db, id, await provider.rename(ref, newName), row.source);
+          if (next.id === id) return;
+          // The new id is live again: drop any entry that would lead away from it.
+          const { [next.id]: _stale, ...renames } = get().renames;
+          set({ renames: { ...renames, [id]: next.id } });
         }),
 
       remove: (id) =>

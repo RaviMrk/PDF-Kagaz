@@ -39,8 +39,9 @@ import {
 } from '@/services/reader/readerActions';
 import { readerBackground, readerFilter } from '@/services/reader/readerFilters';
 import { readerReducer, type ReaderFailure } from '@/services/reader/readerState';
+import type { RunnableToolId } from '@/services/tools/toolRegistry';
 import { useBookmarks } from '@/services/reader/useBookmarks';
-import { useFiles } from '@/stores/filesStore';
+import { followRenames, useFiles } from '@/stores/filesStore';
 import { useSettings } from '@/stores/settingsStore';
 import { useTheme } from '@/theme/useTheme';
 import { displayName } from '@/utils/displayName';
@@ -117,10 +118,14 @@ function Reader({ id }: { id: string }) {
   return <OpenReader row={row} />;
 }
 
-function OpenReader({ row }: { row: FileRow }) {
+function OpenReader({ row: openedRow }: { row: FileRow }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const id = row.id;
+  // A rename from the menu gives the row a new id (ids come from uris): follow it, so saving the
+  // page, bookmarks, the menu's actions and tool shortcuts keep working on the same file.
+  const id = useFiles((s) => followRenames(s.renames, openedRow.id));
+  // The live row: a rename or favourite from the menu shows at once. A deleted row keeps the last one.
+  const row = useFiles((s) => s.files.find((f) => f.id === id)) ?? openedRow;
   const [phase, dispatch] = useReducer(readerReducer, { kind: 'preparing' });
   const [page, setPage] = useState(() => startPage(row));
   const pageRef = useRef(page);
@@ -269,6 +274,20 @@ function OpenReader({ row }: { row: FileRow }) {
     setNotice(ACTION_FAILURE_KEYS[result]);
   };
 
+  const openTool = (toolId: RunnableToolId) => {
+    setMenuVisible(false);
+    // The reader stays under the tool; its position is saved now rather than after the debounce.
+    saver.current?.flush();
+    router.push({ pathname: '/tool/[toolId]', params: { toolId, inputs: id } });
+  };
+
+  const onDeleted = () => {
+    setMenuVisible(false);
+    // Release the working copy before leaving, so nothing stays open on the deleted file.
+    closeReader();
+    leave();
+  };
+
   if (phase.kind === 'failed') {
     return (
       <ReaderMessage
@@ -284,6 +303,7 @@ function OpenReader({ row }: { row: FileRow }) {
   const ready = phase.kind === 'ready';
   const bookmarked = marks.isBookmarked(page);
   const stripHeight = ready && thumbsVisible ? THUMBNAIL_STRIP_HEIGHT : 0;
+  const locked = row.isEncrypted || (phase.kind === 'ready' && phase.password !== '');
 
   return (
     <View style={[styles.root, { backgroundColor: colors.surface }]}>
@@ -401,6 +421,8 @@ function OpenReader({ row }: { row: FileRow }) {
       />
       <ReaderMenu
         visible={menuVisible && ready}
+        file={row}
+        locked={locked}
         theme={readerTheme}
         keepAwake={keepAwake}
         horizontal={horizontal}
@@ -409,6 +431,8 @@ function OpenReader({ row }: { row: FileRow }) {
         onKeepAwake={(on) => useSettings.getState().setReaderKeepAwake(on)}
         onHorizontal={(on) => useSettings.getState().setReaderHorizontal(on)}
         onAction={(action) => void runAction(action)}
+        onTool={openTool}
+        onDeleted={onDeleted}
         onClose={() => setMenuVisible(false)}
       />
       <JumpToPageDialog

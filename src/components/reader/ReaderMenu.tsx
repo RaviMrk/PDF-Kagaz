@@ -1,7 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   ActivityIndicator,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,15 +8,22 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
+import { BottomSheet } from '@/components/BottomSheet';
+import { FileActionRow, useFileActions, type FileActionKey } from '@/components/useFileActions';
+import type { FileRow } from '@/db/schema';
 import type { ReaderAction } from '@/services/reader/readerActions';
+import { toolById, type RunnableToolId } from '@/services/tools/toolRegistry';
 import type { ReaderTheme } from '@/stores/settingsStore';
 import { useTheme } from '@/theme/useTheme';
 
 type Props = {
   visible: boolean;
+  /** The open file, kept current (a rename shows at once). */
+  file: FileRow;
+  /** The file needs a password: Remove password is offered. */
+  locked: boolean;
   theme: ReaderTheme;
   keepAwake: boolean;
   horizontal: boolean;
@@ -27,6 +33,10 @@ type Props = {
   onKeepAwake(on: boolean): void;
   onHorizontal(on: boolean): void;
   onAction(a: ReaderAction): void;
+  /** Opens a tool with this file chosen. */
+  onTool(toolId: RunnableToolId): void;
+  /** The file was deleted: the reader should close. */
+  onDeleted(): void;
   onClose(): void;
 };
 
@@ -44,9 +54,25 @@ const ACTIONS: readonly (readonly [ReaderAction, string, Icon])[] = [
   ['openWith', 'reader.openWith', 'open-in-app'],
 ];
 
-/** Reader overflow menu: page colour, keep screen on, sideways paging and file actions. */
+const TOOL_SHORTCUTS: readonly RunnableToolId[] = [
+  'compress',
+  'split',
+  'organize',
+  'page-numbers',
+  'watermark',
+  'sign',
+  'protect',
+  'pdf-to-images',
+];
+
+/**
+ * Reader overflow menu, a scrolling bottom sheet: page colour, keep screen on, sideways paging,
+ * the Files tab's actions for this file, share / print / open with, and tool shortcuts.
+ */
 export function ReaderMenu({
   visible,
+  file,
+  locked,
   theme,
   keepAwake,
   horizontal,
@@ -55,11 +81,37 @@ export function ReaderMenu({
   onKeepAwake,
   onHorizontal,
   onAction,
+  onTool,
+  onDeleted,
   onClose,
 }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
+  const fileActions = useFileActions(file, {
+    onDone: (key: FileActionKey) => {
+      if (key === 'delete') onDeleted();
+      // A favourite flips in place; the other actions are done with the menu.
+      else if (key !== 'favorite') onClose();
+    },
+  });
+  const fileBusy = fileActions.busy !== null;
+
+  // Dismissal (backdrop, hardware back) is ignored while a file action is pending.
+  const close = () => {
+    if (fileBusy) return;
+    fileActions.reset();
+    onClose();
+  };
+
+  if (!visible) return null;
+  if (fileActions.panel) return fileActions.panel;
+
+  const header = (label: string) => (
+    <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>
+      {label}
+    </Text>
+  );
+  const divider = <View style={[styles.divider, { backgroundColor: colors.border }]} />;
 
   const toggleRow = (label: string, value: boolean, onChange: (on: boolean) => void) => (
     <Pressable
@@ -82,82 +134,106 @@ export function ReaderMenu({
     </Pressable>
   );
 
+  const actionRow = (
+    key: string,
+    label: string,
+    icon: Icon,
+    disabled: boolean,
+    onPress: () => void,
+  ) => (
+    <Pressable
+      key={key}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={[styles.row, disabled && styles.disabled]}
+    >
+      <MaterialCommunityIcons name={icon} size={24} color={colors.text} />
+      <Text style={[styles.rowText, { color: colors.text }]}>{label}</Text>
+    </Pressable>
+  );
+
+  const toolRow = (toolId: RunnableToolId, label?: string) => {
+    const tool = toolById(toolId);
+    if (!tool) return null;
+    return actionRow(toolId, label ?? t(tool.labelKey), tool.icon, fileBusy, () => onTool(toolId));
+  };
+
+  const deleteItem = fileActions.items.find((i) => i.key === 'delete');
+
   return (
-    <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
-      <Pressable accessibilityLabel={t('reader.close')} onPress={onClose} style={styles.backdrop} />
-      <View
-        style={[
-          styles.sheet,
-          { backgroundColor: colors.background, paddingBottom: 16 + insets.bottom },
-        ]}
-      >
-        <ScrollView>
-          <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>
-            {t('reader.appearance')}
+    <BottomSheet
+      animationType="fade"
+      maxHeight="85%"
+      onRequestClose={close}
+      onScrimPress={close}
+      scrimLabel={t('reader.close')}
+    >
+      <ScrollView testID="reader-menu-scroll">
+        {header(t('reader.appearance'))}
+        {THEMES.map(([key, label]) => (
+          <Pressable
+            key={key}
+            accessibilityRole="radio"
+            accessibilityLabel={t(label)}
+            accessibilityState={{ checked: key === theme }}
+            onPress={() => onTheme(key)}
+            style={styles.row}
+          >
+            <MaterialCommunityIcons
+              name={key === theme ? 'radiobox-marked' : 'radiobox-blank'}
+              size={24}
+              color={key === theme ? colors.primary : colors.textMuted}
+            />
+            <Text style={[styles.rowText, { color: colors.text }]}>{t(label)}</Text>
+          </Pressable>
+        ))}
+        {divider}
+        {toggleRow(t('reader.keepAwake'), keepAwake, onKeepAwake)}
+        {toggleRow(t('reader.horizontal'), horizontal, onHorizontal)}
+        {divider}
+        {header(t('reader.fileSection'))}
+        {fileActions.errorKey ? (
+          <Text accessibilityLiveRegion="polite" style={[styles.error, { color: colors.danger }]}>
+            {t(fileActions.errorKey)}
           </Text>
-          {THEMES.map(([key, label]) => (
-            <Pressable
-              key={key}
-              accessibilityRole="radio"
-              accessibilityLabel={t(label)}
-              accessibilityState={{ checked: key === theme }}
-              onPress={() => onTheme(key)}
-              style={styles.row}
-            >
-              <MaterialCommunityIcons
-                name={key === theme ? 'radiobox-marked' : 'radiobox-blank'}
-                size={24}
-                color={key === theme ? colors.primary : colors.textMuted}
-              />
-              <Text style={[styles.rowText, { color: colors.text }]}>{t(label)}</Text>
-            </Pressable>
+        ) : null}
+        {fileActions.items
+          .filter((i) => i.key !== 'delete')
+          .map((item) => (
+            <FileActionRow key={item.key} item={item} busy={fileActions.busy} />
           ))}
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          {toggleRow(t('reader.keepAwake'), keepAwake, onKeepAwake)}
-          {toggleRow(t('reader.horizontal'), horizontal, onHorizontal)}
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          {actionBusy ? (
-            <View style={styles.row}>
-              <ActivityIndicator size="small" color={colors.primary} />
-              <Text
-                accessibilityLiveRegion="polite"
-                style={[styles.rowText, { color: colors.textMuted }]}
-              >
-                {t('reader.preparing')}
-              </Text>
-            </View>
-          ) : null}
-          {ACTIONS.map(([action, label, icon]) => (
-            <Pressable
-              key={action}
-              accessibilityRole="button"
-              accessibilityLabel={t(label)}
-              accessibilityState={{ disabled: actionBusy }}
-              disabled={actionBusy}
-              onPress={() => onAction(action)}
-              style={[styles.row, actionBusy && styles.disabled]}
+        {actionBusy ? (
+          <View style={styles.row}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text
+              accessibilityLiveRegion="polite"
+              style={[styles.rowText, { color: colors.textMuted }]}
             >
-              <MaterialCommunityIcons name={icon} size={24} color={colors.text} />
-              <Text style={[styles.rowText, { color: colors.text }]}>{t(label)}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      </View>
-    </Modal>
+              {t('reader.preparing')}
+            </Text>
+          </View>
+        ) : null}
+        {ACTIONS.map(([action, label, icon]) =>
+          actionRow(action, t(label), icon, actionBusy || fileBusy, () => onAction(action)),
+        )}
+        {deleteItem ? <FileActionRow item={deleteItem} busy={fileActions.busy} /> : null}
+        {divider}
+        {header(t('reader.toolsSection'))}
+        {TOOL_SHORTCUTS.map((id) => toolRow(id))}
+        {locked ? toolRow('unlock') : null}
+        {toolRow('merge', t('reader.mergeWith'))}
+      </ScrollView>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
-  sheet: {
-    maxHeight: '80%',
-    paddingTop: 16,
-    paddingHorizontal: 16,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-  },
   title: { fontSize: 18, fontWeight: '600', marginBottom: 8 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 48 },
+  error: { marginBottom: 8 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 16, minHeight: 48 },
   rowText: { flex: 1, fontSize: 16 },
   disabled: { opacity: 0.4 },
   divider: { height: StyleSheet.hairlineWidth, marginVertical: 8 },
