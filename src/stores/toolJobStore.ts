@@ -665,6 +665,16 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
   });
 }
 
+/** The app's job-finished hook: the review counter must never keep telemetry from running. */
+export function handleJobFinished(request: ToolRequest, outcome: ToolOutcome, ms: number): void {
+  try {
+    reviewPrompt.recordOutcome(outcome);
+  } catch {
+    // The review counter never affects a job or its telemetry.
+  }
+  telemetry.log(toolFinishedEvent(request, outcome, ms, pagesOf(outcome)));
+}
+
 export const useToolJobs = createToolJobStore({
   getDb,
   run: runTool,
@@ -681,9 +691,6 @@ export const useToolJobs = createToolJobStore({
   now: Date.now,
   random: Math.random,
   cleanSession: (sessionId) => pdfNative.cleanToolWorkspace(sessionId),
-  onJobFinished: (request, outcome, ms) => {
-    reviewPrompt.recordOutcome(outcome);
-    telemetry.log(toolFinishedEvent(request, outcome, ms, pagesOf(outcome)));
-  },
+  onJobFinished: handleJobFinished,
   notice: jobNotice,
 });

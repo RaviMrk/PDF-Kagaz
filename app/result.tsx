@@ -18,6 +18,7 @@ import { useTheme } from '@/theme/useTheme';
 import { fileActionErrorKey } from '@/utils/fileActionError';
 
 const NOTICE_MS = 4000;
+const REVIEW_ASK_TIMEOUT_MS = 3000;
 
 const RETRY_FAILED = {
   busy: 'toolError.busy',
@@ -55,6 +56,13 @@ export default function ResultScreen() {
   const [notSmaller, setNotSmaller] = useState<'ask' | 'kept' | 'deleted'>('ask');
   const deleting = useRef(false);
   const reviewing = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   // Also when a running job finishes while this screen is open (markSeen ignores active jobs).
   const viewKind = view.kind;
@@ -83,10 +91,17 @@ export default function ResultScreen() {
     if (reviewing.current) return;
     reviewing.current = true;
     try {
-      if (reviewPrompt.shouldAsk()) await reviewPrompt.ask();
+      // A review dialog that never settles must not trap the user on this screen.
+      if (reviewPrompt.shouldAsk()) {
+        await Promise.race([
+          reviewPrompt.ask(),
+          new Promise<void>((resolve) => setTimeout(resolve, REVIEW_ASK_TIMEOUT_MS)),
+        ]);
+      }
     } finally {
       reviewing.current = false;
     }
+    if (!mounted.current) return;
     dismissAndLeave(jobId);
     interstitial.showAfterDone();
   };

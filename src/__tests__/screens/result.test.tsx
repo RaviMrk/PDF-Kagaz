@@ -400,6 +400,24 @@ describe('result screen', () => {
       expect(order).toEqual(['ask', 'dismiss', 'show']);
     });
 
+    it('still leaves when the ask never settles', async () => {
+      outcomeOf.mockReturnValue(done({ ok: true, outputs: [merged] }));
+      ask.mockReturnValue(new Promise<void>(() => {}));
+      await open();
+      jest.useFakeTimers();
+      try {
+        await fireEvent.press(screen.getByLabelText('Done'));
+        expect(dismiss).not.toHaveBeenCalled();
+        await act(async () => {
+          jest.advanceTimersByTime(3000);
+        });
+        expect(dismiss).toHaveBeenCalledWith('j1');
+        expect(showAfterDone).toHaveBeenCalledTimes(1);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('does not ask when shouldAsk is false', async () => {
       shouldAsk.mockReturnValue(false);
       outcomeOf.mockReturnValue(done({ ok: true, outputs: [merged] }));

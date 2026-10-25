@@ -21,6 +21,8 @@ import {
   getJob,
 } from '@/services/tools/toolJobRepo';
 import { getFile } from '@/services/index/fileIndexRepo';
+import { reviewPrompt } from '@/services/review/reviewPrompt';
+import { telemetry } from '@/services/telemetry/telemetry';
 import { findLockedInputs } from '@/services/tools/passwords';
 import type { ToolId } from '@/services/tools/toolRegistry';
 import type { PdfFileInfo } from '@/services/native/pdfNative';
@@ -33,6 +35,7 @@ import { makeRow } from '@/test-utils/fileRows';
 
 import {
   createToolJobStore,
+  handleJobFinished,
   newJobId,
   optionsOf,
   requestFromJob,
@@ -245,6 +248,16 @@ describe('toolJobStore', () => {
     await flush();
     expect(onJobFinished).toHaveBeenCalledTimes(1);
     expect(onJobFinished).toHaveBeenCalledWith(merge, outcome, 1_349);
+  });
+
+  it('telemetry still runs when the review counter throws', () => {
+    jest.spyOn(reviewPrompt, 'recordOutcome').mockImplementation(() => {
+      throw new Error('kv');
+    });
+    const log = jest.spyOn(telemetry, 'log').mockImplementation(() => {});
+    handleJobFinished(merge, { ok: true, outputs: [] }, 5);
+    expect(log).toHaveBeenCalledTimes(1);
+    jest.restoreAllMocks();
   });
 
   it('a throwing onJobFinished does not break the finished job', async () => {
