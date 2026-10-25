@@ -247,6 +247,7 @@ function setup(rows: FileRow[], sources: string[] = []) {
     registerOutputs,
     recordOutput,
     getSignaturePng,
+    signaturesDir: `file://${signatures}`,
     t,
     now: () => clock.now,
   };
@@ -2192,6 +2193,24 @@ describe('runTool sign', () => {
     fs.rmSync(s.signaturePng);
     const outcome = await s.run({ toolId: 'sign', inputIds: [r.id], placements });
     expect(outcome).toEqual({ ok: false, failure: 'signatureGone', inputIndex: null, outputs: [] });
+  });
+
+  it.each([
+    ['outside the signatures folder', (dir: string) => `${dir}/../sig-1-abc123.png`],
+    [
+      'in another folder',
+      (dir: string) => `${dir.replace('/signatures', '/other')}/sig-1-abc123.png`,
+    ],
+    ['not named sig-*.png', (dir: string) => `${dir}/photo.png`],
+    ['in a subfolder', (dir: string) => `${dir}/x/sig-1-abc123.png`],
+    ['not a file URI', () => 'content://media/external/images/1'],
+  ])('a saved signature path %s fails as signatureGone, unread', async (_, uriOf) => {
+    const r = row('mixed-sizes.pdf');
+    const s = setup([r]);
+    s.getSignaturePng.mockReturnValue(uriOf(s.deps.signaturesDir));
+    const outcome = await s.run({ toolId: 'sign', inputIds: [r.id], placements });
+    expect(outcome).toEqual({ ok: false, failure: 'signatureGone', inputIndex: null, outputs: [] });
+    expect(s.toolFs.readBytes).not.toHaveBeenCalled();
   });
 
   it('stamps natively over the JS caps with centre anchors and a copy in the job workspace', async () => {

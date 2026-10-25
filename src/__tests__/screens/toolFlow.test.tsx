@@ -48,6 +48,21 @@ async function open(initialUrl: string) {
   };
 }
 
+/** Lays out the signature placer and loads its page image (A4 portrait). */
+async function showSignPage() {
+  await fireEvent(screen.getByTestId('sign-page'), 'layout', {
+    nativeEvent: { layout: { x: 0, y: 0, width: 300, height: 424 } },
+  });
+  await act(async () => {});
+  await fireEvent(screen.getByTestId('sign-page-image', { includeHiddenElements: true }), 'load', {
+    nativeEvent: {
+      cacheType: 'none',
+      source: { url: 'file:///tool-thumb.jpg', width: 512, height: 724, mediaType: 'image/jpeg' },
+    },
+  });
+  await act(async () => {});
+}
+
 const press = async (label: string) => {
   await fireEvent.press(screen.getByLabelText(label));
   await act(async () => {});
@@ -473,8 +488,10 @@ describe('tool flow', () => {
       height: 100,
     });
     await open(`/tool/sign?inputs=${ID_A}`);
+    await showSignPage();
     await press('Add to page');
     await press('Next page');
+    await showSignPage();
     await press('Bottom left');
     await press('Add to page');
     expect(screen.getByText('Signature on page 2')).toBeTruthy();

@@ -223,6 +223,8 @@ export type ToolRunDeps = {
   recordOutput(jobId: string, info: PdfFileInfo): void;
   /** The PNG (file:// URI) of saved signature `id`; null when it was deleted. */
   getSignaturePng(id: number): string | null;
+  /** file:// URI of the saved signatures folder (filesDir/signatures); only PNGs in it are used. */
+  signaturesDir: string;
   t: Translate;
   now(): number;
   /** Route caps (tests force the native route with tiny JS caps); default JS_CAPS / NATIVE_CAPS. */

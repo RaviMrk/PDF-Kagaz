@@ -12,26 +12,66 @@ import { SignaturePlacer } from '../SignaturePlacer';
 const i18n = initI18n('en');
 const signature = { uri: 'file:///files/signatures/sig-1-abc123.png', width: 200, height: 100 };
 
-async function setup(over: { page?: number; value?: typeof DEFAULT_PLACEMENT } = {}) {
+type Over = {
+  page?: number;
+  value?: typeof DEFAULT_PLACEMENT;
+  /** Lay out and load the page image (default A4 portrait, 512 × 724 px). */
+  load?: false | [number, number];
+};
+
+async function setup(over: Over = {}) {
   const onChange = jest.fn();
   const onPageChange = jest.fn();
-  await render(
+  const onPageAspect = jest.fn();
+  const ui = (page: number) => (
     <I18nextProvider i18n={i18n}>
       <SignaturePlacer
         fileUri="file:///cache/tools/p/in-0.pdf"
-        page={over.page ?? 1}
+        page={page}
         pageCount={3}
         signature={signature}
         value={over.value ?? DEFAULT_PLACEMENT}
         onChange={onChange}
         onPageChange={onPageChange}
+        onPageAspect={onPageAspect}
       />
-    </I18nextProvider>,
+    </I18nextProvider>
   );
+  const view = await render(ui(over.page ?? 1));
   await act(async () => {});
+  await fireEvent(screen.getByTestId('sign-page'), 'layout', {
+    nativeEvent: { layout: { x: 0, y: 0, width: 300, height: 424 } },
+  });
+  await act(async () => {});
+  if (over.load !== false) await loadPage(...(over.load ?? [512, 724]));
   const press = async (label: string) => await fireEvent.press(screen.getByLabelText(label));
-  return { onChange, onPageChange, press };
+  const showPage = async (page: number) => {
+    await view.rerender(ui(page));
+    await act(async () => {});
+  };
+  return { onChange, onPageChange, onPageAspect, press, showPage };
 }
+
+/** The page thumbnail finished loading at `width` × `height` px. */
+async function loadPage(width: number, height: number) {
+  await fireEvent(screen.getByTestId('sign-page-image', { includeHiddenElements: true }), 'load', {
+    nativeEvent: {
+      cacheType: 'none',
+      source: { url: 'file:///tool-thumb.jpg', width, height, mediaType: 'image/jpeg' },
+    },
+  });
+  await act(async () => {});
+}
+
+const PLACING = [
+  'Move signature up',
+  'Move signature down',
+  'Move signature left',
+  'Move signature right',
+  'Make signature smaller',
+  'Make signature bigger',
+  'Bottom left',
+];
 
 const CONTROLS = [
   'Move signature up',
@@ -122,9 +162,6 @@ describe('SignaturePlacer', () => {
 
   it('a drag commits the clamped placement when it ends', async () => {
     const { onChange } = await setup();
-    await fireEvent(screen.getByTestId('sign-page'), 'layout', {
-      nativeEvent: { layout: { x: 0, y: 0, width: 300, height: 424 } },
-    });
     await act(async () => {
       fireGestureHandler(getByGestureTestId('signature-pan'), [
         { state: State.BEGAN, translationX: 0, translationY: 0 },
@@ -133,9 +170,60 @@ describe('SignaturePlacer', () => {
       ]);
     });
     const next = onChange.mock.lastCall![0];
-    // 300 px wide: −60 px is −0.2 of the width; the page is 300 × 1.414 tall (default aspect).
+    // 300 px wide: −60 px is −0.2 of the width; the page is 300 × 724 / 512 tall.
     expect(next.cx).toBeCloseTo(0.52);
-    expect(next.cy).toBeCloseTo(0.85 - 84.8 / (300 * 1.414));
+    expect(next.cy).toBeCloseTo(0.85 - 84.8 / ((300 * 724) / 512));
     expect(next.width).toBe(0.3);
+  });
+
+  it('waits for the page shape before the signature can be placed', async () => {
+    const { onPageAspect, onChange } = await setup({ load: false });
+    for (const label of PLACING) expect(screen.getByLabelText(label)).toBeDisabled();
+    expect(screen.queryByTestId('signature-overlay')).toBeNull();
+    expect(onPageAspect).not.toHaveBeenCalledWith(expect.any(Number));
+    await loadPage(512, 724);
+    expect(onPageAspect).toHaveBeenLastCalledWith(724 / 512);
+    for (const label of PLACING) expect(screen.getByLabelText(label)).toBeEnabled();
+    expect(screen.getByTestId('signature-overlay')).toBeTruthy();
+    // The default placement fits this page: nothing to re-clamp.
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('forgets the shape on a page change and re-clamps for the new page', async () => {
+    // Near the bottom: fits portrait A4 but not a landscape page.
+    const value = { cx: 0.5, cy: 0.9, width: 0.5 };
+    const { onPageAspect, onChange, showPage } = await setup({ value });
+    expect(onChange).not.toHaveBeenCalled();
+    await showPage(3);
+    expect(onPageAspect).toHaveBeenLastCalledWith(null);
+    for (const label of PLACING) expect(screen.getByLabelText(label)).toBeDisabled();
+    expect(onChange).not.toHaveBeenCalled();
+    await loadPage(724, 512);
+    expect(onPageAspect).toHaveBeenLastCalledWith(512 / 724);
+    const next = onChange.mock.lastCall![0];
+    const h = (0.5 * 0.5) / (512 / 724);
+    expect(next.cy + h / 2).toBeCloseTo(1);
+    expect(next.cy).toBeLessThan(0.9);
+    for (const label of PLACING) expect(screen.getByLabelText(label)).toBeEnabled();
+  });
+
+  it('says so when the page cannot be shown, and never reports a shape', async () => {
+    jest.mocked(PdfNativeModule.renderToolThumbnail).mockRejectedValueOnce(new Error('x'));
+    const { onPageAspect } = await setup({ load: false });
+    expect(screen.getByText("Couldn't show this page")).toBeTruthy();
+    expect(onPageAspect).not.toHaveBeenCalledWith(expect.any(Number));
+    for (const label of PLACING) expect(screen.getByLabelText(label)).toBeDisabled();
+  });
+
+  it('a page image that fails to decode is the same as no page', async () => {
+    const { onPageAspect } = await setup({ load: false });
+    await fireEvent(
+      screen.getByTestId('sign-page-image', { includeHiddenElements: true }),
+      'error',
+      { nativeEvent: { error: 'bad' } },
+    );
+    await act(async () => {});
+    expect(screen.getByText("Couldn't show this page")).toBeTruthy();
+    expect(onPageAspect).not.toHaveBeenCalledWith(expect.any(Number));
   });
 });

@@ -659,6 +659,8 @@
     "remove": "Remove signature from page {{page}}",
     "max": "You can place up to 50 signatures",
     "dragHint": "Drag to move. Pinch to resize.",
-    "run": "Sign PDF"
+    "run": "Sign PDF",
+    "pageFailed": "Couldn't show this page",
+    "signatureUnreadable": "Couldn't read this signature. Choose another or draw it again."
   }
 }

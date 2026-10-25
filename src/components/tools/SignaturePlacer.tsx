@@ -41,13 +41,15 @@ type Props = {
   value: Placement;
   onChange(next: Placement): void;
   onPageChange(page: number): void;
+  /** h / w of the page shown, once its image has loaded; null until then or when it failed. */
+  onPageAspect(aspect: number | null): void;
 };
 
 /** The rendered page width (px; the tool lane's maximum). */
 const PAGE_PX = 512;
 /** The page preview is never taller than this (dp), so the controls stay in reach. */
 const MAX_PAGE_DP = 480;
-/** A4 portrait until the page image tells its real shape. */
+/** The preview frame's shape until the page image tells its real one (nothing is placed meanwhile). */
 const DEFAULT_PAGE_ASPECT = 1.414;
 /** Paper colour behind the page and signature (signatures are dark ink on transparency). */
 const PAPER = '#ffffff';
@@ -66,13 +68,16 @@ export function SignaturePlacer({
   value,
   onChange,
   onPageChange,
+  onPageAspect,
 }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const loader = useMemo(() => createToolThumbLoader(fileUri, PAGE_PX), [fileUri]);
   useEffect(() => () => loader.cancelPending(), [loader]);
   const [image, setImage] = useState<{ page: number; uri: string | null } | null>(null);
-  const [pageAspect, setPageAspect] = useState(DEFAULT_PAGE_ASPECT);
+  // The shape of the page whose image loaded; another page's shape is never used.
+  const [shape, setShape] = useState<{ page: number; aspect: number } | null>(null);
+  const [broken, setBroken] = useState<number | null>(null);
   const [stageWidth, setStageWidth] = useState(0);
   const aspect =
     signature.width > 0 && signature.height > 0 ? signature.height / signature.width : 1;
@@ -87,16 +92,26 @@ export function SignaturePlacer({
     };
   }, [loader, page]);
   const pageUri = image?.page === page ? image.uri : loader.get(page);
+  const failed = pageUri === null || broken === page;
+  /** The shown page's shape; null until its image loaded (placing waits for it). */
+  const pageAspect = shape?.page === page && !failed ? shape.aspect : null;
+  const ready = pageAspect !== null;
+  const frameAspect = pageAspect ?? DEFAULT_PAGE_ASPECT;
+
+  const report = useEffectEvent((a: number | null) => onPageAspect(a));
+  useEffect(() => report(pageAspect), [pageAspect]);
 
   // A new page shape or signature: the placement is clamped to it again.
-  const reclamp = useEffectEvent(() => {
-    const next = clampPlacement(value, aspect, pageAspect);
+  const reclamp = useEffectEvent((a: number) => {
+    const next = clampPlacement(value, aspect, a);
     if (!same(next, value)) onChange(next);
   });
-  useEffect(() => reclamp(), [aspect, pageAspect]);
+  useEffect(() => {
+    if (pageAspect !== null) reclamp(pageAspect);
+  }, [aspect, pageAspect]);
 
-  const pageW = Math.min(stageWidth, MAX_PAGE_DP / pageAspect);
-  const pageH = pageW * pageAspect;
+  const pageW = Math.min(stageWidth, MAX_PAGE_DP / frameAspect);
+  const pageH = pageW * frameAspect;
   const sigW = value.width * pageW;
   const sigH = sigW * aspect;
 
@@ -107,6 +122,7 @@ export function SignaturePlacer({
   useLayoutEffect(() => resetOffsets({ tx, ty, scale }), [value, tx, ty, scale]);
 
   const commit = (next: Placement) => {
+    if (pageAspect === null) return;
     const clamped = clampPlacement(next, aspect, pageAspect);
     if (same(clamped, value)) resetOffsets({ tx, ty, scale });
     else onChange(clamped);
@@ -131,7 +147,7 @@ export function SignaturePlacer({
     transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: scale.value }],
   }));
 
-  const control = (label: string, icon: IconName, onPress: () => void, disabled = false) => (
+  const control = (label: string, icon: IconName, onPress: () => void, disabled = !ready) => (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
@@ -156,8 +172,11 @@ export function SignaturePlacer({
       >
         {pageW > 0 ? (
           <View style={[styles.page, { width: pageW, height: pageH, borderColor: colors.border }]}>
-            {pageUri ? (
+            {pageUri && !failed ? (
               <Image
+                // A new page is a new image: its load always reports that page's shape.
+                key={page}
+                testID="sign-page-image"
                 source={{ uri: pageUri }}
                 style={StyleSheet.absoluteFill}
                 contentFit="fill"
@@ -165,34 +184,46 @@ export function SignaturePlacer({
                 importantForAccessibility="no"
                 onLoad={(e) => {
                   const { width, height } = e.source;
-                  if (width > 0 && height > 0) setPageAspect(height / width);
+                  if (width > 0 && height > 0) setShape({ page, aspect: height / width });
+                  else setBroken(page);
                 }}
+                onError={() => setBroken(page)}
               />
             ) : null}
-            <GestureDetector gesture={gesture}>
-              <Animated.View
-                hitSlop={16}
-                style={[
-                  styles.signature,
-                  {
-                    left: value.cx * pageW - sigW / 2,
-                    top: value.cy * pageH - sigH / 2,
-                    width: sigW,
-                    height: sigH,
-                    borderColor: colors.primary,
-                  },
-                  moving,
-                ]}
-              >
-                <Image
-                  source={{ uri: signature.uri }}
-                  style={StyleSheet.absoluteFill}
-                  contentFit="contain"
-                  accessibilityElementsHidden
-                  importantForAccessibility="no"
-                />
-              </Animated.View>
-            </GestureDetector>
+            {failed ? (
+              <View style={styles.failed}>
+                <Text accessibilityLiveRegion="polite" style={{ color: colors.danger }}>
+                  {t('sign.pageFailed')}
+                </Text>
+              </View>
+            ) : null}
+            {ready ? (
+              <GestureDetector gesture={gesture}>
+                <Animated.View
+                  testID="signature-overlay"
+                  hitSlop={16}
+                  style={[
+                    styles.signature,
+                    {
+                      left: value.cx * pageW - sigW / 2,
+                      top: value.cy * pageH - sigH / 2,
+                      width: sigW,
+                      height: sigH,
+                      borderColor: colors.primary,
+                    },
+                    moving,
+                  ]}
+                >
+                  <Image
+                    source={{ uri: signature.uri }}
+                    style={StyleSheet.absoluteFill}
+                    contentFit="contain"
+                    accessibilityElementsHidden
+                    importantForAccessibility="no"
+                  />
+                </Animated.View>
+              </GestureDetector>
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -208,7 +239,10 @@ export function SignaturePlacer({
       <PositionGrid
         label={t('position.label')}
         value={positionOf(value)}
-        onChange={(position) => commit(presetPlacement(position, value, aspect, pageAspect))}
+        disabled={!ready}
+        onChange={(position) => {
+          if (pageAspect !== null) commit(presetPlacement(position, value, aspect, pageAspect));
+        }}
       />
       <View style={styles.row}>
         {control(t('sign.prevPage'), 'chevron-left', () => onPageChange(page - 1), page <= 1)}
@@ -346,4 +380,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   pageText: { flexShrink: 1 },
+  failed: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
 });

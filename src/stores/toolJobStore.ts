@@ -28,7 +28,7 @@ import {
 } from '@/services/tools/runTool';
 import { IMAGE_QUALITIES } from '@/services/tools/limits';
 import { clearEncryptedFailures, noteEncryptedFailure } from '@/services/tools/passwords';
-import { expoToolFs } from '@/services/tools/toolFs';
+import { expoToolFs, signaturesDirUri } from '@/services/tools/toolFs';
 import { telemetry } from '@/services/telemetry/telemetry';
 import { pagesOf, toolFinishedEvent } from '@/services/telemetry/toolEvent';
 import {
@@ -649,6 +649,7 @@ export const useToolJobs = createToolJobStore({
     getRows: (ids) => useFiles.getState().getRows(ids),
     registerOutputs: (infos) => useFiles.getState().registerOutputs(infos),
     getSignaturePng: (id) => getSignature(getDb(), id)?.pngPath ?? null,
+    signaturesDir: signaturesDirUri(),
     t,
     now: Date.now,
   }),

@@ -29,7 +29,22 @@ const sig = (id: number, createdAt: number): SignatureRow => ({
   createdAt,
 });
 
-async function setup(items: SignatureRow[]) {
+/** Lays out the placer and loads the shown page's image (A4 portrait unless given). */
+async function showPage(width = 512, height = 724) {
+  await fireEvent(screen.getByTestId('sign-page'), 'layout', {
+    nativeEvent: { layout: { x: 0, y: 0, width: 300, height: 424 } },
+  });
+  await act(async () => {});
+  await fireEvent(screen.getByTestId('sign-page-image', { includeHiddenElements: true }), 'load', {
+    nativeEvent: {
+      cacheType: 'none',
+      source: { url: 'file:///tool-thumb.jpg', width, height, mediaType: 'image/jpeg' },
+    },
+  });
+  await act(async () => {});
+}
+
+async function setup(items: SignatureRow[], { shown = true } = {}) {
   jest.mocked(openToolPreview).mockResolvedValue({
     ok: true,
     preview: { fileUri: 'file:///cache/p.pdf', pageCount: 4, close: jest.fn() },
@@ -43,6 +58,7 @@ async function setup(items: SignatureRow[]) {
     </I18nextProvider>,
   );
   await act(async () => {});
+  if (shown && items.length > 0) await showPage();
   const press = async (label: string) => {
     await fireEvent.press(screen.getByLabelText(label));
     await act(async () => {});
@@ -73,6 +89,9 @@ describe('SignOptions', () => {
     await act(async () => {});
     expect(second).toBeChecked();
     expect(Image.getSize).toHaveBeenLastCalledWith(sig(7, 1000).pngPath);
+    // Another signature: the placer starts again and waits for the page once more.
+    expect(screen.getByLabelText('Add to page')).toBeDisabled();
+    await showPage();
     await press('Add to page');
     expect(screen.getByText('Signature on page 1')).toBeTruthy();
     await press('Sign PDF');
@@ -94,6 +113,7 @@ describe('SignOptions', () => {
     const { onRun, press } = await setup([sig(7, 1000)]);
     await press('Next page');
     await press('Next page');
+    await showPage();
     await press('Add to page');
     expect(screen.getByText('Signature on page 3')).toBeTruthy();
     await press('Sign PDF');
@@ -114,5 +134,32 @@ describe('SignOptions', () => {
     expect(screen.getByText('You can place up to 50 signatures')).toBeTruthy();
     expect(screen.getByLabelText('Add to page')).toBeDisabled();
     expect(screen.getAllByText(/^Signature on page/)).toHaveLength(50);
+  });
+
+  it('Add to page waits for the page image', async () => {
+    await setup([sig(7, 1000)], { shown: false });
+    expect(screen.getByLabelText('Add to page')).toBeDisabled();
+    await showPage();
+    expect(screen.getByLabelText('Add to page')).toBeEnabled();
+  });
+
+  it('after a page change Add to page waits for that page', async () => {
+    const { press } = await setup([sig(7, 1000)]);
+    await press('Next page');
+    expect(screen.getByLabelText('Add to page')).toBeDisabled();
+    await press('Add to page');
+    expect(screen.queryByText(/^Signature on page/)).toBeNull();
+    await showPage(724, 512);
+    expect(screen.getByLabelText('Add to page')).toBeEnabled();
+  });
+
+  it('says so when the signature image cannot be read', async () => {
+    (jest.spyOn(Image, 'getSize') as jest.SpyInstance).mockRejectedValue(new Error('bad png'));
+    await setup([sig(7, 1000)], { shown: false });
+    expect(
+      screen.getByText("Couldn't read this signature. Choose another or draw it again."),
+    ).toBeTruthy();
+    expect(screen.queryByTestId('sign-page')).toBeNull();
+    expect(screen.getByLabelText('Add to page')).toBeDisabled();
   });
 });

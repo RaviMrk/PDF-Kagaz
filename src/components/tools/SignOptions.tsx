@@ -83,16 +83,19 @@ function useChosenSignature() {
   const selected = items.find((i) => i.id === selectedId) ?? null;
   const uri = selected?.pngPath ?? null;
   const [size, setSize] = useState<Size | null>(null);
+  const [unreadable, setUnreadable] = useState<string | null>(null);
   useEffect(() => {
     if (uri === null) return;
     let alive = true;
     Image.getSize(uri).then(
       ({ width, height }) => {
-        if (alive) setSize({ uri, width, height });
+        if (!alive) return;
+        if (width > 0 && height > 0) setSize({ uri, width, height });
+        else setUnreadable(uri);
       },
       () => {
-        // An unreadable PNG cannot be placed; the job would fail on it as signatureGone.
-        if (alive) setSize(null);
+        // An unreadable PNG cannot be placed (the job would fail on it as signatureGone).
+        if (alive) setUnreadable(uri);
       },
     );
     return () => {
@@ -104,6 +107,7 @@ function useChosenSignature() {
     selectedId: selected?.id ?? null,
     select: setSelectedId,
     signature: size !== null && size.uri === uri ? size : null,
+    unreadable: uri !== null && unreadable === uri,
   };
 }
 
@@ -116,13 +120,16 @@ type FormProps = {
 function SignForm({ fileUri, pageCount, onRun }: FormProps) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const { selectedId, select, signature } = useChosenSignature();
+  const { selectedId, select, signature, unreadable } = useChosenSignature();
   const [page, setPage] = useState(1);
   const [value, setValue] = useState<Placement>(DEFAULT_PLACEMENT);
   const [placements, setPlacements] = useState<SignaturePlacement[]>([]);
+  // The shape of the page shown, once the placer has it: placing waits for it.
+  const [shown, setShown] = useState<{ page: number; aspect: number } | null>(null);
+  const pageReady = shown?.page === page;
 
   const full = placements.length >= MAX_PLACEMENTS;
-  const canAdd = selectedId !== null && signature !== null && !full;
+  const canAdd = selectedId !== null && signature !== null && pageReady && !full;
 
   const add = () => {
     if (!canAdd) return;
@@ -146,7 +153,13 @@ function SignForm({ fileUri, pageCount, onRun }: FormProps) {
             value={value}
             onChange={setValue}
             onPageChange={(p) => setPage(Math.min(pageCount, Math.max(1, p)))}
+            onPageAspect={(a) => setShown(a === null ? null : { page, aspect: a })}
           />
+        ) : null}
+        {unreadable ? (
+          <Text accessibilityLiveRegion="polite" style={{ color: colors.danger }}>
+            {t('sign.signatureUnreadable')}
+          </Text>
         ) : null}
         {selectedId !== null ? (
           <Pressable

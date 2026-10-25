@@ -9,6 +9,18 @@ import { runStamps } from './stampRoute';
 
 type SignRequest = Extract<PdfToolRequest, { toolId: 'sign' }>;
 
+const SIGNATURE_NAME = /^sig-[0-9]+-[a-z0-9]{6}\.png$/;
+
+/** True for a file:// URI of a `sig-*.png` directly in `dir` (the saved signatures folder). */
+export function isSavedSignatureUri(uri: string, dir: string): boolean {
+  const prefix = `${dir.replace(/\/+$/, '')}/`;
+  return (
+    dir.startsWith('file://') &&
+    uri.startsWith(prefix) &&
+    SIGNATURE_NAME.test(uri.slice(prefix.length))
+  );
+}
+
 /**
  * Copies each placed signature's saved PNG into the job workspace once (PdfStamper only takes PNGs
  * of the job's own workspace; pdf-lib reads them from there too). A signature whose row or file is
@@ -21,7 +33,10 @@ async function stageSignatures(ctx: RunContext<SignRequest>): Promise<Map<number
     if (pngs.has(signatureId)) continue;
     throwIfCancelled(ctx.signal);
     const saved = ctx.deps.getSignaturePng(signatureId);
-    if (saved === null) throw new ToolRunFailure('signatureGone', null);
+    // Only a saved signature file is ever read: a row pointing anywhere else counts as gone.
+    if (saved === null || !isSavedSignatureUri(saved, ctx.deps.signaturesDir)) {
+      throw new ToolRunFailure('signatureGone', null);
+    }
     const bytes = await as('signatureGone', null, () =>
       ctx.time('prepare', () => fs.readBytes(saved)),
     );

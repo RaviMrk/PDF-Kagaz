@@ -11,6 +11,8 @@ type Props<P extends StampPosition> = {
   allowed?: readonly P[];
   /** The visible field label; names the radio group for screen readers. */
   label: string;
+  /** Dims and blocks every cell. */
+  disabled?: boolean;
 };
 
 const ROWS: readonly (readonly StampPosition[])[] = [
@@ -27,6 +29,7 @@ export function PositionGrid<P extends StampPosition>({
   onChange,
   allowed,
   label,
+  disabled = false,
 }: Props<P>) {
   const { t } = useTranslation();
   const { colors } = useTheme();
@@ -44,7 +47,8 @@ export function PositionGrid<P extends StampPosition>({
                 key={p}
                 accessibilityRole="radio"
                 accessibilityLabel={t(`position.${camel(p)}`)}
-                accessibilityState={{ checked }}
+                accessibilityState={{ checked, disabled }}
+                disabled={disabled}
                 onPress={() => onChange(p)}
                 style={[
                   styles.cell,
@@ -52,6 +56,7 @@ export function PositionGrid<P extends StampPosition>({
                   checked
                     ? { backgroundColor: colors.primary, borderColor: colors.primary }
                     : { backgroundColor: colors.surface, borderColor: colors.border },
+                  disabled && styles.dim,
                 ]}
               >
                 <Text
@@ -74,4 +79,5 @@ const styles = StyleSheet.create({
   cell: { width: 64, minWidth: 48, minHeight: 48 },
   radio: { borderWidth: 1, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   dot: { fontSize: 16 },
+  dim: { opacity: 0.4 },
 });
