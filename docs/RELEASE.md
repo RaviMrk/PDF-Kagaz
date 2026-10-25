@@ -502,7 +502,11 @@ Behaviour accepted as it is (M7):
 
 - **Reader page counter can show N−1/N at the very end** when the last page is shorter than half
   the screen (react-native-pdf counts the page under the view's centre); jumping by thumbnail shows
-  N/N.
+  N/N. Rechecked in the M7 fix wave: react-native-pdf 7.0.5 sends JS only `pageChanged`,
+  `scaleChanged`, `pageSingleTap`, `loadComplete`, `linkPressed` and errors. Its native
+  `onPageScrolled(page, positionOffset)` emits nothing, and there is no scroll or end-reached event.
+  So the app cannot tell that the end is reached without patching the library, which it does not
+  do. The resume page can be one page early on such files.
 - **Save as to a cloud provider is synced best effort.** Local outputs are flushed and fsynced
   before they become visible. A document provider's descriptor may not support sync, and a
   stream-only provider gets a plain stream, so a crash right after Save as to such a provider could
