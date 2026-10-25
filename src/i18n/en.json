@@ -462,6 +462,7 @@
     "cancelled": "Cancelled. Nothing more was saved.",
     "interrupted": "The app was closed before this finished.",
     "interruptedPartial": "The app was closed before this finished. Some files were already saved.",
+    "interruptedImages": "The app was closed before this finished. Images already saved are in Pictures/PDFToolkit.",
     "imagesGone": "The images for this PDF are no longer available. Add them again.",
     "imageInvalid": "An image is damaged or in a format that isn't supported",
     "unknown": "Something went wrong",

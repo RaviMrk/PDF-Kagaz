@@ -490,6 +490,18 @@ describe('result screen', () => {
       expect(PdfNativeModule.viewImage).toHaveBeenCalledWith(URIS[0], 'Open');
     });
 
+    it('an interrupted job says the images already saved stay in the gallery', async () => {
+      outcomeOf.mockReturnValue(
+        imagesDone({ ok: false, failure: 'interrupted', inputIndex: null, outputs: [] }),
+      );
+      await open();
+      expect(
+        screen.getByText(
+          'The app was closed before this finished. Images already saved are in Pictures/PDFToolkit.',
+        ),
+      ).toBeTruthy();
+    });
+
     it('says one image in the singular and notes reduced pages', async () => {
       outcomeOf.mockReturnValue(
         imagesDone({

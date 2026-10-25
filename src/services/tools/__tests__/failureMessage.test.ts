@@ -39,6 +39,14 @@ describe('failureMessage', () => {
     expect(failureMessage('outOfMemory', 'big.pdf', t)).toBe(copy);
     expect(jobFailureMessage('outOfMemory', null, 0, t, 'compress')).toBe(copy);
   });
+  it('an interrupted PDF to images job says its saved images stay in the gallery', () => {
+    expect(jobFailureMessage('interrupted', null, 0, t, 'pdf-to-images')).toBe(
+      'The app was closed before this finished. Images already saved are in Pictures/PDFToolkit.',
+    );
+    expect(jobFailureMessage('interrupted', null, 0, t, 'split')).toBe(
+      'The app was closed before this finished.',
+    );
+  });
   it('strips bidi controls from the name', () => {
     expect(failureMessage('notFound', '‮fdp.exe‬', t)).toBe('"fdp.exe" no longer exists');
   });

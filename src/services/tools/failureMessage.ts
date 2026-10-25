@@ -50,6 +50,10 @@ export function jobFailureMessage(
   t: Translate,
   toolId: RunnableToolId,
 ): string {
+  // PDF to images keeps no list of its saved images, but those it saved stay in the gallery.
+  if (failure === 'interrupted' && toolId === 'pdf-to-images') {
+    return t('toolError.interruptedImages');
+  }
   if (failure === 'interrupted' && savedCount > 0) return t('toolError.interruptedPartial');
   // PDF to images saves to the gallery folder, not Documents/PDFToolkit.
   if (failure === 'permission' && inputName === null && toolId === 'pdf-to-images') {
