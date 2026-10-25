@@ -878,6 +878,56 @@ describe('toolJobStore v1.1 tools', () => {
     });
   });
 
+  const secretsOf = (r: ToolRequest | undefined) => {
+    const json = JSON.stringify(r ?? null);
+    return ['hunter22', 'old', 'pw-in'].filter((pw) => json.includes(pw));
+  };
+
+  it('Done after a success drops the passwords from the kept request', async () => {
+    const s = setup();
+    const first = s.store.getState().start(protect, t);
+    if (!first.ok) throw new Error('expected ok');
+    s.calls[0]!.resolve({ ok: true, outputs: [] });
+    await flush();
+    s.store.getState().dismiss(first.jobId);
+    expect(secretsOf(s.store.getState().last?.request)).toEqual([]);
+    expect(s.store.getState().outcomeOf(first.jobId).kind).toBe('done');
+  });
+
+  it('Close after a failure drops the passwords; a later Try again asks for them', async () => {
+    const s = setup();
+    const first = s.store.getState().start(watermarkText, t);
+    if (!first.ok) throw new Error('expected ok');
+    s.calls[0]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    s.store.getState().dismiss(first.jobId);
+    expect(secretsOf(s.store.getState().last?.request)).toEqual([]);
+    expect(s.store.getState().retry(first.jobId, t)).toEqual({ ok: false, reason: 'needsInput' });
+    expect(s.calls).toHaveLength(1);
+  });
+
+  it('a job without passwords stays retryable after Close', async () => {
+    const s = setup();
+    const plain: ToolRequest = { ...watermarkText, passwords: undefined };
+    const first = s.store.getState().start(plain, t);
+    if (!first.ok) throw new Error('expected ok');
+    s.calls[0]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    s.store.getState().dismiss(first.jobId);
+    expect(s.store.getState().retry(first.jobId, t).ok).toBe(true);
+    expect(s.calls[1]!.request).toEqual(plain);
+  });
+
+  it('an in-process Try again before Close keeps the passwords', async () => {
+    const s = setup();
+    const first = s.store.getState().start(protect, t);
+    if (!first.ok) throw new Error('expected ok');
+    s.calls[0]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    expect(s.store.getState().retry(first.jobId, t).ok).toBe(true);
+    expect(s.calls[1]!.request).toEqual(protect);
+  });
+
   it('retry of a password tool row asks the user to start again', async () => {
     const s = setup();
     const first = s.store.getState().start(protect, t);

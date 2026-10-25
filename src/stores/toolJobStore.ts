@@ -63,6 +63,8 @@ export type FinishedJob = {
   request?: ToolRequest;
   /** Interrupted by a process death and loaded from its row: outcomeOf re-reads the row. */
   recovered?: true;
+  /** `request` held passwords and was dropped on dismiss: a retry needs them typed again. */
+  passwordsDropped?: true;
 };
 /**
  * `gone`: an image job from another process; its image session no longer exists. `needsInput`: a
@@ -91,7 +93,8 @@ export type ToolJobsState = {
   recoverInterrupted(jobId: string): void;
   /**
    * The user left the result of `jobId` (Done / Close) without retrying: a failed or cancelled
-   * image job's kept session is deleted, and a later retry reports `gone`.
+   * image job's kept session is deleted, and a later retry reports `gone`. The request's passwords
+   * (`passwords`, Protect's `newPassword`) leave memory; a later retry reports `needsInput`.
    */
   dismiss(jobId: string): void;
   /** Name of the input a failure points at (this process's last job only); null when unknown. */
@@ -399,6 +402,12 @@ function resultOf(request: ToolRequest, outcome: ToolOutcome, now: number): JobR
   return { status: 'failed', error: outcome.failure, outputIds, now };
 }
 
+/** Whether `request` holds a password (`passwords`, Protect's `newPassword`). */
+function holdsPassword(request: ToolRequest): boolean {
+  if (isImagesRequest(request)) return false;
+  return request.passwords !== undefined || request.toolId === 'protect';
+}
+
 /**
  * The image session `last` keeps for "Try again" (a failed or cancelled job that reads one: images,
  * scan, an image watermark), else null.
@@ -557,6 +566,9 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
         ) {
           return { ok: false, reason: 'needsInput' };
         }
+        if (last?.jobId === jobId && last.passwordsDropped) {
+          return { ok: false, reason: 'needsInput' };
+        }
         if (last?.jobId === jobId && last.request) return start(last.request, t);
         let request: ToolRequest | null = null;
         let row: ToolJobRow | undefined;
@@ -610,15 +622,20 @@ export function createToolJobStore(deps: ToolJobStoreDeps) {
 
       dismiss(jobId) {
         const { last } = get();
-        if (last?.jobId !== jobId) return;
+        if (last?.jobId !== jobId || !last.request) return;
         const session = keptSession(last);
-        if (session === null) return;
-        // A retry of this job is running on the same session.
-        if (running && sessionIdOf(running) === session) return;
-        cleanSession(session);
-        // Without its request, a retry reads the row and reports the images `gone`.
-        const { request: _dropped, ...rest } = last;
-        set({ last: rest });
+        // A retry of this job running on the same session keeps it.
+        if (session !== null && !(running && sessionIdOf(running) === session)) {
+          cleanSession(session);
+          // Without its request, a retry reads the row and reports the images `gone`.
+          const { request: _dropped, ...rest } = last;
+          set({ last: rest });
+          return;
+        }
+        if (holdsPassword(last.request)) {
+          const { request: _secret, ...rest } = last;
+          set({ last: { ...rest, passwordsDropped: true } });
+        }
       },
 
       inputNameOf(jobId, inputIndex) {
