@@ -622,5 +622,23 @@
     "fontSize": "Text size",
     "fontSizeValue": "{{size}} pt",
     "run": "Add page numbers"
+  },
+  "signature": {
+    "title": "Your signature",
+    "padLabel": "Signature pad. Draw your signature with one finger.",
+    "hint": "Sign inside the box",
+    "ink": "Ink colour",
+    "black": "Black",
+    "blue": "Blue",
+    "clear": "Clear",
+    "save": "Save signature",
+    "saved": "Saved signatures",
+    "none": "No saved signatures yet",
+    "item": "Signature saved {{date}}",
+    "delete": "Delete signature",
+    "deleteTitle": "Delete this signature?",
+    "deleteBody": "It will be removed from this phone.",
+    "full": "You can keep up to 10 signatures. Delete one first.",
+    "saveFailed": "Couldn't save the signature"
   }
 }

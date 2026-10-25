@@ -1,3 +1,5 @@
+import type { ViewProps } from 'react-native';
+
 /**
  * A PDF found on the device. `uri` is a percent-encoded `file://` URI (full access) or a
  * tree-based document URI (SAF). `folder` is the display folder; times are epoch ms.
@@ -94,6 +96,24 @@ export type PreparedPage = { uri: string; width: number; height: number; sizeByt
 export type PickedImageUris = { uris: string[]; dropped: number };
 
 export type PickedFolder = { uri: string; label: string };
+
+/** A saved signature PNG (`file://` in filesDir/signatures): trimmed, transparent, ≤ 1200 px wide. */
+export type ExportedSignature = { uri: string; width: number; height: number };
+
+/** Props of the native `SignaturePadView`; `onPadChange` fires when the pad becomes empty or not. */
+export type SignaturePadViewProps = ViewProps & {
+  /** `#rrggbb`. */
+  inkColor: string;
+  strokeWidthDp?: number;
+  onPadChange?: (event: { nativeEvent: { empty: boolean } }) => void;
+};
+
+/** The view functions reachable through a ref to `SignaturePadView`. */
+export type SignaturePadViewRef = {
+  /** Null when nothing is drawn. */
+  exportPng(): Promise<ExportedSignature | null>;
+  clear(): Promise<void>;
+};
 
 /** A PDF shared to the app (ACTION_SEND) while it is running; `uri` is the shared stream. */
 export type IncomingPdfEvent = { uri: string };

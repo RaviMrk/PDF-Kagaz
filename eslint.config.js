@@ -47,7 +47,22 @@ const INTERSTITIAL = {
   source: '/(^|\\/)interstitial$/',
   message: 'The interstitial is used only by app/result.tsx and src/components/AdsLifecycle.tsx.',
 };
-const RESTRICTED_MODULES = [SORTABLES, ADS, FIREBASE, FIREBASE_ADAPTER, AD_BANNER, INTERSTITIAL];
+// The native module is reached through src/services/native/pdfNative.ts; the signature pad
+// component is the one exception (it renders the module's native view).
+const NATIVE = {
+  source: '/(^|\\/)modules\\/pdf-native(\\/|$)/',
+  message:
+    'modules/pdf-native is used only by src/services/native/pdfNative.ts and src/components/signature/SignaturePad.tsx.',
+};
+const RESTRICTED_MODULES = [
+  SORTABLES,
+  ADS,
+  FIREBASE,
+  FIREBASE_ADAPTER,
+  AD_BANNER,
+  INTERSTITIAL,
+  NATIVE,
+];
 
 const importRule = ({ name, message }) => ['error', { paths: [{ name, message }] }];
 // Every way a module can be pulled in: import, re-export, export-all, import(), require() and
@@ -84,6 +99,14 @@ const restrictionBlocks = () => [
   {
     files: ['src/components/**'],
     rules: { 'no-restricted-syntax': restrictedSyntax([SORTABLES]) },
+  },
+  {
+    files: ['src/components/signature/SignaturePad.tsx'],
+    rules: { 'no-restricted-syntax': restrictedSyntax([SORTABLES, NATIVE]) },
+  },
+  {
+    files: ['src/services/native/pdfNative.ts'],
+    rules: { 'no-restricted-syntax': restrictedSyntax([NATIVE]) },
   },
   {
     files: ['src/components/AdsLifecycle.tsx'],

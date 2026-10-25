@@ -289,6 +289,30 @@ class PdfNativeModule : Module() {
       }
     }
 
+    // Saved signatures only (filesDir/signatures/sig-*.png); anything else: ERR_PERMISSION_DENIED.
+    AsyncFunction("deleteSignatureFile") Coroutine { uri: String ->
+      RenderSupport.mapErrors {
+        withContext(Dispatchers.IO) { SignatureFiles.delete(context.filesDir, uri) }
+      }
+    }
+
+    // The finger signature pad; view functions run on the main thread (the PNG is written on IO).
+    View(SignaturePadView::class) {
+      // Not "onChange": React Native already has a bubbling topChange event, and a direct event of
+      // the same name fails the view config ("Event cannot be both direct and bubbling").
+      Events("onPadChange")
+
+      Prop("inkColor") { view: SignaturePadView, value: String -> view.setInkColor(value) }
+
+      Prop("strokeWidthDp", 3.0) { view: SignaturePadView, value: Double -> view.setStrokeWidthDp(value) }
+
+      AsyncFunction("exportPng") Coroutine { view: SignaturePadView ->
+        RenderSupport.mapErrors { view.export(context.filesDir) }
+      }
+
+      AsyncFunction("clear") { view: SignaturePadView -> view.clear() }
+    }
+
     AsyncFunction("prepareStampImage") Coroutine { sessionId: String, sourceIndex: Int, jobId: String, maxLongSidePx: Int ->
       stampImages.prepare(sessionId, sourceIndex, jobId, maxLongSidePx)
     }

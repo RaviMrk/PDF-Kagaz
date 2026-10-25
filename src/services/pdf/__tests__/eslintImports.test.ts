@@ -23,6 +23,9 @@ const FILES = [
   'src/services/telemetry/telemetry.ts',
   'src/services/telemetry/firebaseTelemetry.ts',
   'jest.setup.js',
+  'src/services/native/pdfNative.ts',
+  'src/components/signature/SignaturePad.tsx',
+  'app/signature.tsx',
 ];
 
 // ESLint loads its config through a dynamic import, which Jest's VM cannot do, so ask a child
@@ -52,6 +55,14 @@ const AD_BANNER_FORMS = [
   `export const a = require('@/components/AdBanner');`,
   `export const a = () => import('@/components/AdBanner');`,
   `import a = require('@/components/AdBanner'); export { a };`,
+];
+// Every way the pdf-native module (or a file inside it) can be pulled in.
+const NATIVE_FORMS = [
+  `import { SignaturePadView } from '../../../modules/pdf-native'; export const a = SignaturePadView;`,
+  `import PdfNative from '../../modules/pdf-native/src/PdfNativeModule'; export const a = PdfNative;`,
+  `export * from '../../../modules/pdf-native';`,
+  `export const a = require('../../../modules/pdf-native');`,
+  `export const a = () => import('../../../modules/pdf-native');`,
 ];
 const ZONE_CASES: [string, string, boolean][] = [
   [`import '${ADS}';`, 'app/index.tsx', false],
@@ -109,6 +120,14 @@ const ZONE_CASES: [string, string, boolean][] = [
     false,
   ],
   [`export const a = require('./firebaseTelemetry');`, 'src/services/telemetry/telemetry.ts', true],
+  // modules/pdf-native: the services wrapper and the signature pad view only.
+  ...NATIVE_FORMS.flatMap((code): [string, string, boolean][] => [
+    [code, 'src/components/signature/SignaturePad.tsx', true],
+    [code, 'src/services/native/pdfNative.ts', true],
+    [code, 'app/signature.tsx', false],
+    [code, 'src/components/signature/Other.tsx', false],
+    [code, 'src/services/tools/runTool.ts', false],
+  ]),
 ];
 
 const SCRIPT = `
@@ -175,27 +194,32 @@ const FB = '/^@react-native-firebase\\//';
 const AB = '/(^|\\/)AdBanner$/';
 const INT = '/(^|\\/)interstitial$/';
 const FBA = '/(^|\\/)firebaseTelemetry(\\.ts)?$/';
+const NAT = '/(^|\\/)modules\\/pdf-native(\\/|$)/';
 describe('import restrictions', () => {
   it.each([
-    ['app/index.tsx', [PDF, FS, SORT, ADS, FB, FBA, AB, INT]],
-    ['src/components/Button.tsx', [PDF, FS, ADS, FB, FBA, AB, INT]],
-    ['src/components/AdBanner.tsx', [PDF, FS, FB, FBA, AB, INT]],
-    ['src/components/AdsLifecycle.tsx', [PDF, FS, ADS, FB, FBA, AB]],
-    ['app/(tabs)/home.tsx', [PDF, FS, SORT, ADS, FB, FBA, INT]],
-    ['app/(tabs)/files.tsx', [PDF, FS, SORT, ADS, FB, FBA, INT]],
-    ['app/result.tsx', [PDF, FS, SORT, ADS, FB, FBA, AB]],
-    ['src/services/ads/x.ts', [PDF, FS, SORT, FB, FBA, AB, INT]],
-    ['src/services/telemetry/telemetry.ts', [PDF, FS, SORT, ADS, FB, AB, INT]],
-    ['src/services/telemetry/firebaseTelemetry.ts', [PDF, FS, SORT, ADS, FBA, AB, INT]],
+    ['app/index.tsx', [PDF, FS, SORT, ADS, FB, FBA, AB, INT, NAT]],
+    ['src/components/Button.tsx', [PDF, FS, ADS, FB, FBA, AB, INT, NAT]],
+    ['src/components/AdBanner.tsx', [PDF, FS, FB, FBA, AB, INT, NAT]],
+    ['src/components/AdsLifecycle.tsx', [PDF, FS, ADS, FB, FBA, AB, NAT]],
+    ['app/(tabs)/home.tsx', [PDF, FS, SORT, ADS, FB, FBA, INT, NAT]],
+    ['app/(tabs)/files.tsx', [PDF, FS, SORT, ADS, FB, FBA, INT, NAT]],
+    ['app/result.tsx', [PDF, FS, SORT, ADS, FB, FBA, AB, NAT]],
+    ['app/signature.tsx', [PDF, FS, SORT, ADS, FB, FBA, AB, INT, NAT]],
+    ['src/services/ads/x.ts', [PDF, FS, SORT, FB, FBA, AB, INT, NAT]],
+    ['src/services/telemetry/telemetry.ts', [PDF, FS, SORT, ADS, FB, AB, INT, NAT]],
+    ['src/services/telemetry/firebaseTelemetry.ts', [PDF, FS, SORT, ADS, FBA, AB, INT, NAT]],
+    // The only two files that may import modules/pdf-native.
+    ['src/services/native/pdfNative.ts', [PDF, FS, SORT, ADS, FB, FBA, AB, INT]],
+    ['src/components/signature/SignaturePad.tsx', [PDF, FS, ADS, FB, FBA, AB, INT]],
     // Tests, test utilities and the Jest setup may import ads, Firebase and sortables (mocks).
     ['src/components/__tests__/Button.test.tsx', [FS]],
     ['src/test-utils/pdfFixtures.ts', [FS]],
-    ['src/services/pdf/merge.ts', [FS, SORT, ADS, FB, FBA, AB, INT]],
+    ['src/services/pdf/merge.ts', [FS, SORT, ADS, FB, FBA, AB, INT, NAT]],
     ['src/services/pdf/__tests__/merge.test.ts', [FS]],
-    ['src/services/tools/toolFs.ts', [PDF, SORT, ADS, FB, FBA, AB, INT]],
+    ['src/services/tools/toolFs.ts', [PDF, SORT, ADS, FB, FBA, AB, INT, NAT]],
     ['jest.setup.js', [PDF]],
     // expo-file-system is enforced for TypeScript files only (plugin availability)
-    ['scripts/make-fixtures.mjs', [SORT, ADS, FB, FBA, AB, INT]],
+    ['scripts/make-fixtures.mjs', [SORT, ADS, FB, FBA, AB, INT, NAT]],
   ])('%s restricts %j', (file, expected) => {
     expect(restricted(file)).toEqual([...expected].sort());
   });

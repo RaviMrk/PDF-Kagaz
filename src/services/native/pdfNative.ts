@@ -27,6 +27,7 @@ import type {
 export type {
   CompressLevel,
   CompressResult,
+  ExportedSignature,
   FolderChange,
   FolderStamp,
   ImageFilter,
@@ -235,6 +236,11 @@ export interface PdfNativeApi {
    * ERR_PERMISSION_DENIED.
    */
   publishImageOutput(tempUri: string, fileName: string, folder: string): Promise<SavedImage>;
+  /**
+   * Deletes a saved signature PNG (filesDir/signatures/sig-*.png); any other URI:
+   * ERR_PERMISSION_DENIED. A file that is already gone resolves.
+   */
+  deleteSignatureFile(uri: string): Promise<void>;
   /** Share sheet for saved images (one: ACTION_SEND, more: ACTION_SEND_MULTIPLE); this app is excluded. */
   shareImages(uris: string[], chooserTitle: string): Promise<void>;
   /** "Open with" chooser (ACTION_VIEW) for one saved image; this app is excluded. */
@@ -395,6 +401,7 @@ export const pdfNative: PdfNativeApi = {
     PdfNative.prepareStampImage(sessionId, sourceIndex, jobId, maxLongSidePx),
   publishImageOutput: (tempUri, fileName, folder) =>
     PdfNative.publishImageOutput(tempUri, fileName, folder),
+  deleteSignatureFile: (uri) => PdfNative.deleteSignatureFile(uri),
   shareImages: (uris, chooserTitle) => PdfNative.shareImages(uris, chooserTitle),
   viewImage: (uri, chooserTitle) => PdfNative.viewImage(uri, chooserTitle),
   renderToolThumbnail: (fileUri, page, width) =>

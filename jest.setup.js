@@ -5,10 +5,12 @@ jest.mock('react-native-nitro-modules', () => ({
   NitroModules: {},
 }));
 
-// The pdf-native Expo module has no native side under Jest; every test sees jest.fn fakes.
+// The pdf-native Expo module has no native side under Jest; every test sees jest.fn fakes. The
+// signature pad view is a host stub whose props and functions tests drive via `fakeSignaturePad`.
 jest.mock('./modules/pdf-native', () => ({
   __esModule: true,
   default: require('./src/test-utils/fakePdfNative').createFakeNativeModule(),
+  SignaturePadView: require('./src/test-utils/fakeSignaturePad').FakeSignaturePadView,
 }));
 
 // @shopify/flash-list/jestSetup (2.0.2) swaps FlashList for `RecyclerView`, which the package no

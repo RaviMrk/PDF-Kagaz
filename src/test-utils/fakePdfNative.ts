@@ -173,6 +173,7 @@ function createNativeFns(): jest.Mocked<NativeFns> {
         folder: `Pictures/PDFToolkit/${folder}`,
       }),
     ),
+    deleteSignatureFile: jest.fn().mockResolvedValue(undefined),
     shareImages: jest.fn().mockResolvedValue(undefined),
     viewImage: jest.fn().mockResolvedValue(undefined),
     renderToolThumbnail: jest.fn().mockResolvedValue('file:///tool-thumb.jpg'),

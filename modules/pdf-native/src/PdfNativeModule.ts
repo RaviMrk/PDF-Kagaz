@@ -125,6 +125,8 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
   ): Promise<PreparedPage>;
   /** Workspace file → Pictures/PDFToolkit/<folder>/ under a free name; deletes the workspace file. */
   publishImageOutput(tempUri: string, fileName: string, folder: string): Promise<SavedImage>;
+  /** filesDir/signatures/sig-*.png only (else ERR_PERMISSION_DENIED); a missing file resolves. */
+  deleteSignatureFile(uri: string): Promise<void>;
   shareImages(uris: string[], chooserTitle: string): Promise<void>;
   viewImage(uri: string, chooserTitle: string): Promise<void>;
   /** Workspace files only; 1-based page, width clamped to 1..512; own lane (not reader / Files list). */
