@@ -199,7 +199,7 @@ describe('organise screen', () => {
     ).toBeTruthy();
     await fireEvent.changeText(screen.getByPlaceholderText('Password'), 'secret');
     await press('Use');
-    expect(preview).toHaveBeenLastCalledWith(a, { password: 'secret' });
+    expect(preview).toHaveBeenLastCalledWith(a, { password: 'secret', toolId: 'organize' });
     expect(screen.getByText('Page 3')).toBeTruthy();
     await select(3);
     await press('Delete page 3');

@@ -27,7 +27,7 @@ const DPIS: readonly DpiKey[] = ['72', '150', '300'];
 export function PdfToImagesOptions({ row, onRun }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const { state: loaded, password, dialog } = useToolPreview(row);
+  const { state: loaded, password, dialog } = useToolPreview(row, 'pdf-to-images');
 
   if (loaded.kind === 'loading') {
     return (

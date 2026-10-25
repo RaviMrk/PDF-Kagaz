@@ -540,12 +540,15 @@ export async function runTool(
         extras = { ...extras, ...e };
       },
     };
-    const { inputs, locks } = await unlockInputs(base);
+    const { inputs, locks, unreadable } = await unlockInputs(base);
     const route = routeFor(
       request.toolId,
       inputs.map((input) => input.sizeBytes),
       deps.caps,
     );
+    // Passed through for pdf-lib only: PdfBox cannot open it.
+    if (route !== 'js' && unreadable.length > 0)
+      throw new ToolRunFailure('invalid', unreadable[0]!);
 
     const runner = RUNNERS[request.toolId] as ToolRunner | undefined;
     if (!runner) throw new ToolRunFailure('unknown', null);

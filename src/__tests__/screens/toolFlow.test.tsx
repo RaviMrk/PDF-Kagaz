@@ -246,7 +246,7 @@ describe('tool flow', () => {
 
   it('splits by page ranges', async () => {
     await open(`/tool/split?inputs=${ID_A}`);
-    expect(preview).toHaveBeenCalledWith(hexA);
+    expect(preview).toHaveBeenCalledWith(hexA, { toolId: 'split' });
     expect(screen.getByText('10 pages')).toBeTruthy();
     await fireEvent.changeText(screen.getByLabelText('Ranges (one file each)'), '1-3, 5');
     expect(screen.getByText('Makes 2 files')).toBeTruthy();
@@ -764,7 +764,7 @@ describe('tool flow', () => {
       expect(screen.getByText('Wrong password. Try again.')).toBeTruthy();
       await fireEvent.changeText(screen.getByPlaceholderText('Password'), 'secret');
       await press('Use');
-      expect(preview).toHaveBeenLastCalledWith(hexA, { password: 'secret' });
+      expect(preview).toHaveBeenLastCalledWith(hexA, { password: 'secret', toolId: 'split' });
       expect(screen.getByText('10 pages')).toBeTruthy();
       await fireEvent.changeText(screen.getByLabelText('Ranges (one file each)'), '1-3');
       await press('Split');

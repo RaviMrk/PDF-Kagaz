@@ -23,7 +23,7 @@ type Props = { row: FileRow; onRun(placements: SignaturePlacement[], passwords?:
 export function SignOptions({ row, onRun }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const { state: loaded, password, dialog } = useToolPreview(row);
+  const { state: loaded, password, dialog } = useToolPreview(row, 'sign');
 
   if (loaded.kind === 'loading') {
     return (

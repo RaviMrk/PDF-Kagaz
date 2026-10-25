@@ -2,7 +2,7 @@ import type { FileRow } from '@/db/schema';
 import { isPdfNativeError, type PdfLock, type WorkspaceFile } from '@/services/native/pdfNative';
 import { PdfToolError, isPdfToolError, throwIfCancelled } from '@/services/pdf/pdfErrors';
 
-import type { ToolRoute } from '../limits';
+import { routeFor, type ToolRoute } from '../limits';
 import type { Translate } from '../outputNames';
 import type { PhaseTimer } from '../phaseTimer';
 import type { PdfToolRequest, ToolExtras, ToolRunDeps } from '../runTool';
@@ -154,16 +154,37 @@ const PASSWORD_TOOLS: readonly PdfToolRequest['toolId'][] = ['protect', 'unlock'
  * opened with `request.passwords[i]` (null: the empty password). A failure belongs to input i
  * (`encrypted` without a password, `wrongPassword`, `restricted`). The note that the output has no
  * password is set unless the tool is Protect or Remove password. Passwords are never logged.
+ *
+ * An input PdfBox cannot open (ERR_PDF_INVALID) is kept as is when the job would run on pdf-lib
+ * (a routed tool whose staged inputs fit the JS caps): pdf-lib may open what PdfBox rejects, as in
+ * v1.0. Its index is in `unreadable`, so the job still fails `invalid` there if it ends up native.
  */
 export async function unlockInputs(
   ctx: Omit<RunContext, 'route' | 'locks'>,
-): Promise<{ inputs: WorkspaceFile[]; locks: PdfLock[] }> {
+): Promise<{ inputs: WorkspaceFile[]; locks: PdfLock[]; unreadable: number[] }> {
   const { native } = ctx.deps;
   const inputs: WorkspaceFile[] = [];
   const locks: PdfLock[] = [];
+  const unreadable: number[] = [];
+  const jsRoute =
+    routeFor(
+      ctx.request.toolId,
+      ctx.inputs.map((input) => input.sizeBytes),
+      ctx.deps.caps,
+    ) === 'js';
   for (const [i, staged] of ctx.inputs.entries()) {
     throwIfCancelled(ctx.signal);
-    const lock = await as(null, i, () => ctx.time('stage', () => native.inspectPdf(staged.uri)));
+    let lock: PdfLock;
+    try {
+      lock = await ctx.time('stage', () => native.inspectPdf(staged.uri));
+    } catch (e) {
+      if (isPdfToolError(e, 'cancelled')) throw e;
+      if (!(jsRoute && isPdfNativeError(e, 'ERR_PDF_INVALID'))) {
+        throw new ToolRunFailure(toToolFailure(e), i);
+      }
+      unreadable.push(i);
+      lock = 'none';
+    }
     locks.push(lock);
     if (lock === 'none') {
       inputs.push(staged);
@@ -181,7 +202,7 @@ export async function unlockInputs(
     inputs.push(open);
     if (!PASSWORD_TOOLS.includes(ctx.request.toolId)) ctx.setExtras({ passwordRemoved: true });
   }
-  return { inputs, locks };
+  return { inputs, locks, unreadable };
 }
 
 /** Reads staged input `i` into memory (the JS route only); a failed read is `io` at `i`. */

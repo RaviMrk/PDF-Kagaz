@@ -10,6 +10,7 @@ import {
 import { ToolPasswordDialog, type PromptError } from '@/components/tools/usePasswordPrompts';
 import type { FileRow } from '@/db/schema';
 import type { ToolFailure } from '@/services/tools/toolJobRepo';
+import type { RunnableToolId } from '@/services/tools/toolRegistry';
 import {
   openToolPreview,
   type ToolPreview,
@@ -30,9 +31,13 @@ type Prompt = { fileKey: string; lock: 'password' | 'restricted'; error: PromptE
  * mounted and keyed by file, not row object: a thumbnail or favourite update must not restage it.
  * A locked file asks for its password, checked by opening the preview with it; Cancel ends as
  * `encrypted` (a restricted file: `restricted`). `password` is the one that opened it (for the
- * job's request), never stored.
+ * job's request), never stored. `toolId`: the tool it previews for (decides whether a file PdfBox
+ * rejects is still previewed, for pdf-lib).
  */
-export function useToolPreview(row: FileRow): {
+export function useToolPreview(
+  row: FileRow,
+  toolId: RunnableToolId,
+): {
   state: ToolPreviewState;
   password: string | null;
   dialog: ReactElement | null;
@@ -48,7 +53,9 @@ export function useToolPreview(row: FileRow): {
   const answer = useRef<((password: string | null) => void) | null>(null);
 
   const open = useEffectEvent((password: string | null): Promise<ToolPreviewResult> =>
-    password === null ? openToolPreview(row) : openToolPreview(row, { password }),
+    password === null
+      ? openToolPreview(row, { toolId })
+      : openToolPreview(row, { password, toolId }),
   );
 
   useEffect(() => {

@@ -56,7 +56,7 @@ function OrganizeLoader({ row }: { row: FileRow }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   // The preview stages the file for thumbnails; it lives as long as this screen.
-  const { state, password, dialog } = useToolPreview(row);
+  const { state, password, dialog } = useToolPreview(row, 'organize');
   const loaded =
     state.kind === 'ready' && state.pageCount > ORGANIZE_MAX_PAGES
       ? ({ kind: 'tooMany' } as const)

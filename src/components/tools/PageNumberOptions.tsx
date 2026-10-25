@@ -43,7 +43,7 @@ function parseStart(text: string): number | null {
 export function PageNumberOptions({ row, onRun }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const { state: loaded, password, dialog } = useToolPreview(row);
+  const { state: loaded, password, dialog } = useToolPreview(row, 'page-numbers');
 
   if (loaded.kind === 'loading') {
     return (

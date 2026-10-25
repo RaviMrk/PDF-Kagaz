@@ -1,9 +1,15 @@
 import type { FileRow } from '@/db/schema';
-import { pdfNative, type PdfLock, type PdfNativeApi } from '@/services/native/pdfNative';
+import {
+  isPdfNativeError,
+  pdfNative,
+  type PdfLock,
+  type PdfNativeApi,
+} from '@/services/native/pdfNative';
 
-import { NATIVE_CAPS } from './limits';
+import { NATIVE_CAPS, routeFor } from './limits';
 import { knownSize, toToolFailure } from './toolFailure';
 import type { ToolFailure } from './toolJobRepo';
+import type { RunnableToolId } from './toolRegistry';
 
 export type ToolPreview = { fileUri: string; pageCount: number; close(): void };
 
@@ -32,6 +38,11 @@ export type ToolPreviewOptions = {
   password?: string | null;
   /** Staging cap; default NATIVE_CAPS.file. */
   maxBytes?: number;
+  /**
+   * The tool the preview is for. A file PdfBox cannot open is still previewed (with pdfium) when
+   * this tool would run it on pdf-lib (routed, under the JS caps): pdf-lib may open it.
+   */
+  toolId?: RunnableToolId;
 };
 
 export type ToolPreviewResult =
@@ -42,7 +53,8 @@ export type ToolPreviewResult =
 /**
  * Stages a file into its own preview workspace (for page thumbnails) and counts its pages. A
  * locked file is decrypted there first (with `opts.password`; null tries the empty one) and the
- * pages are counted on the decrypted copy.
+ * pages are counted on the decrypted copy. A file PdfBox rejects is counted as it is when
+ * `opts.toolId` would run it on pdf-lib.
  */
 export async function openToolPreview(
   row: FileRow,
@@ -57,7 +69,14 @@ export async function openToolPreview(
   try {
     await native.createToolWorkspace(workspace);
     const staged = await native.stageToolInput(row.uri, workspace, 0, maxBytes);
-    lock = await native.inspectPdf(staged.uri);
+    try {
+      lock = await native.inspectPdf(staged.uri);
+    } catch (e) {
+      const jsRoute =
+        opts.toolId !== undefined && routeFor(opts.toolId, [staged.sizeBytes]) === 'js';
+      if (!(jsRoute && isPdfNativeError(e, 'ERR_PDF_INVALID'))) throw e;
+      lock = 'none';
+    }
     const file =
       lock === 'none'
         ? staged

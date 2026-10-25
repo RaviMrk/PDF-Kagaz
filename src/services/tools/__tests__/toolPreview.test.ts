@@ -44,6 +44,53 @@ describe('openToolPreview', () => {
     expect(await openToolPreview(row, {}, { native })).toEqual({ ok: false, failure: 'invalid' });
   });
 
+  describe('PdfBox cannot open the file (inspect: ERR_PDF_INVALID)', () => {
+    const STAGED = 'file:///data/cache/tools/preview-id-a.pdf/in-0.pdf';
+    it.each(['split', 'organize', 'sign', 'watermark', 'page-numbers'] as const)(
+      '%s (pdf-lib under the JS caps) counts the pages with pdfium on the staged copy',
+      async (toolId) => {
+        const native = createFakePdfNative();
+        native.inspectPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+        native.getToolPageCount.mockResolvedValue(4);
+        const result = await openToolPreview(row, { toolId }, { native });
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.preview.pageCount).toBe(4);
+        expect(result.preview.fileUri).toBe(STAGED);
+        expect(native.unlockToolInput).not.toHaveBeenCalled();
+      },
+    );
+
+    it('a routed tool over the JS caps (PdfBox route) still fails invalid', async () => {
+      const native = createFakePdfNative();
+      native.stageToolInput.mockResolvedValue({ uri: STAGED, sizeBytes: 31_457_281 });
+      native.inspectPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+      expect(await openToolPreview(row, { toolId: 'split' }, { native })).toEqual({
+        ok: false,
+        failure: 'invalid',
+      });
+    });
+
+    it('PDF to images (always native) still fails invalid', async () => {
+      const native = createFakePdfNative();
+      native.inspectPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+      expect(await openToolPreview(row, { toolId: 'pdf-to-images' }, { native })).toEqual({
+        ok: false,
+        failure: 'invalid',
+      });
+    });
+
+    it('fails invalid when pdfium cannot count it either', async () => {
+      const native = createFakePdfNative();
+      native.inspectPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+      native.getToolPageCount.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+      expect(await openToolPreview(row, { toolId: 'split' }, { native })).toEqual({
+        ok: false,
+        failure: 'invalid',
+      });
+    });
+  });
+
   it('refuses a stored size over the cap without native calls', async () => {
     const native = createFakePdfNative();
     const big = makeRow({ name: 'b.pdf', sizeBytes: 536_870_913 });

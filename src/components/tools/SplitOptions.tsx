@@ -23,7 +23,7 @@ export function SplitOptions({ row, onRun }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   // The preview stages the file for page counts and thumbnails; it lives as long as this step.
-  const { state: loaded, password, dialog } = useToolPreview(row);
+  const { state: loaded, password, dialog } = useToolPreview(row, 'split');
 
   if (loaded.kind === 'loading') {
     return (

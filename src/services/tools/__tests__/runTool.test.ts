@@ -1694,16 +1694,89 @@ describe('runTool locked inputs', () => {
     expect(outcome).toEqual({ ok: true, outputs: [] });
   });
 
-  it('a failed inspect fails the job at that input', async () => {
-    const r = row('one-page.pdf');
-    const s = setup([r]);
-    s.native.inspectPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
-    const outcome = await s.run({
-      toolId: 'split',
-      inputIds: [r.id],
-      split: { mode: 'ranges', ranges: '1' },
+  describe('PdfBox rejects an input pdf-lib can open (inspect: ERR_PDF_INVALID)', () => {
+    it('merge on the JS route treats it as open and lets pdf-lib merge it', async () => {
+      const rows = [row('one-page.pdf'), row('mixed-sizes.pdf')];
+      const s = setup(rows);
+      s.native.inspectPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+      const outcome = await s.run({ toolId: 'merge', inputIds: rows.map((r) => r.id) });
+      expect(outcome.ok).toBe(true);
+      expect(outcome.outputs).toHaveLength(1);
+      expect(s.native.unlockToolInput).not.toHaveBeenCalled();
     });
-    expect(outcome).toEqual({ ok: false, failure: 'invalid', inputIndex: 0, outputs: [] });
+
+    it('split on the JS route succeeds', async () => {
+      const r = row('mixed-sizes.pdf');
+      const s = setup([r]);
+      s.native.inspectPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+      const outcome = await s.run({
+        toolId: 'split',
+        inputIds: [r.id],
+        split: { mode: 'ranges', ranges: '1' },
+      });
+      expect(outcome.ok).toBe(true);
+      expect(outcome.outputs).toHaveLength(1);
+    });
+
+    it('organize on the JS route succeeds', async () => {
+      const r = row('mixed-sizes.pdf');
+      const s = setup([r]);
+      s.native.inspectPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+      const outcome = await s.run({
+        toolId: 'organize',
+        inputIds: [r.id],
+        pages: [{ source: 2, rotate: 0 }],
+      });
+      expect(outcome.ok).toBe(true);
+      expect(outcome.outputs).toHaveLength(1);
+    });
+
+    it('a file pdf-lib cannot load either still fails invalid on the JS route', async () => {
+      const r = row('corrupted.pdf');
+      const s = setup([r]);
+      s.native.inspectPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+      const outcome = await s.run({
+        toolId: 'split',
+        inputIds: [r.id],
+        split: { mode: 'ranges', ranges: '1' },
+      });
+      expect(outcome).toMatchObject({ ok: false, failure: 'invalid', inputIndex: 0 });
+    });
+
+    it('compress (native only) still fails invalid at that input', async () => {
+      const r = row('one-page.pdf');
+      const s = setup([r]);
+      s.native.inspectPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+      const outcome = await s.run({ toolId: 'compress', inputIds: [r.id], level: 'medium' });
+      expect(outcome).toEqual({ ok: false, failure: 'invalid', inputIndex: 0, outputs: [] });
+      expect(s.native.compressPdf).not.toHaveBeenCalled();
+    });
+
+    it('split on the native route (over the JS caps) still fails invalid at that input', async () => {
+      const r = row('one-page.pdf');
+      const s = setup([r]);
+      s.deps.caps = { js: { file: 10, total: 10 }, native: { file: 1e9, total: 1e9 } };
+      s.native.inspectPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
+      const outcome = await s.run({
+        toolId: 'split',
+        inputIds: [r.id],
+        split: { mode: 'ranges', ranges: '1' },
+      });
+      expect(outcome).toEqual({ ok: false, failure: 'invalid', inputIndex: 0, outputs: [] });
+      expect(s.native.assemblePdf).not.toHaveBeenCalled();
+    });
+
+    it('any other inspect error still fails the job at that input', async () => {
+      const r = row('one-page.pdf');
+      const s = setup([r]);
+      s.native.inspectPdf.mockRejectedValue(nativeError('ERR_IO'));
+      const outcome = await s.run({
+        toolId: 'split',
+        inputIds: [r.id],
+        split: { mode: 'ranges', ranges: '1' },
+      });
+      expect(outcome).toMatchObject({ ok: false, failure: 'io', inputIndex: 0 });
+    });
   });
 });
 

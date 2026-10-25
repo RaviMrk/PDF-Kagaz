@@ -57,7 +57,7 @@ const THUMB_DP = 96;
 export function WatermarkOptions({ row, onRun }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const { state: loaded, password, dialog } = useToolPreview(row);
+  const { state: loaded, password, dialog } = useToolPreview(row, 'watermark');
 
   if (loaded.kind === 'loading') {
     return (
