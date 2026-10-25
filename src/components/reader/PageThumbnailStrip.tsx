@@ -18,6 +18,8 @@ type Props = {
 
 const ITEM_WIDTH = 64;
 const IMAGE_HEIGHT = 88;
+/** The strip's height; the reader keeps this much of the document clear while it shows. */
+export const THUMBNAIL_STRIP_HEIGHT = IMAGE_HEIGHT + 24;
 
 /**
  * Horizontal strip of page thumbnails. Each item requests its own image when rendered; the
@@ -112,7 +114,7 @@ const Thumb = memo(function Thumb({ page, loader, selected, onSelect }: ThumbPro
 
 const styles = StyleSheet.create({
   strip: {
-    height: IMAGE_HEIGHT + 24,
+    height: THUMBNAIL_STRIP_HEIGHT,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   item: {

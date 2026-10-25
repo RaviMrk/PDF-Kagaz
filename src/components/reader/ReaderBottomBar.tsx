@@ -5,6 +5,9 @@ import { useTranslation } from 'react-i18next';
 
 import { useTheme } from '@/theme/useTheme';
 
+/** The bar's height above the bottom inset; the reader keeps this much of the document clear. */
+export const READER_BOTTOM_BAR_HEIGHT = 56;
+
 type Props = {
   page: number;
   pageCount: number;
@@ -19,12 +22,15 @@ export function ReaderBottomBar({ page, pageCount, onPressPage, children }: Prop
   const insets = useSafeAreaInsets();
   return (
     <View
+      testID="reader-bottom-bar"
       style={[
         styles.bar,
         {
           backgroundColor: colors.surface,
           borderColor: colors.border,
           paddingBottom: insets.bottom,
+          // Yoga's minHeight includes the padding, so the inset is added to it.
+          minHeight: READER_BOTTOM_BAR_HEIGHT + insets.bottom,
         },
       ]}
     >
@@ -53,7 +59,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 8,
-    minHeight: 56,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   page: { minHeight: 48, minWidth: 48, paddingHorizontal: 12, justifyContent: 'center' },

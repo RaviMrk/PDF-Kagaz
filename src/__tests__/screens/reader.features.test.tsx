@@ -30,6 +30,13 @@ jest.mock('expo-keep-awake', () => ({
   deactivateKeepAwake: jest.fn(),
 }));
 
+const NO_INSETS = { top: 0, right: 0, bottom: 0, left: 0 };
+let mockInsets = NO_INSETS;
+jest.mock('react-native-safe-area-context', () => ({
+  ...jest.requireActual('react-native-safe-area-context'),
+  useSafeAreaInsets: () => mockInsets,
+}));
+
 let mockDb: IndexDb;
 jest.mock('@/db/client', () => ({
   ...jest.requireActual('@/db/client'),
@@ -112,6 +119,7 @@ describe('Reader screen features', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     fakePdf.reset();
+    mockInsets = NO_INSETS;
     useSettings.setState({
       onboardingDone: true,
       readerTheme: 'normal',
@@ -313,6 +321,28 @@ describe('Reader screen features', () => {
       });
       expect(screen.queryByRole('button', { name: 'More options' })).toBeNull();
       expect(top()).toBe(0);
+    });
+
+    it('ends the page above the bottom bar and the navigation bar', async () => {
+      mockInsets = { top: 24, right: 0, bottom: 48, left: 0 };
+      await renderReader();
+      await load(3);
+      const padding = () => {
+        const style = StyleSheet.flatten(screen.getByTestId('reader-viewer').props.style);
+        return { top: style.paddingTop, bottom: style.paddingBottom };
+      };
+      // The bars overlay the screen; the viewer leaves room for both, so the scroll end is visible.
+      expect(padding()).toEqual({ top: 24 + 56, bottom: 48 + 56 });
+      // The thumbnail strip sits on the bottom bar; the viewer ends above it too.
+      await press('Page thumbnails');
+      expect(padding()).toEqual({ top: 24 + 56, bottom: 48 + 56 + 112 });
+      await press('Page thumbnails');
+      expect(padding()).toEqual({ top: 24 + 56, bottom: 48 + 56 });
+      await act(async () => {
+        fakePdf.lastProps().onPageSingleTap(1);
+      });
+      // Bars hidden: only the system bars stay.
+      expect(padding()).toEqual({ top: 0, bottom: 48 });
     });
 
     it('releases the screen in the background and keeps it on again when back', async () => {

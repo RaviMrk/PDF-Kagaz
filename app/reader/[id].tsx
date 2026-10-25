@@ -22,8 +22,8 @@ import {
   type PdfViewErrorKind,
   type PdfViewHandle,
 } from '@/components/reader/PdfView';
-import { PageThumbnailStrip } from '@/components/reader/PageThumbnailStrip';
-import { ReaderBottomBar } from '@/components/reader/ReaderBottomBar';
+import { PageThumbnailStrip, THUMBNAIL_STRIP_HEIGHT } from '@/components/reader/PageThumbnailStrip';
+import { READER_BOTTOM_BAR_HEIGHT, ReaderBottomBar } from '@/components/reader/ReaderBottomBar';
 import { ReaderMenu } from '@/components/reader/ReaderMenu';
 import { ReaderMessage } from '@/components/reader/ReaderMessage';
 import { ReaderSideSheet } from '@/components/reader/ReaderSideSheet';
@@ -283,6 +283,7 @@ function OpenReader({ row }: { row: FileRow }) {
   const showViewer = phase.kind === 'loading' || phase.kind === 'ready';
   const ready = phase.kind === 'ready';
   const bookmarked = marks.isBookmarked(page);
+  const stripHeight = ready && thumbsVisible ? THUMBNAIL_STRIP_HEIGHT : 0;
 
   return (
     <View style={[styles.root, { backgroundColor: colors.surface }]}>
@@ -292,8 +293,13 @@ function OpenReader({ row }: { row: FileRow }) {
           collapsable={false}
           style={{
             flex: 1,
-            // The page starts below the top bar while it shows, instead of under it.
+            // The bars overlay the screen: the document starts below the top bar and ends above the
+            // bottom bar (and the thumbnail strip on it) while they show, so its first and last
+            // page can be scrolled fully into view. The bottom inset keeps the end above the system
+            // navigation bar in edge-to-edge.
             paddingTop: barsVisible ? insets.top + TOP_BAR_HEIGHT : 0,
+            paddingBottom:
+              insets.bottom + (barsVisible ? READER_BOTTOM_BAR_HEIGHT + stripHeight : 0),
             filter: readerFilter(readerTheme),
             backgroundColor: readerBackground(readerTheme),
           }}
@@ -363,7 +369,7 @@ function OpenReader({ row }: { row: FileRow }) {
         </ReaderBottomBar>
       ) : null}
       {barsVisible && ready && thumbsVisible ? (
-        <View style={[styles.thumbs, { bottom: BOTTOM_BAR_HEIGHT + insets.bottom }]}>
+        <View style={[styles.thumbs, { bottom: READER_BOTTOM_BAR_HEIGHT + insets.bottom }]}>
           <PageThumbnailStrip
             fileUri={phase.fileUri}
             pageCount={pageCount}
@@ -376,7 +382,7 @@ function OpenReader({ row }: { row: FileRow }) {
         <View
           style={[
             styles.snackbar,
-            { backgroundColor: colors.text, bottom: BOTTOM_BAR_HEIGHT + 16 + insets.bottom },
+            { backgroundColor: colors.text, bottom: READER_BOTTOM_BAR_HEIGHT + 16 + insets.bottom },
           ]}
         >
           {actionBusy ? <ActivityIndicator size="small" color={colors.background} /> : null}
@@ -450,8 +456,6 @@ function BarButton({ label, icon, color, selected, onPress }: BarButtonProps) {
   );
 }
 
-/** ReaderBottomBar's minimum height (without the bottom inset). */
-const BOTTOM_BAR_HEIGHT = 56;
 /** ReaderTopBar's minimum height (without the top inset). */
 const TOP_BAR_HEIGHT = 56;
 
