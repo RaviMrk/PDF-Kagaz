@@ -1,5 +1,6 @@
 package com.pdfkagaz.pdfnative
 
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -23,8 +24,8 @@ import androidx.core.app.ServiceCompat
  * Keeps the process in the foreground while a tool job runs (type dataSync: local file processing),
  * with an ongoing, silent progress notification whose **Cancel** stops the job. Started by the
  * module while the app is in the foreground ([ACTION_START]); [ACTION_UPDATE] / [ACTION_STOP] come
- * from JS through the module. `stopWithTask="true"`: swiping the app away ends it and the process
- * (see [onDestroy]), and the interrupted job is reported at the next start. All intents arrive on the main thread, in order.
+ * from JS through the module. `stopWithTask="false"`: swiping the app away mid-job ends the process
+ * in [onTaskRemoved], and the interrupted job is reported at the next start. All intents arrive on the main thread, in order.
  */
 class ToolJobService : Service() {
   private var jobId: String? = null
@@ -57,17 +58,31 @@ class ToolJobService : Service() {
     stopNow()
   }
 
+  /**
+   * The app's task was removed (Recents swipe). With a job running and no task left, the process is
+   * ended (the FGS would otherwise keep it alive, cached and soon frozen, mid-job); the next start
+   * reports the job as interrupted. Originals are never touched; leftovers are cleaned at that start.
+   */
+  override fun onTaskRemoved(rootIntent: Intent?) {
+    val tasks = try {
+      getSystemService(ActivityManager::class.java)?.appTasks?.size ?: 0
+    } catch (e: Exception) {
+      // Unknown: assume a task is still there, so a visible app is never ended.
+      1
+    }
+    if (JobNoticeRules.endProcessOnTaskRemoved(jobId != null, tasks)) {
+      stopNow()
+      Process.killProcess(Process.myPid())
+    } else if (jobId == null) {
+      stopSelf()
+    }
+  }
+
   override fun onDestroy() {
     handler.removeCallbacks(stopAfterCancel)
-    val running = jobId
     jobId = null
     builder = null
     super.onDestroy()
-    // Destroyed with a job still running: the app was swiped away (stopWithTask) or stopped from the
-    // system's task manager. The process would otherwise stay cached and be frozen mid-job, with no
-    // notice; ending it lets the next start report the job as interrupted (originals are never
-    // touched, leftovers are cleaned at the next start).
-    if (running != null) Process.killProcess(Process.myPid())
   }
 
   private fun start(intent: Intent) {
@@ -134,6 +149,7 @@ class ToolJobService : Service() {
     if (jobId == null) stopSelf()
   }
 
+  /** Every deliberate stop goes through here (or clears [jobId] first). */
   private fun stopNow() {
     handler.removeCallbacks(stopAfterCancel)
     jobId = null

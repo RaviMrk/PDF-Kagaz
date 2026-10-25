@@ -37,4 +37,12 @@ class JobNoticeRulesTest {
     assertEquals("pdftoolkit://home", JobNoticeRules.resultDeepLink("../x"))
     assertEquals("pdftoolkit://home", JobNoticeRules.resultDeepLink(""))
   }
+
+  @Test
+  fun processEndsOnlyWhenTheLastTaskGoesMidJob() {
+    assertTrue(JobNoticeRules.endProcessOnTaskRemoved(jobRegistered = true, appTaskCount = 0))
+    assertFalse(JobNoticeRules.endProcessOnTaskRemoved(jobRegistered = false, appTaskCount = 0))
+    assertFalse(JobNoticeRules.endProcessOnTaskRemoved(jobRegistered = true, appTaskCount = 1))
+    assertFalse(JobNoticeRules.endProcessOnTaskRemoved(jobRegistered = false, appTaskCount = 2))
+  }
 }

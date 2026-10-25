@@ -17,6 +17,6 @@
       android:name="com.pdfkagaz.pdfnative.ToolJobService"
       android:exported="false"
       android:foregroundServiceType="dataSync"
-      android:stopWithTask="true" />
+      android:stopWithTask="false" />
   </application>
 </manifest>

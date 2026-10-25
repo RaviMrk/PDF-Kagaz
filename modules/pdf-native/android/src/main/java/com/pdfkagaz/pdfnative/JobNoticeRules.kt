@@ -17,6 +17,14 @@ object JobNoticeRules {
     return percent != lastPercent && nowMs - lastAtMs >= UPDATE_INTERVAL_MS
   }
 
+  /**
+   * The app's task was removed (swiped from Recents) while a job runs and no task is left: the
+   * process is ended so the job is reported as interrupted at the next start, instead of running
+   * on (and being frozen) in a cached process. Never while the app still has a task.
+   */
+  fun endProcessOnTaskRemoved(jobRegistered: Boolean, appTaskCount: Int): Boolean =
+    jobRegistered && appTaskCount == 0
+
   /** Where tapping a job notification goes: the job's result, or Home for an id that is not a job id. */
   fun resultDeepLink(jobId: String): String =
     if (ToolPaths.isValidJobId(jobId)) "pdftoolkit://result?jobId=$jobId" else "pdftoolkit://home"
