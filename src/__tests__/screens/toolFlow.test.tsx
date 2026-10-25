@@ -222,6 +222,26 @@ describe('tool flow', () => {
     expect(screen.getByLabelText('Select new.pdf')).toBeChecked();
   });
 
+  it('selects a browsed file in a single-file tool, replacing the selection', async () => {
+    jest.mocked(PdfNativeModule.pickPdfDocuments).mockResolvedValueOnce(['content://p/new.pdf']);
+    const picked = makeRow({ name: 'new.pdf', folder: '', parentUri: '', source: 'intent' });
+    const addPickedDocuments = jest.fn(async () => {
+      useFiles.setState((s) => ({ files: [picked, ...s.files] }));
+      return { rows: [picked], failed: 0 };
+    });
+    useFiles.setState({ addPickedDocuments });
+    await open('/tool/compress');
+    await press('Select a.pdf');
+    await fireEvent.changeText(screen.getByLabelText('Search PDFs'), 'b.pdf');
+    await press('Browse files…');
+    expect(PdfNativeModule.pickPdfDocuments).toHaveBeenCalledWith(false);
+    // The search that hid it is cleared, and the picked file is the one selected.
+    expect(screen.getByLabelText('Search PDFs').props.value).toBe('');
+    expect(screen.getByLabelText('Select new.pdf')).toBeChecked();
+    expect(screen.getByLabelText('Select a.pdf')).not.toBeChecked();
+    expect(screen.getByLabelText('Next')).toBeEnabled();
+  });
+
   it('says when some browsed files could not be added', async () => {
     jest.mocked(PdfNativeModule.pickPdfDocuments).mockResolvedValueOnce(['content://p/x.pdf']);
     useFiles.setState({ addPickedDocuments: jest.fn(async () => ({ rows: [], failed: 1 })) });

@@ -8,6 +8,21 @@ import { JS_MAX_FILE_BYTES, NATIVE_CAPS } from '@/services/tools/limits';
 import { formatBytes } from '@/utils/fileSize';
 import { makeRow } from '@/test-utils/fileRows';
 
+const mockScrollToIndex = jest.fn(async () => {});
+// The real FlashList, with its ref's scrollToIndex recorded (Jest has no native scrolling).
+jest.mock('@shopify/flash-list', () => {
+  const actual = jest.requireActual<typeof import('@shopify/flash-list')>('@shopify/flash-list');
+  const { forwardRef, createElement, useImperativeHandle } =
+    jest.requireActual<typeof import('react')>('react');
+  return {
+    ...actual,
+    FlashList: forwardRef((props: object, ref) => {
+      useImperativeHandle(ref, () => ({ scrollToIndex: mockScrollToIndex }));
+      return createElement(actual.FlashList, props as never);
+    }),
+  };
+});
+
 const i18n = initI18n('en');
 // FlashList settles its layout (and thumbnails resolve) after the first commit.
 async function render(ui: ReactElement) {
@@ -27,6 +42,7 @@ function list(
   selectedIds: string[] = [],
   max = 5,
   maxFileBytes = JS_MAX_FILE_BYTES,
+  reveal: { id: string } | null = null,
 ) {
   return (
     <PickFilesList
@@ -35,6 +51,7 @@ function list(
       max={max}
       maxFileBytes={maxFileBytes}
       onToggle={onToggle}
+      reveal={reveal}
     />
   );
 }
@@ -112,5 +129,56 @@ describe('PickFilesList', () => {
     await fireEvent.changeText(screen.getByLabelText('Search PDFs'), 'zzz');
     expect(screen.getByText('No PDFs match your search')).toBeOnTheScreen();
     expect(screen.queryByText('No PDFs to choose from. Use Browse files to pick one.')).toBeNull();
+  });
+
+  describe('a file to reveal (picked with Browse files)', () => {
+    const many = Array.from({ length: 30 }, (_, i) => makeRow({ name: `f${i}.pdf` }));
+    const picked = many[25]!;
+
+    it('scrolls it into view', async () => {
+      await render(list(many, [picked.id], 5, JS_MAX_FILE_BYTES, { id: picked.id }));
+      expect(mockScrollToIndex).toHaveBeenCalledWith({
+        index: 25,
+        animated: true,
+        viewPosition: 0.5,
+      });
+    });
+
+    it('scrolls again for a new reveal of the same file, not on other updates', async () => {
+      const first = { id: picked.id };
+      await render(list(many, [picked.id], 5, JS_MAX_FILE_BYTES, first));
+      expect(mockScrollToIndex).toHaveBeenCalledTimes(1);
+      await screen.rerender(
+        <I18nextProvider i18n={i18n}>
+          {list([...many], [picked.id], 5, JS_MAX_FILE_BYTES, first)}
+        </I18nextProvider>,
+      );
+      await act(async () => {});
+      expect(mockScrollToIndex).toHaveBeenCalledTimes(1);
+      await screen.rerender(
+        <I18nextProvider i18n={i18n}>
+          {list(many, [picked.id], 5, JS_MAX_FILE_BYTES, { id: picked.id })}
+        </I18nextProvider>,
+      );
+      await act(async () => {});
+      expect(mockScrollToIndex).toHaveBeenCalledTimes(2);
+    });
+
+    it('clears a search that hides it, then scrolls to it', async () => {
+      await render(list(many));
+      await fireEvent.changeText(screen.getByLabelText('Search PDFs'), 'f1');
+      await screen.rerender(
+        <I18nextProvider i18n={i18n}>
+          {list(many, [picked.id], 5, JS_MAX_FILE_BYTES, { id: picked.id })}
+        </I18nextProvider>,
+      );
+      await act(async () => {});
+      expect(screen.getByLabelText('Search PDFs').props.value).toBe('');
+      expect(mockScrollToIndex).toHaveBeenLastCalledWith({
+        index: 25,
+        animated: true,
+        viewPosition: 0.5,
+      });
+    });
   });
 });

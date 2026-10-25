@@ -306,6 +306,8 @@ function PickStep({ tool, flow, rows, setFlow }: PickProps) {
   const { colors } = useTheme();
   const files = useFiles((s) => s.files);
   const [browseFailed, setBrowseFailed] = useState(false);
+  // The last file picked with Browse files, scrolled into view (a new object per pick).
+  const [reveal, setReveal] = useState<{ id: string } | null>(null);
   const browsing = useRef(false);
   const multi = tool.maxInputs > 1;
   const ok = canContinue(flow, tool, rows);
@@ -327,6 +329,8 @@ function PickStep({ tool, flow, rows, setFlow }: PickProps) {
     setFlow((f) =>
       ids.reduce((s, id) => (s.selectedIds.includes(id) ? s : toggleSelection(s, id, tool)), f),
     );
+    const lastId = ids.at(-1);
+    if (lastId !== undefined) setReveal({ id: lastId });
   };
 
   const next = () => {
@@ -359,6 +363,7 @@ function PickStep({ tool, flow, rows, setFlow }: PickProps) {
         max={multi ? tool.maxInputs : Number.POSITIVE_INFINITY}
         maxFileBytes={caps.file}
         onToggle={(id) => setFlow((f) => toggleSelection(f, id, tool))}
+        reveal={reveal}
       />
       {browseFailed ? <Text style={{ color: colors.danger }}>{t('tool.browseFailed')}</Text> : null}
       {overTotal ? (

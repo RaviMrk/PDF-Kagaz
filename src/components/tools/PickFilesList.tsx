@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { FlashList } from '@shopify/flash-list';
-import { useMemo, useState } from 'react';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
@@ -18,9 +18,21 @@ type Props = {
   /** The tool's per-file cap: larger rows are shown disabled with the limit. */
   maxFileBytes: number;
   onToggle(id: string): void;
+  /**
+   * A file to bring into view (just picked with Browse files): each new object scrolls to its
+   * row once, clearing a search that hides it.
+   */
+  reveal?: { id: string } | null;
 };
 
-export function PickFilesList({ files, selectedIds, max, maxFileBytes, onToggle }: Props) {
+export function PickFilesList({
+  files,
+  selectedIds,
+  max,
+  maxFileBytes,
+  onToggle,
+  reveal = null,
+}: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const [query, setQuery] = useState('');
@@ -30,6 +42,24 @@ export function PickFilesList({ files, selectedIds, max, maxFileBytes, onToggle 
     return q ? files.filter((f) => normalizeForSearch(displayName(f.name)).includes(q)) : files;
   }, [files, query]);
   const full = selectedIds.length >= max;
+  const list = useRef<FlashListRef<FileRow>>(null);
+  const revealed = useRef<{ id: string } | null>(null);
+
+  // A new reveal hidden by the search clears it, once (a later search is the user's own).
+  const [searchChecked, setSearchChecked] = useState<{ id: string } | null>(null);
+  if (reveal !== null && reveal !== searchChecked && files.some((f) => f.id === reveal.id)) {
+    setSearchChecked(reveal);
+    if (!visible.some((f) => f.id === reveal.id)) setQuery('');
+  }
+
+  useEffect(() => {
+    if (reveal === null || revealed.current === reveal) return;
+    const index = visible.findIndex((f) => f.id === reveal.id);
+    // Not listed yet (or still hidden for this render): the next render scrolls.
+    if (index < 0) return;
+    revealed.current = reveal;
+    list.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 }).catch(() => {});
+  }, [reveal, visible]);
 
   return (
     <View style={styles.root}>
@@ -48,6 +78,7 @@ export function PickFilesList({ files, selectedIds, max, maxFileBytes, onToggle 
         </Text>
       ) : (
         <FlashList
+          ref={list}
           data={visible}
           extraData={selected}
           keyExtractor={(f) => f.id}
