@@ -23,6 +23,7 @@ export const TOOL_ENGINE: Record<RunnableToolId, 'images' | 'routed' | 'native'>
   organize: 'routed',
   'images-to-pdf': 'images',
   scan: 'images',
+  ocr: 'native',
   compress: 'native',
   protect: 'native',
   unlock: 'native',

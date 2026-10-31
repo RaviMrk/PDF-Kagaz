@@ -7,6 +7,7 @@ import type { FileRow } from '@/db/schema';
 import { initI18n } from '@/i18n';
 import type {
   ImageFilter,
+  OcrResult,
   PdfFileInfo,
   PdfLock,
   PreparedPage,
@@ -157,6 +158,20 @@ function setup(rows: FileRow[], sources: string[] = []) {
       const dest = path.join(tmp, jobId, 'out-compressed.pdf');
       fs.writeFileSync(dest, new Uint8Array(400));
       return { uri: `file://${dest}`, sizeBytes: 400, imagesRecompressed: 2 };
+    }),
+    // The searchable copy: a 900-byte stand-in, written where PdfBox would write it.
+    ocrPdf: jest.fn(async (_fileUri: string, jobId: string) => {
+      const dest = path.join(tmp, jobId, 'out-ocr.pdf');
+      fs.writeFileSync(dest, new Uint8Array(900));
+      return {
+        uri: `file://${dest}`,
+        sizeBytes: 900,
+        pageCount: 3,
+        pagesRecognized: 2,
+        pagesWithText: 2,
+        pagesSkipped: 1,
+        wordsAdded: 40,
+      } as OcrResult;
     }),
     // The protected copy: a stand-in written where PdfBox would write it.
     protectPdf: jest.fn(async (_fileUri: string, jobId: string, _password: string) => {
@@ -1861,6 +1876,98 @@ describe('runTool compress', () => {
     s.native.compressPdf.mockRejectedValue(nativeError('ERR_PDF_INVALID'));
     const outcome = await s.run({ toolId: 'compress', inputIds: [r.id], level: 'low' });
     expect(outcome).toEqual({ ok: false, failure: 'invalid', inputIndex: 0, outputs: [] });
+  });
+});
+
+describe('runTool ocr', () => {
+  const none = (over: Partial<OcrResult>): OcrResult => ({
+    uri: null,
+    sizeBytes: 0,
+    pageCount: 3,
+    pagesRecognized: 0,
+    pagesWithText: 0,
+    pagesSkipped: 0,
+    wordsAdded: 0,
+    ...over,
+  });
+
+  it('publishes a searchable copy and reports the page counts', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    const outcome = await s.run({ toolId: 'ocr', inputIds: [r.id] });
+    expect(s.native.ocrPdf).toHaveBeenCalledWith(`file://${s.tmp}/j1/in-0.pdf`, 'j1');
+    expect(s.native.publishToolOutput).toHaveBeenCalledWith(
+      `file://${s.tmp}/j1/out-ocr.pdf`,
+      'one-page searchable.pdf',
+    );
+    expect(outcome).toMatchObject({
+      ok: true,
+      extras: { ocr: { pagesWithText: 2, pagesSkipped: 1, pagesNoText: 0 } },
+    });
+    expect(outcome.outputs).toHaveLength(1);
+  });
+
+  it('counts recognised pages with no words as pagesNoText', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    s.native.ocrPdf.mockImplementationOnce(async (_uri: string, jobId: string) => {
+      const dest = path.join(s.tmp, jobId, 'out-ocr.pdf');
+      fs.writeFileSync(dest, new Uint8Array(900));
+      return {
+        uri: `file://${dest}`,
+        sizeBytes: 900,
+        pageCount: 3,
+        pagesRecognized: 3,
+        pagesWithText: 2,
+        pagesSkipped: 0,
+        wordsAdded: 10,
+      };
+    });
+    const outcome = await s.run({ toolId: 'ocr', inputIds: [r.id] });
+    expect(outcome).toMatchObject({
+      ok: true,
+      extras: { ocr: { pagesWithText: 2, pagesSkipped: 0, pagesNoText: 1 } },
+    });
+  });
+
+  it('fails alreadySearchable when every page has text', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    s.native.ocrPdf.mockResolvedValueOnce(none({ pagesSkipped: 3 }));
+    const outcome = await s.run({ toolId: 'ocr', inputIds: [r.id] });
+    expect(outcome).toMatchObject({ ok: false, failure: 'alreadySearchable', outputs: [] });
+    expect(s.native.publishToolOutput).not.toHaveBeenCalled();
+  });
+
+  it('fails noTextFound when nothing was recognised', async () => {
+    const r = row('one-page.pdf');
+    const s = setup([r]);
+    s.native.ocrPdf.mockResolvedValueOnce(none({ pagesRecognized: 2, pagesSkipped: 1 }));
+    const outcome = await s.run({ toolId: 'ocr', inputIds: [r.id] });
+    expect(outcome).toMatchObject({ ok: false, failure: 'noTextFound', outputs: [] });
+    expect(s.native.publishToolOutput).not.toHaveBeenCalled();
+  });
+
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY])(
+    'a malformed result (size %p) fails as unknown',
+    async (sizeBytes) => {
+      const r = row('one-page.pdf');
+      const s = setup([r]);
+      s.native.ocrPdf.mockResolvedValueOnce(
+        none({ uri: `file://${s.tmp}/j1/out-ocr.pdf`, sizeBytes, wordsAdded: 5 }),
+      );
+      const outcome = await s.run({ toolId: 'ocr', inputIds: [r.id] });
+      expect(outcome).toMatchObject({ ok: false, failure: 'unknown', outputs: [] });
+      expect(s.native.publishToolOutput).not.toHaveBeenCalled();
+    },
+  );
+
+  it('runs on the decrypted copy of a locked input', async () => {
+    const r = row('protected.pdf');
+    const s = setup([r]);
+    const outcome = await s.run({ toolId: 'ocr', inputIds: [r.id], passwords: { 0: 'secret' } });
+    expect(s.native.ocrPdf).toHaveBeenCalledWith(`file://${s.tmp}/j1/in-0.open.pdf`, 'j1');
+    expect(outcome).toMatchObject({ ok: true, extras: { passwordRemoved: true } });
   });
 });
 

@@ -10,6 +10,14 @@ const i18n = initI18n('en');
 const t = (key: string, options?: Record<string, unknown>): string => i18n.t(key, options);
 
 describe('failureMessage', () => {
+  it('has copy for the OCR outcomes', () => {
+    expect(failureMessage('alreadySearchable', null, t)).toBe(
+      'This PDF already has searchable text.',
+    );
+    expect(failureMessage('noTextFound', null, t)).toBe(
+      'No text was found. OCR works best on clear scans of printed text in English or another language written in Latin letters.',
+    );
+  });
   it('names the file when a named copy exists', () => {
     expect(failureMessage('encrypted', 'protected.pdf', t)).toBe(
       '"protected.pdf" is password-protected. Start the tool again and enter its password.',

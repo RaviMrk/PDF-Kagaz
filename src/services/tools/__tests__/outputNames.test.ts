@@ -2,6 +2,7 @@ import { initI18n } from '@/i18n';
 
 import {
   compressedName,
+  searchableName,
   customOutputName,
   imageFileName,
   imageFolderName,
@@ -67,6 +68,7 @@ describe('image and scan names', () => {
 describe('v1.1 tool names', () => {
   it('names each PDF output', () => {
     expect(compressedName('Report.pdf', tr)).toBe('Report compressed.pdf');
+    expect(searchableName('Scan 3.pdf', tr)).toBe('Scan 3 searchable.pdf');
     expect(protectedName('Report.pdf', tr)).toBe('Report protected.pdf');
     expect(unlockedName('Report.pdf', tr)).toBe('Report unlocked.pdf');
     expect(watermarkedName('Report.pdf', tr)).toBe('Report watermarked.pdf');

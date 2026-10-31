@@ -37,6 +37,7 @@ import {
   type ToolRunner,
 } from './runners/context';
 import { runCompress } from './runners/compress';
+import { runOcr } from './runners/ocr';
 import { runProtect } from './runners/protect';
 import { runUnlock } from './runners/unlock';
 import { runMerge } from './runners/merge';
@@ -132,6 +133,7 @@ export type PdfToolRequest =
   | MergeRequest
   | SplitRequest
   | OrganizeRequest
+  | { toolId: 'ocr'; inputIds: [string]; passwords?: Passwords }
   | { toolId: 'compress'; inputIds: [string]; level: CompressLevel; passwords?: Passwords }
   | { toolId: 'protect'; inputIds: [string]; newPassword: string; passwords?: Passwords }
   | { toolId: 'unlock'; inputIds: [string]; passwords?: Passwords }
@@ -180,6 +182,8 @@ export type ToolExtras = {
   sizes?: { before: number; after: number };
   images?: SavedImages;
   passwordRemoved?: true;
+  /** OCR: pages that got a text layer, pages skipped (already text), pages with no text found. */
+  ocr?: { pagesWithText: number; pagesSkipped: number; pagesNoText: number };
 };
 
 export type ToolOutcome =
@@ -208,6 +212,7 @@ export type ToolRunDeps = {
     | 'releaseToolDocument'
     | 'assemblePdf'
     | 'compressPdf'
+    | 'ocrPdf'
     | 'protectPdf'
     | 'renderPdfPage'
     | 'releasePageExport'
@@ -307,6 +312,7 @@ export const RUNNERS: { [K in PdfToolRequest['toolId']]?: ToolRunner<PdfRequestO
   merge: runMerge,
   split: runSplit,
   organize: runOrganize,
+  ocr: runOcr,
   compress: runCompress,
   protect: runProtect,
   unlock: runUnlock,

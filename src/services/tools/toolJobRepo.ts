@@ -27,6 +27,8 @@ export type ToolFailure =
   | 'restricted'
   | 'signatureGone'
   | 'notProtected'
+  | 'alreadySearchable'
+  | 'noTextFound'
   | 'outOfMemory'
   | 'unknown';
 

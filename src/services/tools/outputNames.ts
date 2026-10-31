@@ -36,6 +36,10 @@ export function compressedName(inputName: string, t: Translate): string {
   return build(t, 'output.compressed', inputName);
 }
 
+export function searchableName(inputName: string, t: Translate): string {
+  return build(t, 'output.searchable', inputName);
+}
+
 export function protectedName(inputName: string, t: Translate): string {
   return build(t, 'output.protected', inputName);
 }

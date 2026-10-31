@@ -79,6 +79,7 @@ describe('toolRegistry', () => {
         'organize',
         'images-to-pdf',
         'scan',
+        'ocr',
         'compress',
         'protect',
         'unlock',

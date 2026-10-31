@@ -294,6 +294,7 @@
     "images": "Images {{date}}",
     "scan": "Scan {{date}}",
     "compressed": "{{name}} compressed",
+    "searchable": "{{name}} searchable",
     "protected": "{{name}} protected",
     "unlocked": "{{name}} unlocked",
     "watermarked": "{{name}} watermarked",
@@ -315,6 +316,7 @@
       "organize": "Saving pages",
       "images-to-pdf": "Making PDF from images",
       "scan": "Saving scan",
+      "ocr": "Making PDF searchable",
       "compress": "Compressing PDF",
       "protect": "Protecting PDF",
       "unlock": "Removing password",
@@ -460,6 +462,8 @@
     "run": "Split"
   },
   "toolError": {
+    "alreadySearchable": "This PDF already has searchable text.",
+    "noTextFound": "No text was found. OCR works best on clear scans of printed text in English or another language written in Latin letters.",
     "busy": "Another tool is still running. Wait for it to finish.",
     "notFound": "A file you picked no longer exists",
     "notFoundNamed": "\"{{name}}\" no longer exists",
