@@ -113,4 +113,10 @@ describe('PDF fixtures', () => {
       { title: 'Chapter 3', page: 9, children: [] },
     ]);
   });
+
+  it('scanned-text.pdf has 3 pages and the second is rotated 90', async () => {
+    expect(await pageCount('scanned-text.pdf')).toBe(3);
+    const doc = await PDFDocument.load(read('scanned-text.pdf'));
+    expect(doc.getPage(1).getRotation().angle).toBe(90);
+  });
 });

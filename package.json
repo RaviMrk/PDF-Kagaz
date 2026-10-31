@@ -77,6 +77,7 @@
     "fixtures:generate": "node scripts/make-fixtures.mjs",
     "fixtures:large": "node scripts/make-large-fixture.mjs",
     "fixtures:images": "node scripts/make-image-fixtures.mjs",
+    "fixtures:ocr": "node scripts/make-ocr-fixture.mjs",
     "licenses": "node scripts/make-licenses.mjs"
   },
   "private": true,

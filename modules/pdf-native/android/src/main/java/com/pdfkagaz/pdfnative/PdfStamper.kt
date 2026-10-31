@@ -202,7 +202,8 @@ object PdfStamper {
     }
   }
 
-  private fun boxOf(page: PDPage): PageBox {
+  /** The CropBox and `/Rotate` of [page] as a [PageBox] (also used by [PdfOcr]). */
+  internal fun boxOf(page: PDPage): PageBox {
     val crop = page.cropBox
     return PageBox(
       crop.lowerLeftX.toDouble(),
