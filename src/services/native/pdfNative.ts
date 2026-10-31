@@ -346,6 +346,7 @@ export const PDF_NATIVE_ERROR_CODES = [
   'ERR_PASSWORD_RESTRICTED',
   'ERR_CANCELLED',
   'ERR_OUT_OF_MEMORY',
+  'ERR_OCR_FAILED',
 ] as const;
 
 export type PdfNativeErrorCode = (typeof PDF_NATIVE_ERROR_CODES)[number];

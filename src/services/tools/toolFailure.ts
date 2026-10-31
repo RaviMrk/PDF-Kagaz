@@ -31,6 +31,9 @@ export function toToolFailure(e: unknown): ToolFailure {
         return 'restricted';
       case 'ERR_CANCELLED':
         return 'cancelled';
+      // On-device recognition failed: nothing the user can fix, so the generic message.
+      case 'ERR_OCR_FAILED':
+        return 'unknown';
       default:
         return 'unknown';
     }
