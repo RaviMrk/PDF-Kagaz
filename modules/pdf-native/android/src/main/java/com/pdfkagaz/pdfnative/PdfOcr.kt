@@ -74,7 +74,11 @@ object PdfOcr {
 fun PdfOcr.ocrInWorkspace(context: Context, jobId: String, fileUri: String, control: JobControl): Map<String, Any?> =
   ocrInWorkspace(context, jobId, fileUri, control) { source -> MlKitPageRecognizer(context, source) }
 
-/** Test seam: [recognizerFor] makes the recognizer for the workspace file; it is closed afterwards when closeable. */
+/**
+ * Test seam: [recognizerFor] makes the recognizer for the workspace file, only once the first page
+ * without text needs it (an all-text PDF never loads the model); it is closed afterwards when made
+ * and closeable.
+ */
 internal fun PdfOcr.ocrInWorkspace(
   context: Context,
   jobId: String,
@@ -89,7 +93,8 @@ internal fun PdfOcr.ocrInWorkspace(
   if (!source.isFile) throw FileNotFoundCodedException()
   val target = File(dir, "out-ocr.pdf")
   val tempDir = File(dir, "pdfbox-ocr")
-  val recognizer = recognizerFor(source)
+  var made: PageRecognizer? = null
+  val recognizer = PageRecognizer { i -> (made ?: recognizerFor(source).also { made = it }).recognize(i) }
   try {
     val stats = run(source, target, recognizer, control, tempDir)
     val written = stats.wordsAdded > 0 && target.isFile
@@ -103,7 +108,10 @@ internal fun PdfOcr.ocrInWorkspace(
       "wordsAdded" to stats.wordsAdded,
     )
   } finally {
-    (recognizer as? AutoCloseable)?.close()
-    tempDir.deleteRecursively()
+    try {
+      (made as? AutoCloseable)?.close()
+    } finally {
+      tempDir.deleteRecursively()
+    }
   }
 }

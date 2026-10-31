@@ -59,7 +59,10 @@ class MlKitPageRecognizer(context: Context, source: File) : PageRecognizer, Auto
   }
 
   override fun close() {
-    renderer.close()
-    client.close()
+    try {
+      renderer.close()
+    } finally {
+      client.close()
+    }
   }
 }
