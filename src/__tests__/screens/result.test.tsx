@@ -103,6 +103,34 @@ describe('result screen', () => {
     expect(screen.getByText(NO_PASSWORD_NOTE)).toBeTruthy();
   });
 
+  it('summarises OCR pages: added, skipped and no text', async () => {
+    outcomeOf.mockReturnValue(
+      done({
+        ok: true,
+        outputs: [merged],
+        extras: { ocr: { pagesWithText: 3, pagesSkipped: 1, pagesNoText: 2 } },
+      }),
+    );
+    await open();
+    expect(screen.getByText('Text added to 3 pages.')).toBeTruthy();
+    expect(screen.getByText('1 page already had text and was left as it was.')).toBeTruthy();
+    expect(screen.getByText('No text found on 2 pages.')).toBeTruthy();
+  });
+
+  it('hides zero OCR counts and uses the singular', async () => {
+    outcomeOf.mockReturnValue(
+      done({
+        ok: true,
+        outputs: [merged],
+        extras: { ocr: { pagesWithText: 1, pagesSkipped: 0, pagesNoText: 0 } },
+      }),
+    );
+    await open();
+    expect(screen.getByText('Text added to 1 page.')).toBeTruthy();
+    expect(screen.queryByText(/already had text/)).toBeNull();
+    expect(screen.queryByText(/No text found/)).toBeNull();
+  });
+
   it('opens, shares and saves a copy of an output', async () => {
     outcomeOf.mockReturnValue(done({ ok: true, outputs: [merged] }));
     await open();

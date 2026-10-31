@@ -31,7 +31,7 @@ const CARDS = [
   'Images to PDF',
   'Scan',
   'PDF to images',
-  'Make searchable (OCR), coming soon',
+  'Make searchable (OCR)',
   'Compress',
   'Protect with password',
   'Remove password',
@@ -68,14 +68,19 @@ describe('Tools tab', () => {
     for (const label of CARDS) expect(screen.getByLabelText(label)).toBeTruthy();
   });
 
-  it('shows every v1.1 tool live except OCR and Edit details', async () => {
+  it('shows every v1.1 tool live except Edit details', async () => {
     await renderTools();
-    const live = ['Compress', 'Protect with password', 'Remove password', 'PDF to images'];
+    const live = [
+      'Compress',
+      'Protect with password',
+      'Remove password',
+      'PDF to images',
+      'Make searchable (OCR)',
+    ];
     for (const label of [...live, 'Add watermark', 'Add page numbers', 'Sign PDF']) {
       expect(screen.getByLabelText(label)).toBeTruthy();
       expect(screen.queryByLabelText(`${label}, coming soon`)).toBeNull();
     }
-    expect(screen.getByLabelText('Make searchable (OCR), coming soon')).toBeTruthy();
     expect(screen.getByLabelText('Edit details, coming soon')).toBeTruthy();
   });
 

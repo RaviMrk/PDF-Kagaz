@@ -15,6 +15,7 @@ import { ProgressSheet } from '@/components/tools/ProgressSheet';
 import { ProtectOptions } from '@/components/tools/ProtectOptions';
 import { SignOptions } from '@/components/tools/SignOptions';
 import { SplitOptions } from '@/components/tools/SplitOptions';
+import { OcrOptions } from '@/components/tools/OcrOptions';
 import { UnlockOptions } from '@/components/tools/UnlockOptions';
 import { usePasswordPrompts } from '@/components/tools/usePasswordPrompts';
 import { WatermarkOptions } from '@/components/tools/WatermarkOptions';
@@ -212,6 +213,12 @@ function ToolFlow({ tool, inputIds }: { tool: ToolDef; inputIds: string[] }) {
             <UnlockOptions
               row={rows[0]}
               onRun={() => void runAsked({ toolId: 'unlock', inputIds: [rows[0]!.id] })}
+            />
+          ) : null}
+          {tool.id === 'ocr' && rows[0] ? (
+            <OcrOptions
+              row={rows[0]}
+              onRun={() => void runAsked({ toolId: 'ocr', inputIds: [rows[0]!.id] })}
             />
           ) : null}
           {tool.id === 'pdf-to-images' && rows[0] ? (

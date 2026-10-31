@@ -747,6 +747,37 @@ describe('tool flow', () => {
       );
     });
 
+    it('OCR shows its intro and starts through the password-asking path', async () => {
+      jest.mocked(PdfNativeModule.inspectPdf).mockResolvedValue('password');
+      jest
+        .mocked(PdfNativeModule.checkPdfPassword)
+        .mockImplementation((_uri: string, pw: string) =>
+          Promise.resolve(pw === 'secret' ? 'ok' : 'wrong'),
+        );
+      await open(`/tool/ocr?inputs=${ID_A}`);
+      expect(
+        screen.getByText(
+          'Finds printed text in scanned pages and adds an invisible text layer, so you can search, select and copy it.',
+        ),
+      ).toBeTruthy();
+      expect(
+        screen.getByText('Everything happens on your phone. Nothing is uploaded.'),
+      ).toBeTruthy();
+      await press('Make searchable');
+      await fireEvent.changeText(screen.getByPlaceholderText('Password'), 'secret');
+      await press('Use');
+      expect(start).toHaveBeenCalledWith(
+        { toolId: 'ocr', inputIds: [ID_A], passwords: { 0: 'secret' } },
+        expect.any(Function),
+      );
+    });
+
+    it('OCR on an unlocked file starts with just the input', async () => {
+      await open(`/tool/ocr?inputs=${ID_A}`);
+      await press('Make searchable');
+      expect(start).toHaveBeenCalledWith({ toolId: 'ocr', inputIds: [ID_A] }, expect.any(Function));
+    });
+
     it('asks for a locked file to compress on Run, then passes its password', async () => {
       jest.mocked(PdfNativeModule.inspectPdf).mockResolvedValue('password');
       jest

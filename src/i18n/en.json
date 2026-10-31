@@ -401,6 +401,19 @@
     "warning": "If you forget this password, the PDF can't be opened. PDF Toolkit can't recover it.",
     "run": "Protect"
   },
+  "ocr": {
+    "intro": "Finds printed text in scanned pages and adds an invisible text layer, so you can search, select and copy it.",
+    "languages": "Works with English and other languages written in Latin letters.",
+    "privacy": "Everything happens on your phone. Nothing is uploaded.",
+    "skipNote": "Pages that already have text are left as they are.",
+    "run": "Make searchable",
+    "pagesDone_one": "Text added to {{count}} page.",
+    "pagesDone_other": "Text added to {{count}} pages.",
+    "pagesSkipped_one": "{{count}} page already had text and was left as it was.",
+    "pagesSkipped_other": "{{count}} pages already had text and were left as they were.",
+    "pagesNoText_one": "No text found on {{count}} page.",
+    "pagesNoText_other": "No text found on {{count}} pages."
+  },
   "unlock": {
     "hint": "You'll need the PDF's current password.",
     "notProtected": "This PDF has no password.",

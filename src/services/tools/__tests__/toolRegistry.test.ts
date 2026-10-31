@@ -33,7 +33,7 @@ describe('toolRegistry', () => {
       'ocr',
     ]);
   });
-  it('every tool but OCR and metadata is available', () => {
+  it('every tool but metadata is available', () => {
     expect(TOOLS.filter((t) => t.available).map((t) => t.id)).toEqual([
       'merge',
       'split',
@@ -47,6 +47,7 @@ describe('toolRegistry', () => {
       'watermark',
       'page-numbers',
       'sign',
+      'ocr',
     ]);
   });
   it('looks tools up by id', () => {

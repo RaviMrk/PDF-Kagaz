@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 
 import { EmptyState } from '@/components/EmptyState';
 import { OutputRow } from '@/components/tools/OutputRow';
+import { OcrSummary } from '@/components/tools/OcrSummary';
 import { SavedImagesCard } from '@/components/tools/SavedImagesCard';
 import { SizeChange } from '@/components/tools/SizeChange';
 import type { FileRow } from '@/db/schema';
@@ -183,6 +184,7 @@ export default function ResultScreen() {
         ) : (
           <Text style={{ color: colors.textMuted }}>{t('result.savedTo')}</Text>
         )}
+        {view.outcome.extras?.ocr ? <OcrSummary ocr={view.outcome.extras.ocr} /> : null}
         {view.outcome.extras?.passwordRemoved && !images ? (
           <Text style={{ color: colors.text }}>{t('result.passwordRemoved')}</Text>
         ) : null}

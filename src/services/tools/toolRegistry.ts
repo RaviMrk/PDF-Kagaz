@@ -89,7 +89,7 @@ export const TOOLS: readonly ToolDef[] = [
   def('watermark', 'T-10', 'edit', 'water-outline', true),
   def('page-numbers', 'T-11', 'edit', 'numeric', true),
   def('sign', 'T-12', 'edit', 'draw', true),
-  def('ocr', 'T-13', 'convert', 'text-recognition'),
+  def('ocr', 'T-13', 'convert', 'text-recognition', true),
   def('metadata', 'T-14', 'edit', 'tag-outline'),
 ];
 
