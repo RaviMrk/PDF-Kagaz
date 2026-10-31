@@ -213,7 +213,10 @@ disabled.
   bucket).
 - **OCR (Make searchable, M9).** Text recognition runs on the phone with ML Kit's bundled Latin model
   (`com.google.mlkit:text-recognition`, no Play-services download). No page image or recognised text
-  leaves the device, and the app adds no permission for it. It worked in airplane mode.
+  leaves the device, and the app adds no permission for it. It worked in airplane mode. Like the
+  document scanner below, the ML Kit SDK sends Google anonymous API usage and performance counts
+  (which feature ran, how long it took, errors), without image content or text: declared under
+  diagnostics/app performance.
 - **Ads (Google Mobile Ads SDK + UMP).** Collected and shared with Google for advertising,
   analytics and fraud prevention: device or other IDs (advertising ID, app set ID), app
   interactions with ads, diagnostics (crash and performance data of the SDK), and approximate
@@ -425,9 +428,9 @@ also brings `text-recognition-bundled-common`, `vision-common`, `vision-interfac
 | `app-release.aab` | 96 709 546 B | 49 821 864 B (arm64-only build, not comparable) |
 
 **The arm64 download is over the 34 000 000 B gate set for this milestone** (by 248 781 B); it is
-still under the §4 40 MB target. The controller accepted 34 248 781 B against the spec's 40 MB limit (§4):
-the 34 MB gate was a plan margin, and the alternative (the Play-services unbundled model) would need a first-use
-download, which breaks offline first use. Almost all of the growth is one library,
+still under the §4 40 MB target. Release decision: 34 248 781 B is accepted against the spec's 40 MB limit
+(§4). The 34 MB gate was a plan margin, and the alternative (the Play-services unbundled model) would need a
+first-use download, which breaks offline first use. Almost all of the growth is one library,
 `libmlkit_google_ocr_pipeline.so` (11 064 544 B uncompressed).
 
 16 KB check on `splits/base-arm64_v8a.apk`: pass. `zipalign -c -P 16 -v 4` verification
@@ -440,7 +443,7 @@ successful, 30 of 30 arm64 `.so` (the M7 29 plus `libmlkit_google_ocr_pipeline.s
 Build: `npx expo prebuild --platform android --clean`, then `./gradlew assembleRelease
 -PreactNativeArchitectures=arm64-v8a -Dorg.gradle.jvmargs=-Xmx3072m` on its own: BUILD SUCCESSFUL in
 15 min 31 s, `pdfToolkitReleaseVerifyStorageCaps` ran and passed. Minified arm64 `app-release.apk`
-66 648 999 B. Ads off (`ADS_ENABLED` unset). Smoke on the minified release APK: Pixel_10a (API 37)
+66 648 999 B (APK, not the download size). Ads off (`ADS_ENABLED` unset). Smoke on the minified release APK: Pixel_10a (API 37)
 and Rangoli_LowEnd_API34 (API 34, 720x1600, 2.5 GB). Fixtures pushed to `/sdcard/Documents`; text
 of the outputs read with macOS PDFKit (`pdftotext` is not installed).
 
@@ -448,7 +451,7 @@ of the outputs read with macOS PDFKit (`pdftotext` is not installed).
 | --- | --- |
 | Manifest vs M7 (`aapt2 dump permissions` and `dump xmltree`) | Permissions identical to M7: the same 15 entries, no new one (`FOREGROUND_SERVICE_DATA_SYNC`, `POST_NOTIFICATIONS`, READ max 32, WRITE max 29 as before). New components from ML Kit text recognition: only two more `<meta-data>` entries on the existing `MlKitComponentDiscoveryService` (`TextRegistrar`, `VisionCommonRegistrar`; the service and `MlKitInitProvider` came with the document scanner). No new service, provider, receiver or activity |
 | Pixel_10a, `scanned-text.pdf` | "Text added to 2 pages." and "1 page already had text and was left as it was." in 5 s; output `scanned-text searchable.pdf` 85.3 KB in Documents/PDFToolkit. Pulled output text, pages 1, 2 and 3 each: `Invoice 2026-118` / `Total due 1,234.50` / `The quick brown fox jumps over the lazy dog.` |
-| Rangoli, `scanned-text.pdf` | Same messages, 3 s. Text on each page: `Invoice 2026-118`, `Totaldue 1,234.50` (pages 1 and 2; PDFKit joined the two words, so a search for "Total due" may miss there; page 3 reads `Total due 1,234.50`), `The quick brown fox jumps over the lazy dog.` Output differs from the Pixel one in a few bytes |
+| Rangoli, `scanned-text.pdf` | Same messages, 3 s. Before the M9 fix wave pages 1 and 2 extracted as `Totaldue 1,234.50`; re-smoked after it, see "M9 fix wave re-smoke" below: every page now reads `Total due 1,234.50` |
 | Rotated page (/Rotate 90, page 2 of `scanned-text.pdf`) | Page 2 of the output keeps `/Rotate 90` and its OCR text is extracted correctly (same three lines as above). In the app's reader the pages render upright and readable on both AVDs |
 | Reader | The output opens in the reader on both AVDs |
 | Already searchable | `scanned-text searchable.pdf` (every page has text; no fixture has a page with 20 or more characters of its own: `one-page.pdf` has 15, `outline.pdf` and `two-hundred-pages.pdf` have 13 or fewer) → "Couldn't finish: This PDF already has searchable text.", no new file |
@@ -456,9 +459,24 @@ of the outputs read with macOS PDFKit (`pdftotext` is not installed).
 | `protected.pdf` (password `secret`) | Password prompt → entered → "Text added to 1 page." plus "The new file has no password. Use Protect with password to lock it again."; the output text reads `Protected` twice (9 characters, under the threshold). The locked path works end to end; the "already has searchable text" branch for a locked file was not reached |
 | Airplane mode (Pixel_10a, `cmd connectivity airplane-mode enable`; ping: network unreachable) | OCR works: "Text added to 2 pages." in 4 s |
 | `large/scanned-50mb.pdf` (Rangoli) | Within about 8 s (49 pages, polled) ends with "No text was found. OCR works best on clear scans…" (`noTextFound`, the fixture's pages hold no readable text), nothing saved, no crash. `five-hundred-pages.pdf` also ends in `noTextFound` |
-| Long run with text (Rangoli; `scanned-text` pages 1 and 2 repeated to 150 pages, 12.7 MB, built in the scratchpad) | Runs in the background with the "Making PDF searchable" progress notification (visible after Home). Full run 34 s, "Text added to 150 pages.", 12.2 MB output, peak PSS 372 045 KB (363 MiB), no OOM, no `FATAL`/`OutOfMemory`. Every page reads `Invoice 2026-118`, `Totaldue 1,234.50`, `The quick brown fox…` |
+| Long run with text (Rangoli; `scanned-text` pages 1 and 2 repeated to 150 pages, 12.7 MB, built in the scratchpad) | Runs in the background with the "Making PDF searchable" progress notification (visible after Home). Full run 34 s, "Text added to 150 pages.", 12.2 MB output, peak PSS 372 045 KB (363 MiB), no OOM, no `FATAL`/`OutOfMemory`. Every page reads `Invoice 2026-118`, `The quick brown fox…` (and, before the fix wave, `Totaldue 1,234.50`; re-smoked below) |
 | Cancel from the notification (same job, about 70 % done) | Cancel → the app shows "Cancelled. Nothing more was saved.", the service is gone, no output file |
 | Logcat (Pixel_10a airplane run) | No `FATAL`, `ClassNotFoundException`, `NoSuchMethodError`, `NoSuchFieldError` or `Resources$NotFound` from the app |
+
+### M9 fix wave re-smoke
+
+After the word-spacing fix (each word but the last of an ML Kit line is written with a trailing space
+stretched to the next word) and the OCR job-store fix: `./gradlew assembleRelease
+-PreactNativeArchitectures=arm64-v8a -Dorg.gradle.jvmargs=-Xmx3072m` on its own, BUILD SUCCESSFUL in
+3 min 9 s, `pdfToolkitReleaseVerifyStorageCaps` ran. Minified arm64 `app-release.apk` 66 648 903 B
+(APK, not the download size). Outputs read with macOS PDFKit (`page.string` and `findString`).
+
+| Check | Result |
+| --- | --- |
+| Rangoli, `scanned-text.pdf` | "Text added to 2 pages." and "1 page already had text and was left as it was.", 85.3 KB. Pages 1, 2 (`/Rotate 90`) and 3 each read `Invoice 2026-118` / `Total due 1,234.50` / `The quick brown fox jumps over the lazy dog.` A PDFKit search for "Total due" finds 3 hits, on pages 1, 2 and 3 |
+| Rangoli, 150-page run (`ocr-150.pdf`) | Interrupted by a force-stop mid-run: on the next start Home showed "Make searchable (OCR) couldn't finish", the result read "The app was closed before this finished." and **Try again** ran the stored OCR request: "Text added to 150 pages." in 30.6 s, 12.2 MB. "Total due" 150 hits, "Totaldue" 0; every page reads `Invoice 2026-118` and `Total due 1,234.50`. No `FATAL`/`OutOfMemory` |
+| Rangoli, already searchable (`scanned-text searchable.pdf`) | "Couldn't finish: This PDF already has searchable text.", no new file |
+| Pixel_10a, `scanned-text.pdf` | Same messages, 85.3 KB, 1.2 s; pages 1–3 read `Total due 1,234.50` (3 search hits) |
 
 ## Release verification (M7 Task 14)
 
@@ -555,11 +573,10 @@ M9 OCR (Make searchable):
 
 - **Real-camera scans and handwriting** are not covered: the fixtures are clean synthetic pages. Quality on
   skewed, low-light or handwritten pages needs a physical-phone check.
-- **Latin script only.** Devanagari (and so Marathi/Hindi text) is not recognised; the tool says so.
+- **Latin script only.** Devanagari (and so Marathi/Hindi text) is not supported; the tool does not detect
+  it, so such pages may get no text or meaningless text.
 - **Cancel waits for the current page.** ML Kit's recognition call cannot be interrupted, so Cancel takes
-  effect after the page in progress (about a second).
-- **Word spacing can vary by device.** On Rangoli (API 34) page 1 and 2 of the fixture extracted as
-  `Totaldue` where the Pixel run gave `Total due`; text search for the two-word phrase may miss.
+  effect after the page in progress (about 0.2 s per page on Rangoli in the 150-page run).
 - **Pages with under 20 characters of text count as scans** (`one-page.pdf`, `protected.pdf`), so they get a
   second, invisible copy of their text.
 
