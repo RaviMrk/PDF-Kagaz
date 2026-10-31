@@ -45,10 +45,10 @@ object PdfOcr {
           val n = PdfBoxSupport.mapReadErrors {
             val page = doc.getPage(i)
             val box = PdfStamper.boxOf(page)
-            val placed = result.words.mapNotNull { w ->
-              OcrGeometry.wordPlacement(box, result.widthPx, result.heightPx, w)?.let { w.text to it }
+            val placed = result.lines.map { line ->
+              line.mapNotNull { w -> OcrGeometry.wordPlacement(box, result.widthPx, result.heightPx, w)?.let { w.text to it } }
             }
-            OcrTextLayer.addWords(doc, page, placed)
+            OcrTextLayer.addLines(doc, page, placed)
           }
           if (n > 0) withText += 1
           added += n

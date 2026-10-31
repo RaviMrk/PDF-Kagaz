@@ -5,8 +5,11 @@ import java.text.Normalizer
 /** One recognized word: its box in bitmap pixels, y down. */
 data class OcrWord(val text: String, val left: Int, val top: Int, val right: Int, val bottom: Int)
 
-/** What a recognizer found on a page rendered at [widthPx] x [heightPx] pixels. */
-data class RecognizedPage(val widthPx: Int, val heightPx: Int, val words: List<OcrWord>)
+/**
+ * What a recognizer found on a page rendered at [widthPx] x [heightPx] pixels: its text lines in
+ * reading order, each the line's words in order.
+ */
+data class RecognizedPage(val widthPx: Int, val heightPx: Int, val lines: List<List<OcrWord>>)
 
 /** Recognizes the page at [pageIndex] (0-based); implemented by the ML Kit recognizer. */
 fun interface PageRecognizer {

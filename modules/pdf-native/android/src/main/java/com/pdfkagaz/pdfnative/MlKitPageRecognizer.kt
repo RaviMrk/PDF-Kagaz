@@ -41,12 +41,14 @@ class MlKitPageRecognizer(context: Context, source: File) : PageRecognizer, Auto
         size
       }
       val text = Tasks.await(client.process(InputImage.fromBitmap(bitmap!!, 0)))
-      val words = ArrayList<OcrWord>()
-      for (block in text.textBlocks) for (line in block.lines) for (element in line.elements) {
-        val box = element.boundingBox ?: continue
-        words += OcrWord(element.text, box.left, box.top, box.right, box.bottom)
+      val lines = ArrayList<List<OcrWord>>()
+      for (block in text.textBlocks) for (line in block.lines) {
+        val words = line.elements.mapNotNull { element ->
+          element.boundingBox?.let { box -> OcrWord(element.text, box.left, box.top, box.right, box.bottom) }
+        }
+        if (words.isNotEmpty()) lines += words
       }
-      return RecognizedPage(size.width, size.height, words)
+      return RecognizedPage(size.width, size.height, lines)
     } catch (e: OutOfMemoryError) {
       throw OutOfMemoryCodedException(cause = e)
     } catch (e: ExecutionException) {

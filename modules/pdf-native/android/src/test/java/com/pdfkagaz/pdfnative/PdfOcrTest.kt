@@ -36,17 +36,18 @@ class PdfOcrTest {
 
   private fun control() = JobControl({ emitted += it }, { 0L })
 
-  private class Fake(private val words: List<OcrWord>, private val onPage: (Int) -> Unit = {}) : PageRecognizer {
+  private class Fake(private val lines: List<List<OcrWord>>, private val onPage: (Int) -> Unit = {}) : PageRecognizer {
     val seen = ArrayList<Int>()
 
     override fun recognize(pageIndex: Int): RecognizedPage {
       seen += pageIndex
       onPage(pageIndex)
-      return RecognizedPage(1224, 1584, words)
+      return RecognizedPage(1224, 1584, lines)
     }
   }
 
-  private val two = listOf(OcrWord("Invoice", 100, 200, 300, 240), OcrWord("2026-118", 320, 200, 520, 240))
+  // One line of two words whose boxes touch (as ML Kit's padded boxes often do).
+  private val two = listOf(listOf(OcrWord("Invoice", 100, 200, 300, 240), OcrWord("2026-118", 300, 200, 520, 240)))
 
   private fun pageText(file: File, index: Int): String = PDDocument.load(file).use { doc ->
     PDFTextStripper().apply { startPage = index + 1; endPage = index + 1 }.getText(doc)
