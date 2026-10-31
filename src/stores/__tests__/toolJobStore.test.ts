@@ -401,7 +401,7 @@ describe('toolJobStore recovery', () => {
     const [id] = deadSplit(s.db);
     s.store.getState().recoverInterrupted('nope');
     expect(s.store.getState().last).toBeNull();
-    createJob(s.db, { id: 'cmp', toolId: 'ocr', inputIds: ['a'], options: {}, now: 1 });
+    createJob(s.db, { id: 'cmp', toolId: 'metadata', inputIds: ['a'], options: {}, now: 1 });
     s.store.getState().recoverInterrupted('cmp');
     expect(s.store.getState().last).toBeNull();
 
@@ -1060,6 +1060,82 @@ describe('toolJobStore v1.1 tools', () => {
         outcome: { ok: false, failure: error },
       });
     }
+  });
+});
+
+describe('toolJobStore OCR (Make searchable)', () => {
+  it('reads a stored OCR failure back from its row, alreadySearchable and noTextFound included', () => {
+    const db = makeDb();
+    for (const error of ['noTextFound', 'alreadySearchable'] as const) {
+      createJob(db, { id: error, toolId: 'ocr', inputIds: ['a'], options: {}, now: 1 });
+      finishJob(db, error, { status: 'failed', error, outputIds: [], now: 2 });
+      expect(setup(db).store.getState().outcomeOf(error)).toEqual({
+        kind: 'done',
+        toolId: 'ocr',
+        outcome: { ok: false, failure: error, inputIndex: null, outputs: [] },
+      });
+    }
+  });
+
+  it('reads a succeeded OCR row back as done', () => {
+    const db = makeDb();
+    createJob(db, { id: 'ok', toolId: 'ocr', inputIds: ['a'], options: {}, now: 1 });
+    finishJob(db, 'ok', {
+      status: 'succeeded',
+      outputIds: ['o1'],
+      outputUri: 'file:///o1',
+      now: 2,
+    });
+    expect(setup(db).store.getState().outcomeOf('ok')).toMatchObject({
+      kind: 'done',
+      toolId: 'ocr',
+      outcome: { ok: true },
+    });
+  });
+
+  it('recovers an OCR job a process death interrupted', () => {
+    const s = setup();
+    createJob(s.db, { id: 'dead-ocr', toolId: 'ocr', inputIds: ['a'], options: {}, now: 1 });
+    const [id] = failInterruptedJobs(s.db, 5);
+    s.store.getState().recoverInterrupted(id!);
+    expect(s.store.getState().last).toMatchObject({
+      jobId: 'dead-ocr',
+      toolId: 'ocr',
+      inputIds: ['a'],
+      seen: false,
+      outcome: { ok: false, failure: 'interrupted' },
+    });
+  });
+
+  it('requestFromJob rebuilds an OCR request, one input only', () => {
+    const row = (inputIds: string[]) => {
+      const db = makeDb();
+      return createJob(db, { id: 'j', toolId: 'ocr', inputIds, options: {}, now: 1 });
+    };
+    expect(requestFromJob(row(['a']))).toEqual({ toolId: 'ocr', inputIds: ['a'] });
+    expect(requestFromJob(row(['a', 'b']))).toBeNull();
+    expect(requestFromJob(row([]))).toBeNull();
+  });
+
+  it('Try again on a reloaded OCR job runs it again; a locked input asks for its password', async () => {
+    const s = setup();
+    const first = s.store.getState().start({ toolId: 'ocr', inputIds: ['a'] }, t);
+    if (!first.ok) throw new Error('expected ok');
+    s.calls[0]!.resolve({ ok: false, failure: 'io', inputIndex: null, outputs: [] });
+    await flush();
+    const next = setup(s.db);
+    next.advance(1_000); // A fresh store's clock and random sequence would repeat the first job id.
+    expect(next.store.getState().retry(first.jobId, t)).toMatchObject({ ok: true });
+    expect(next.calls[0]!.request).toEqual({ toolId: 'ocr', inputIds: ['a'] });
+
+    const locked = setup();
+    const job = locked.store.getState().start({ toolId: 'ocr', inputIds: ['a'] }, t);
+    if (!job.ok) throw new Error('expected ok');
+    locked.calls[0]!.resolve({ ok: false, failure: 'encrypted', inputIndex: 0, outputs: [] });
+    await flush();
+    const again = setup(locked.db);
+    expect(again.store.getState().retry(job.jobId, t)).toEqual({ ok: false, reason: 'needsInput' });
+    expect(again.run).not.toHaveBeenCalled();
   });
 });
 

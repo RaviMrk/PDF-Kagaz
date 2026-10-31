@@ -28,7 +28,7 @@ import {
   type ToolRequest,
   type ToolRunDeps,
 } from '@/services/tools/runTool';
-import { IMAGE_QUALITIES } from '@/services/tools/limits';
+import { IMAGE_QUALITIES, TOOL_ENGINE } from '@/services/tools/limits';
 import { expoToolFs, signaturesDirUri } from '@/services/tools/toolFs';
 import { telemetry } from '@/services/telemetry/telemetry';
 import { pagesOf, toolFinishedEvent } from '@/services/telemetry/toolEvent';
@@ -122,28 +122,31 @@ export type ToolJobStoreDeps = {
 
 const PROGRESS_INTERVAL_MS = 100;
 
-const FAILURES: readonly ToolFailure[] = [
-  'notFound',
-  'unavailable',
-  'permission',
-  'encrypted',
-  'invalid',
-  'tooLarge',
-  'totalTooLarge',
-  'tooManyPages',
-  'badPages',
-  'io',
-  'cancelled',
-  'interrupted',
-  'imagesGone',
-  'imageInvalid',
-  'wrongPassword',
-  'restricted',
-  'signatureGone',
-  'notProtected',
-  'outOfMemory',
-  'unknown',
-];
+/** Every failure a stored row may hold; the `satisfies` makes a new ToolFailure a compile error here. */
+const FAILURES = Object.keys({
+  notFound: true,
+  unavailable: true,
+  permission: true,
+  encrypted: true,
+  invalid: true,
+  tooLarge: true,
+  totalTooLarge: true,
+  tooManyPages: true,
+  badPages: true,
+  io: true,
+  cancelled: true,
+  interrupted: true,
+  imagesGone: true,
+  imageInvalid: true,
+  wrongPassword: true,
+  restricted: true,
+  signatureGone: true,
+  notProtected: true,
+  alreadySearchable: true,
+  noTextFound: true,
+  outOfMemory: true,
+  unknown: true,
+} satisfies Record<ToolFailure, true>) as readonly ToolFailure[];
 
 /**
  * Options stored with a job: no ids or names (an image job's typed name is not stored) and never a
@@ -336,6 +339,8 @@ export function requestFromJob(row: ToolJobRow): ToolRequest | null {
   }
   const o = row.options;
   switch (row.toolId) {
+    case 'ocr':
+      return { toolId: 'ocr', inputIds: [only] };
     case 'compress': {
       const level = oneOf(LEVELS, o.level);
       return level ? { toolId: 'compress', inputIds: [only], level } : null;
@@ -377,20 +382,8 @@ export function newJobId(now: number, random: () => number): string {
   return `${Math.max(0, Math.floor(now)).toString(36)}-${n.toString(36).padStart(6, '0')}`;
 }
 
-const RUNNABLE: readonly RunnableToolId[] = [
-  'merge',
-  'split',
-  'organize',
-  'images-to-pdf',
-  'scan',
-  'compress',
-  'protect',
-  'unlock',
-  'pdf-to-images',
-  'watermark',
-  'page-numbers',
-  'sign',
-];
+/** Every tool a job row may name (TOOL_ENGINE is keyed by RunnableToolId, so none is missed). */
+const RUNNABLE = Object.keys(TOOL_ENGINE) as readonly RunnableToolId[];
 
 function runnable(toolId: string): RunnableToolId | null {
   return RUNNABLE.find((id) => id === toolId) ?? null;
