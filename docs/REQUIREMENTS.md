@@ -31,6 +31,8 @@ Ship MVP first (reader + 6 core tools), then add the heavier native tools in v1.
 | v1.2 | OCR (searchable PDF), text search inside PDF, annotate (highlight, freehand, notes), Marathi/Hindi UI | Highest effort; depends on text-layer work |
 | Later | PDF to Word, Word to PDF, cloud import (Drive), form filling, iOS | Need server or heavy libraries; validate demand first |
 
+**Note (M9):** v1.2's OCR (T-13) shipped as Latin-only on-device recognition (ML Kit bundled model, download 34.2 MB, within the §4 40 MB limit). Devanagari OCR, text search (V-11), annotations (V-12) and the mr/hi translations remain.
+
 **Out of scope for v1:** user accounts, cloud sync, any server, editing existing PDF text.
 
 ## 3. Functional requirements
