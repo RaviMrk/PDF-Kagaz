@@ -1,5 +1,6 @@
 package com.pdfkagaz.pdfnative
 
+import android.net.Uri
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import java.io.File
@@ -106,5 +107,21 @@ class PdfOcrTest {
   fun progressEndsAtOne() {
     PdfOcr.run(Fixtures.file("scanned-text.pdf"), target, Fake(two), control(), tempDir)
     assertEquals(1.0, emitted.last(), 0.0)
+  }
+
+  @Test
+  fun workspaceRefusesAFileOutsideTheJobFolder() {
+    val context = RuntimeEnvironment.getApplication()
+    val other = File(context.cacheDir, "${ToolPaths.DIR}/other-job").apply { mkdirs() }
+    val file = File(other, "in.pdf").apply { writeBytes(Fixtures.file("scanned-text.pdf").readBytes()) }
+    val outside = File(tmp.root, "in.pdf").apply { writeBytes(file.readBytes()) }
+    for (f in listOf(file, outside)) {
+      try {
+        PdfOcr.ocrInWorkspace(context, "my-job", Uri.fromFile(f).toString(), control()) { Fake(two) }
+        fail("expected ERR_PERMISSION_DENIED")
+      } catch (e: PermissionDeniedException) {
+        // expected
+      }
+    }
   }
 }

@@ -2,6 +2,7 @@ import PdfNative from '../../../modules/pdf-native';
 import type {
   CompressLevel,
   CompressResult,
+  OcrResult,
   FolderChange,
   FolderStamp,
   ImageFilter,
@@ -31,6 +32,7 @@ export type {
   JobNoticeTexts,
   CompressLevel,
   CompressResult,
+  OcrResult,
   ExportedSignature,
   FolderChange,
   FolderStamp,
@@ -204,6 +206,13 @@ export interface PdfNativeApi {
    * level: ERR_INVALID_NAME; damaged: ERR_PDF_INVALID.
    */
   compressPdf(fileUri: string, jobId: string, level: CompressLevel): Promise<CompressResult>;
+  /**
+   * Make searchable with on-device ML Kit (a native job: cancelNativeTool stops it): pages of
+   * workspace file `fileUri` of job `jobId` that have no text get an invisible text layer, written
+   * to `out-ocr.pdf` (other files: ERR_PERMISSION_DENIED). `uri` is null when no word was found.
+   * Damaged: ERR_PDF_INVALID; recognition failed: ERR_OCR_FAILED.
+   */
+  ocrPdf(fileUri: string, jobId: string): Promise<OcrResult>;
   /**
    * Protect with PdfBox (a native job): workspace file `fileUri` of job `jobId` (not encrypted)
    * is written as `out-protected.pdf`, AES-256, `password` opening it and also its owner password.
@@ -427,6 +436,7 @@ export const pdfNative: PdfNativeApi = {
   assemblePdf: (jobId, inputUris, outputsJson, firstOutput) =>
     PdfNative.assemblePdf(jobId, inputUris, outputsJson, firstOutput),
   compressPdf: (fileUri, jobId, level) => PdfNative.compressPdf(fileUri, jobId, level),
+  ocrPdf: (fileUri, jobId) => PdfNative.ocrPdf(fileUri, jobId),
   protectPdf: (fileUri, jobId, password) => PdfNative.protectPdf(fileUri, jobId, password),
   renderPdfPage: (fileUri, jobId, page, dpi, format) =>
     PdfNative.renderPdfPage(fileUri, jobId, page, dpi, format),

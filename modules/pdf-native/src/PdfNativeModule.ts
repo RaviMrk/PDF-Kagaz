@@ -3,6 +3,7 @@ import { NativeModule, requireNativeModule } from 'expo';
 import type {
   CompressLevel,
   CompressResult,
+  OcrResult,
   FolderChange,
   ImageFormat,
   ImportedImage,
@@ -113,6 +114,8 @@ declare class PdfNativeModule extends NativeModule<PdfNativeModuleEvents> {
   ): Promise<WorkspaceFile[]>;
   /** Workspace files of `jobId` only; writes `out-compressed.pdf`. */
   compressPdf(fileUri: string, jobId: string, level: CompressLevel): Promise<CompressResult>;
+  /** Workspace files of `jobId` only; writes `out-ocr.pdf` when any word was found. */
+  ocrPdf(fileUri: string, jobId: string): Promise<OcrResult>;
   /** Workspace files of `jobId` only; writes `out-protected.pdf` (AES-256). */
   protectPdf(fileUri: string, jobId: string, password: string): Promise<WorkspaceFile>;
   /** Workspace files of `jobId` only; 1-based page; dpi 72 / 150 / 300; writes `img-<page>.<format>`. */

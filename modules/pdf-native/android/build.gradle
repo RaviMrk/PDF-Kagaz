@@ -35,6 +35,8 @@ dependencies {
   // The version :app resolves; ServiceCompat.startForeground with a service type needs >= 1.12.0.
   implementation "androidx.core:core:1.18.0"
   implementation 'com.google.android.gms:play-services-mlkit-document-scanner:16.0.0'
+  // Bundled Latin text recognition model (on-device, no Play-services download); ships arm64 .so files.
+  implementation 'com.google.mlkit:text-recognition:16.0.1'
   // Pure Java (no .so). bcpkix/bcutil are certificate/CMS code; only bcprov's AES path is used
   // (proven by PdfBoxSupportTest's AES-256 round trip).
   implementation('com.tom-roush:pdfbox-android:2.0.27.0') {

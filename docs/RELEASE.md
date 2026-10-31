@@ -407,6 +407,29 @@ compressed dex. Largest universal-APK entries (`unzip -lv`, stored size): `lib/x
 3.19 MB. The `.so` list is the same 29 libraries as M6: PdfBox, the signature view and
 expo-store-review add none.
 
+### M9 OCR (Make searchable, T-13)
+
+Measured after adding `com.google.mlkit:text-recognition:16.0.1` (bundled Latin model, on-device;
+also brings `text-recognition-bundled-common`, `vision-common`, `vision-interfaces`, `common` and
+`com.google.android.odml:image`). `bundleRelease -PreactNativeArchitectures=arm64-v8a` on its own
+(8 min 25 s), ads off, Firebase not linked, bundletool 1.17.2 (`build-apks --mode=default`, then
+`get-size total` with a device spec of API 34, 420 dpi, `en`, arm64-v8a).
+
+| Measurement | M7 Task 14 | **M9 Task 2** |
+| --- | --- | --- |
+| AAB download size, arm64 phone (`get-size total`, API 34, 420 dpi, `en`) | 28 460 311 B | **34 248 781 B (32.7 MiB)**, +5 788 470 B |
+| AAB download size, arm64-v8a (`get-size total --dimensions=ABI`) | 28 334 151 – 28 468 743 B | 34 111 234 – 34 257 213 B |
+| `app-release.aab` | 96 709 546 B | 49 821 864 B (arm64-only build, not comparable) |
+
+**The arm64 download is over the 34 000 000 B gate set for this milestone** (by 248 781 B); it is
+still under the §4 40 MB target. Almost all of the growth is one library,
+`libmlkit_google_ocr_pipeline.so` (11 064 544 B uncompressed).
+
+16 KB check on `splits/base-arm64_v8a.apk`: pass. `zipalign -c -P 16 -v 4` verification
+successful, 30 of 30 arm64 `.so` (the M7 29 plus `libmlkit_google_ocr_pipeline.so`), and all 91
+`LOAD` segments (`llvm-objdump -p`) are `align 2**14`. The only new `.so` is
+`libmlkit_google_ocr_pipeline.so`.
+
 ## Release verification (M7 Task 14)
 
 Builds, one Gradle run each on the 8 GB host with `-Dorg.gradle.jvmargs=-Xmx3072m`: `npx expo

@@ -135,6 +135,17 @@ function createNativeFns(): jest.Mocked<NativeFns> {
         imagesRecompressed: 1,
       }),
     ),
+    ocrPdf: jest.fn((_uri: string, jobId: string) =>
+      Promise.resolve({
+        uri: `file:///data/cache/tools/${jobId}/out-ocr.pdf`,
+        sizeBytes: 900,
+        pageCount: 3,
+        pagesRecognized: 2,
+        pagesWithText: 2,
+        pagesSkipped: 1,
+        wordsAdded: 40,
+      }),
+    ),
     protectPdf: jest.fn((_uri: string, jobId: string, _password: string) =>
       Promise.resolve({
         uri: `file:///data/cache/tools/${jobId}/out-protected.pdf`,

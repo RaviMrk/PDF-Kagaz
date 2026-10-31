@@ -61,3 +61,7 @@ class CancelledException(message: String = "Cancelled", cause: Throwable? = null
 /** The phone ran out of memory (an OutOfMemoryError) on this input; not a size-cap refusal. */
 class OutOfMemoryCodedException(message: String = "Not enough memory for this file", cause: Throwable? = null) :
   CodedException("ERR_OUT_OF_MEMORY", message, cause)
+
+/** ML Kit text recognition failed on a page; never carries recognized text or a path. */
+class OcrFailedException(message: String = "Text recognition failed", cause: Throwable? = null) :
+  CodedException("ERR_OCR_FAILED", message, cause)

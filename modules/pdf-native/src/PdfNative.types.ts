@@ -56,6 +56,20 @@ export type CompressLevel = 'low' | 'medium' | 'high';
 /** The compressed copy in the job workspace and how many images were replaced. */
 export type CompressResult = { uri: string; sizeBytes: number; imagesRecompressed: number };
 
+/**
+ * The searchable copy in the job workspace: `uri` is null (and `sizeBytes` 0) when no word was
+ * added; the counts are pages seen, OCR'd, given text, skipped (already text) and words written.
+ */
+export type OcrResult = {
+  uri: string | null;
+  sizeBytes: number;
+  pageCount: number;
+  pagesRecognized: number;
+  pagesWithText: number;
+  pagesSkipped: number;
+  wordsAdded: number;
+};
+
 /** Page image format of PDF to images: JPEG (quality 90) or PNG. */
 export type ImageFormat = 'jpg' | 'png';
 

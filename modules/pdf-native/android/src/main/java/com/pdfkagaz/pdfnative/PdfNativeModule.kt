@@ -289,6 +289,20 @@ class PdfNativeModule : Module() {
       }
     }
 
+    // Make searchable (on-device ML Kit text recognition, always native).
+    AsyncFunction("ocrPdf") Coroutine { fileUri: String, jobId: String ->
+      RenderSupport.mapErrors {
+        withContext(Dispatchers.IO) {
+          val control = beginToolJob(jobId)
+          try {
+            PdfOcr.ocrInWorkspace(context, jobId, fileUri, control)
+          } finally {
+            NativeJobs.end(jobId)
+          }
+        }
+      }
+    }
+
     // Protect (AES-256): the password stays in this call, never logged or put into an error.
     AsyncFunction("protectPdf") Coroutine { fileUri: String, jobId: String, password: String ->
       RenderSupport.mapErrors {

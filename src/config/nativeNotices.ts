@@ -23,6 +23,10 @@ export const NATIVE_NOTICES: { name: string; license: string }[] = [
   { name: 'MMKV', license: 'BSD-3-Clause' },
   { name: 'react-native-blob-util (Android)', license: 'MIT' },
   { name: 'Google Play services and ML Kit', license: 'Google APIs Terms of Service' },
+  {
+    name: 'ML Kit text recognition (bundled Latin model) and ODML image library',
+    license: 'Google APIs Terms of Service',
+  },
   { name: 'Google Mobile Ads SDK', license: 'Google APIs Terms of Service' },
   { name: 'User Messaging Platform (UMP)', license: 'Google APIs Terms of Service' },
   { name: 'Firebase components (with the ads SDK)', license: 'Apache-2.0' },

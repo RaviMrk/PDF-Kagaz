@@ -1,5 +1,7 @@
 package com.pdfkagaz.pdfnative
 
+import android.content.Context
+import android.net.Uri
 import java.io.File
 
 /** What [PdfOcr.run] did: pages seen, OCR'd, given text, skipped (already text) and words written. */
@@ -60,5 +62,48 @@ object PdfOcr {
       control.progress(1.0)
       return OcrStats(pageCount, recognized, withText, skipped, added)
     }
+  }
+}
+
+/**
+ * [PdfOcr.run] for job [jobId]: [fileUri] must be a file of that job's workspace (anything else →
+ * ERR_PERMISSION_DENIED); the output (`out-ocr.pdf`) and PdfBox scratch files go into the same
+ * workspace. Returns `{ uri (null when no word was added), sizeBytes, pageCount, pagesRecognized,
+ * pagesWithText, pagesSkipped, wordsAdded }`.
+ */
+fun PdfOcr.ocrInWorkspace(context: Context, jobId: String, fileUri: String, control: JobControl): Map<String, Any?> =
+  ocrInWorkspace(context, jobId, fileUri, control) { source -> MlKitPageRecognizer(context, source) }
+
+/** Test seam: [recognizerFor] makes the recognizer for the workspace file; it is closed afterwards when closeable. */
+internal fun PdfOcr.ocrInWorkspace(
+  context: Context,
+  jobId: String,
+  fileUri: String,
+  control: JobControl,
+  recognizerFor: (File) -> PageRecognizer,
+): Map<String, Any?> {
+  if (!ToolPaths.isValidJobId(jobId)) throw InvalidNameException()
+  val source = ToolFiles.workspaceFile(context, Uri.parse(fileUri))
+  val dir = source.parentFile ?: throw PermissionDeniedException()
+  if (dir.name != jobId) throw PermissionDeniedException()
+  if (!source.isFile) throw FileNotFoundCodedException()
+  val target = File(dir, "out-ocr.pdf")
+  val tempDir = File(dir, "pdfbox-ocr")
+  val recognizer = recognizerFor(source)
+  try {
+    val stats = run(source, target, recognizer, control, tempDir)
+    val written = stats.wordsAdded > 0 && target.isFile
+    return mapOf(
+      "uri" to if (written) Uri.fromFile(target).toString() else null,
+      "sizeBytes" to if (written) target.length() else 0L,
+      "pageCount" to stats.pageCount,
+      "pagesRecognized" to stats.pagesRecognized,
+      "pagesWithText" to stats.pagesWithText,
+      "pagesSkipped" to stats.pagesSkipped,
+      "wordsAdded" to stats.wordsAdded,
+    )
+  } finally {
+    (recognizer as? AutoCloseable)?.close()
+    tempDir.deleteRecursively()
   }
 }
