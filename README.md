@@ -1,5 +1,7 @@
 # PDF Kagaz
 
+![PDF Kagaz: every PDF tool, nothing uploaded](docs/screenshots/banner.jpg)
+
 An offline-first PDF reader and toolkit for Android. It finds every PDF on your phone, opens it
 fast and gives you the everyday tools: merge, split, scan, compress, sign, protect and OCR. Your
 files never leave the device.
@@ -13,6 +15,7 @@ files never leave the device.
 
 ## Contents
 
+- [Screenshots](#screenshots)
 - [Why](#why)
 - [Features](#features)
 - [Privacy](#privacy)
@@ -23,6 +26,16 @@ files never leave the device.
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/home.jpg" alt="Home screen with recent PDFs and quick tools" width="19%">
+  <img src="docs/screenshots/files.jpg" alt="Files list showing every PDF on the phone" width="19%">
+  <img src="docs/screenshots/reader.jpg" alt="PDF reader" width="19%">
+  <img src="docs/screenshots/tools.jpg" alt="Tools grid" width="19%">
+  <img src="docs/screenshots/result.jpg" alt="OCR result: text added to a scanned PDF" width="19%">
+</p>
 
 ## Why
 
